@@ -1,0 +1,36 @@
+body {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    overflow-x: hidden;
+    background-color: #020617;
+    background-image:
+        linear-gradient(rgba(248,250,252,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(248,250,252,0.02) 1px, transparent 1px);
+    background-size: 28px 28px;
+}
+.font-display { font-family: 'Fraunces', serif; font-variation-settings: 'opsz' 60; }
+.hatch {
+    background-image: repeating-linear-gradient(
+        45deg,
+        rgba(248,250,252,0.03) 0px, rgba(248,250,252,0.03) 3px,
+        transparent 3px, transparent 9px
+    );
+}
+.tick-row span { font-variant-numeric: tabular-nums; }
+.pill-switch { position: relative; }
+.pill-indicator {
+    position: absolute; top: 3px; left: 3px;
+    height: calc(100% - 6px);
+    width: calc(50% - 3px);
+    border-radius: 9999px;
+    background: #6366f1;
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 0;
+}
+.pill-indicator.right { transform: translateX(100%); }
+.task-card { transition: border-color 0.15s ease, background-color 0.15s ease; }
+.task-card:hover { border-color: #6366f1; }
+@keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.toast-animate { animation: slideUp 0.25s ease-out; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }

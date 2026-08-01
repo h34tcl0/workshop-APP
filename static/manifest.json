@@ -1,0 +1,16 @@
+{
+  "name": "Workshop OS",
+  "short_name": "Workshop OS",
+  "description": "Smart Weather-Aware Workshop Operating System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/static/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
