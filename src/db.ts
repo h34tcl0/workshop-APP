@@ -164,34 +164,75 @@ export async function initDatabase(): Promise<Database.Database> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      must_change_password INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
     );
   `);
+
+  try {
+    dbInstance.exec("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;");
+  } catch {
+    // Column already exists
+  }
 
   seedDefaultsIfEmpty(dbInstance);
 
   return dbInstance;
 }
 
+export function closeDatabase(): void {
+  if (dbInstance) {
+    console.log("[DB] Closing SQLite database connection safely...");
+    dbInstance.close();
+    dbInstance = null;
+  }
+}
+
 function seedDefaultsIfEmpty(db: Database.Database) {
-  // Check default admin user
-  const adminEmail = 'admin@workshop.os';
-  const userRow = db.prepare("SELECT id, password_hash FROM users WHERE LOWER(email) = LOWER(?)").get(adminEmail) as any;
-  if (userRow) {
-    const isCurrentValid = verifyPassword('password123', userRow.password_hash as string);
-    if (!isCurrentValid) {
-      const newHash = hashPassword('password123');
-      db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(newHash, userRow.id);
-      console.log('[AUTH] Re-hashed password for default admin user: admin@workshop.os / password123');
-    } else {
-      console.log('[AUTH] Verified default admin user active: admin@workshop.os');
-    }
-  } else {
-    const adminHash = hashPassword('password123');
+  // Check default admin user credentials from env or defaults
+  const adminEmail = (process.env.ADMIN_EMAIL || 'admin@workshop.os').trim();
+  const adminPassword = process.env.ADMIN_PASSWORD || 'Admin123!';
+
+  const userCountRow = db.prepare("SELECT COUNT(*) as count FROM users").get() as any;
+  if (!userCountRow || userCountRow.count === 0) {
+    const adminHash = hashPassword(adminPassword);
+    const isDefault = adminPassword === 'Admin123!' || adminPassword === 'password123';
     db.prepare(
-      "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, datetime('now'))"
-    ).run(adminEmail, adminHash);
-    console.log('[AUTH] Seeded default admin user: admin@workshop.os / password123');
+      "INSERT INTO users (email, password_hash, must_change_password, created_at) VALUES (?, ?, ?, datetime('now'))"
+    ).run(adminEmail.toLowerCase(), adminHash, isDefault ? 1 : 0);
+    console.log(`[AUTH] Seeded initial admin user: ${adminEmail}`);
+  } else {
+    // Check if the configured admin user exists
+    const userRow = db.prepare("SELECT id, password_hash FROM users WHERE LOWER(email) = LOWER(?)").get(adminEmail) as any;
+    if (userRow) {
+      const isCurrentValid = verifyPassword(adminPassword, userRow.password_hash as string);
+      if (!isCurrentValid) {
+        // If password changed in env or legacy default, re-hash and update
+        const newHash = hashPassword(adminPassword);
+        db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(newHash, userRow.id);
+        console.log(`[AUTH] Updated password hash for admin user: ${adminEmail}`);
+      } else {
+        console.log(`[AUTH] Verified admin user active: ${adminEmail}`);
+      }
+    }
+  }
+
+  // Security Check & High-Visibility Warning for Default Admin Credentials
+  const activeUser = db.prepare("SELECT id, password_hash FROM users WHERE LOWER(email) = LOWER(?)").get(adminEmail) as any;
+  if (activeUser) {
+    const isUsingDefaultCreds = verifyPassword('Admin123!', activeUser.password_hash) || verifyPassword('password123', activeUser.password_hash);
+    if (isUsingDefaultCreds) {
+      db.prepare("UPDATE users SET must_change_password = 1 WHERE id = ?").run(activeUser.id);
+      console.warn(`
+===================================================================
+[SECURITY WARNING] DEFAULT ADMIN CREDENTIALS ACTIVE!
+Account: ${adminEmail}
+Default password ('Admin123!' or 'password123') is in use!
+For production safety, you MUST change this password immediately.
+Standard API access is restricted until password is updated.
+===================================================================
+`);
+    }
   }
 
   // Check settings
@@ -1010,6 +1051,16 @@ export class SQLiteStore {
     return true;
   }
 
+  // Backup database using SQLite native VACUUM INTO
+  backupDatabase(destinationPath?: string): string {
+    ensureDbDirExists();
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const dest = destinationPath || path.join(DB_DIR, `backup-${timestamp}.db`);
+    this.db.prepare("VACUUM INTO ?").run(dest);
+    console.log(`[DB BACKUP] Consistent WAL database backup generated at: ${dest}`);
+    return dest;
+  }
+
   // Users Management
   getUserByEmail(email: string): User | null {
     const row = this.db.prepare("SELECT * FROM users WHERE LOWER(email) = LOWER(?)").get(email.trim()) as any;
@@ -1018,6 +1069,7 @@ export class SQLiteStore {
       id: Number(row.id),
       email: String(row.email),
       password_hash: String(row.password_hash),
+      must_change_password: Boolean(row.must_change_password),
       created_at: String(row.created_at)
     };
   }
@@ -1029,15 +1081,23 @@ export class SQLiteStore {
       id: Number(row.id),
       email: String(row.email),
       password_hash: String(row.password_hash),
+      must_change_password: Boolean(row.must_change_password),
       created_at: String(row.created_at)
     };
   }
 
   createUser(email: string, passwordHash: string): User {
     this.db.prepare(
-      "INSERT INTO users (email, password_hash, created_at) VALUES (?, ?, datetime('now'));"
+      "INSERT INTO users (email, password_hash, must_change_password, created_at) VALUES (?, ?, 0, datetime('now'));"
     ).run(email.toLowerCase().trim(), passwordHash);
     return this.getUserByEmail(email)!;
+  }
+
+  updateUserPassword(userId: number, passwordHash: string): boolean {
+    const res = this.db.prepare(
+      "UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?;"
+    ).run(passwordHash, userId);
+    return res.changes > 0;
   }
 }
 

@@ -1,18 +1,40 @@
 import express from 'express';
 import path from 'path';
-import { initDatabase, store } from './src/db.js';
+import { initDatabase, store, closeDatabase } from './src/db.js';
 import { evaluateDayWithOverrides } from './src/evaluator.js';
 import { getHourlyForecast, getWeeklyForecast, MockWeatherService } from './src/weatherService.js';
 import { getHolidayDatesForRange } from './src/holidaysService.js';
 import { formatDateShortEs } from './src/dateUtils.js';
 import { TaskCategory, TaskStatus } from './src/types.js';
-import { startDaemon, runMorningEvaluation, runCheckinTick } from './src/scheduler.js';
+import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick } from './src/scheduler.js';
 import { TelegramBotService } from './src/telegramBot.js';
 import { requireAuth, hashPassword, verifyPassword, signToken, createSessionCookie, createClearSessionCookie, AuthenticatedRequest } from './src/auth.js';
 
 const app = express();
 const PORT = 3000;
 
+// Process Error Handlers for logging stack traces to stdout/stderr and exiting process for clean container reboot
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL UNCAUGHT EXCEPTION - TERMINATING PROCESS FOR CLEAN REBOOT]', err);
+  try {
+    stopDaemon();
+    closeDatabase();
+  } catch (e) {
+    console.error('[SHUTDOWN ERROR]', e);
+  }
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL UNHANDLED REJECTION - TERMINATING PROCESS FOR CLEAN REBOOT]', reason);
+  try {
+    stopDaemon();
+    closeDatabase();
+  } catch (e) {
+    console.error('[SHUTDOWN ERROR]', e);
+  }
+  process.exit(1);
+});
 
 // Setup View Engine
 app.set('views', path.join(process.cwd(), 'views'));
@@ -22,6 +44,15 @@ app.set('view engine', 'ejs');
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use('/static', express.static(path.join(process.cwd(), 'static')));
+
+// Public Health Check Endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
 
 // PWA Direct Routes
 app.get('/manifest.json', (req, res) => {
@@ -96,6 +127,43 @@ app.post('/register', (req, res) => {
 app.get('/logout', (req, res) => {
   res.setHeader('Set-Cookie', createClearSessionCookie());
   res.redirect(303, '/login');
+});
+
+// Password Change API endpoint (Requirement 1)
+app.post('/api/user/change-password', (req: AuthenticatedRequest, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'No autenticado' });
+  }
+  const { new_password, new_password_confirm } = req.body;
+  if (!new_password || new_password.length < 6) {
+    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+  }
+  if (new_password_confirm && new_password !== new_password_confirm) {
+    return res.status(400).json({ error: 'Las contraseñas no coinciden' });
+  }
+  if (new_password === 'Admin123!' || new_password === 'password123') {
+    return res.status(400).json({ error: 'No puede utilizar la contraseña por defecto' });
+  }
+
+  const newHash = hashPassword(new_password);
+  store.updateUserPassword(req.user.id, newHash);
+  console.log(`[AUTH] Password updated for user #${req.user.id} (${req.user.email}). Default password requirement cleared.`);
+  return res.status(200).json({ status: 'ok', message: 'Contraseña actualizada correctamente' });
+});
+
+// Admin Online WAL Backup API Endpoint (Requirement 2)
+app.post('/api/admin/backup', (req: AuthenticatedRequest, res) => {
+  try {
+    const backupPath = store.backupDatabase();
+    res.status(200).json({
+      status: 'ok',
+      message: 'Copia de seguridad en caliente (WAL mode) creada con éxito',
+      backup_path: backupPath
+    });
+  } catch (err: any) {
+    console.error('[BACKUP ERROR]', err);
+    res.status(500).json({ error: 'Error al generar la copia de seguridad', details: err.message });
+  }
 });
 
 // Constants for labels
@@ -540,12 +608,41 @@ app.post('/webhook/telegram', async (req, res) => {
   }
 });
 
+// Graceful Shutdown Handler
+let serverInstance: any = null;
+
+function gracefulShutdown(signal: string) {
+  console.log(`\n[SHUTDOWN] Received ${signal}. Shutting down gracefully...`);
+  stopDaemon();
+
+  if (serverInstance) {
+    serverInstance.close(() => {
+      console.log('[SHUTDOWN] HTTP server closed.');
+      closeDatabase();
+      console.log('[SHUTDOWN] Clean exit finished.');
+      process.exit(0);
+    });
+
+    setTimeout(() => {
+      console.error('[SHUTDOWN] Forced shutdown due to timeout.');
+      closeDatabase();
+      process.exit(1);
+    }, 5000);
+  } else {
+    closeDatabase();
+    process.exit(0);
+  }
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Initialize Database & Start Server
 initDatabase().then(() => {
   console.log('SQLite Database initialized successfully.');
   startDaemon();
 
-  app.listen(PORT, '0.0.0.0', () => {
+  serverInstance = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Workshop OS server listening on http://0.0.0.0:${PORT}`);
   });
 }).catch(err => {

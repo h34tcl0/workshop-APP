@@ -2,6 +2,7 @@ export interface User {
   id: number;
   email: string;
   password_hash: string;
+  must_change_password?: boolean;
   created_at: string;
 }
 

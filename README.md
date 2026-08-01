@@ -381,6 +381,27 @@ curl -X POST http://localhost:3000/evaluation/force_checkin
 curl -X POST http://localhost:3000/evaluation/force_run -H "Content-Type: application/json" -d '{"scenario": "rain_afternoon"}'
 ```
 
+### 5. Database Backups (WAL Mode)
+AGENDAPP uses `better-sqlite3` configured in Write-Ahead Logging (WAL) mode (`journal_mode = WAL`). In WAL mode, SQLite maintains three files on disk:
+- `data/workshop.db` (Primary database file)
+- `data/workshop.db-wal` (Write-Ahead Log containing active transactions)
+- `data/workshop.db-shm` (Shared memory index file)
+
+To guarantee a crash-consistent, non-corrupted backup while the server is active, use the native SQLite online backup API endpoint (`POST /api/admin/backup`) or shell commands using `VACUUM INTO` or `sqlite3`:
+
+```bash
+# Method A: Trigger Online Backup via HTTP API Endpoint (Recommended)
+curl -X POST http://localhost:3000/api/admin/backup \
+     -H "Cookie: workshop_session=<YOUR_SESSION_TOKEN>" \
+     -H "Content-Type: application/json"
+
+# Method B: Execute Native Online Backup inside Docker / Shell using VACUUM INTO
+docker exec -it agendapp_app sqlite3 /app/data/workshop.db "VACUUM INTO '/app/data/backup-$(date +%Y%m%d%H%M%S).db';"
+
+# Method C: Direct Local Shell Backup via sqlite3 CLI
+sqlite3 data/workshop.db "VACUUM INTO 'data/backup-live.db';"
+```
+
 ---
 
 ## 🤖 AI & Developer Handover Guardrails
@@ -390,4 +411,3 @@ When extending AGENDAPP:
 2. **Preserve `SameSite=None; Secure` Cookie Flags**: Altering cookie settings breaks iframe preview sandboxes and embedded execution environments.
 3. **Database Export Consistency**: When modifying `src/db.ts`, ensure `saveToDisk()` is invoked after write operations so `data/workshop.db` remains persistent across restarts.
 4. **Calendar Fallback Handling**: `src/calendarService.ts` must never crash the application if `google-credentials.json` is missing or invalid; always log a warning and fallback gracefully to simulated execution.
-"# workshop-APP" 

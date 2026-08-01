@@ -351,6 +351,8 @@ export function evaluateDayFeasibility(
 
       const bufferEndHour = Math.min(23, Math.floor(Math.max(actualTeardownEnd + 1, maxCuringEnd)));
 
+      const hasEpoxyTask = scheduledPackage.some(t => t.category === TaskCategory.EPOXY || (t.category as string) === "epoxy");
+
       let hasWeatherConflict = false;
       for (let h = startHour; h <= bufferEndHour; h++) {
         const wf = hourlyWeather.get(h);
@@ -368,6 +370,23 @@ export function evaluateDayFeasibility(
               firstWeatherConflictDetail = `Exceso de humedad detectado a las ${String(h).padStart(2, "0")}:00 hrs (${wf.relative_humidity}%, Máx permitido: ${cfg.max_humidity_percent}%).`;
             }
             break;
+          }
+          // Requirement 5: Specific epoxy category weather threshold rules (temp >= 15°C, humidity <= 75%)
+          if (hasEpoxyTask) {
+            if (wf.temperature_c < 15.0) {
+              hasWeatherConflict = true;
+              if (!firstWeatherConflictDetail) {
+                firstWeatherConflictDetail = `Temperatura ambiente baja para Epoxi a las ${String(h).padStart(2, "0")}:00 hrs (${wf.temperature_c}°C, Mínimo requerido: 15°C).`;
+              }
+              break;
+            }
+            if (wf.relative_humidity > 75.0) {
+              hasWeatherConflict = true;
+              if (!firstWeatherConflictDetail) {
+                firstWeatherConflictDetail = `Humedad relativa excesiva para Epoxi a las ${String(h).padStart(2, "0")}:00 hrs (${wf.relative_humidity}%, Máximo permitido para epoxi: 75%).`;
+              }
+              break;
+            }
           }
         }
       }

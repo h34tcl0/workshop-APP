@@ -264,11 +264,15 @@ export async function runMorningEvalTick(nowDate?: Date): Promise<void> {
   await runMorningEvaluation(todayIso);
 }
 
+let daemonIntervals: NodeJS.Timeout[] = [];
+
 export function startDaemon(): void {
   console.log("[Daemon] AGENDAPP 3-Tier Precision Scheduler starting...");
   console.log("  • Tier 1 (Morning Evaluation): Dynamic trigger at operational start time - lead hours");
   console.log("  • Tier 2 (Night Check-in): Fixed trigger at configured check-in hour");
   console.log("  • Tier 3 (Urgent Weather Monitor): 60-min work window scan with 10-min 6-round alert bursts");
+
+  stopDaemon();
 
   // Initial execution of all 3 tiers on startup
   runMorningEvalTick().catch(err => console.error("[Daemon Tier 1 Error]:", err));
@@ -276,17 +280,27 @@ export function startDaemon(): void {
   runWeatherAlertTick().catch(err => console.error("[Daemon Tier 3 Error]:", err));
 
   // Tier 1: Morning Evaluation loop (checks every 15 minutes)
-  setInterval(() => {
+  const t1 = setInterval(() => {
     runMorningEvalTick().catch(err => console.error("[Daemon Tier 1 Error]:", err));
   }, 15 * 60 * 1000);
 
   // Tier 2: Night Check-in loop (checks every 15 minutes)
-  setInterval(() => {
+  const t2 = setInterval(() => {
     runCheckinTick().catch(err => console.error("[Daemon Tier 2 Error]:", err));
   }, 15 * 60 * 1000);
 
   // Tier 3: Urgent Weather Monitor loop (checks every 10 minutes to support active alert burst retries & hourly scans)
-  setInterval(() => {
+  const t3 = setInterval(() => {
     runWeatherAlertTick().catch(err => console.error("[Daemon Tier 3 Error]:", err));
   }, 10 * 60 * 1000);
+
+  daemonIntervals.push(t1, t2, t3);
+}
+
+export function stopDaemon(): void {
+  if (daemonIntervals.length > 0) {
+    console.log("[Daemon] Stopping background scheduler daemon...");
+    daemonIntervals.forEach(clearInterval);
+    daemonIntervals = [];
+  }
 }
