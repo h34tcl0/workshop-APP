@@ -213,6 +213,30 @@
                 </div>
             </div>
 
+            <div class="pt-1 border-t border-hairline mt-3 pt-3">
+                <p class="text-[11px] font-semibold text-ink3 uppercase tracking-wide mb-2">Integraciones (Telegram y Google Calendar)</p>
+                <div class="space-y-3">
+                    <div>
+                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3 mb-1">Telegram Chat ID</label>
+                        <input type="text" name="telegram_chat_id" placeholder="Ej: 123456789" value="<%= app_settings && app_settings.telegram_chat_id ? app_settings.telegram_chat_id : '' %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
+                        <p class="text-[10px] text-ink3 mt-1">ID de tu chat personal con el bot de Telegram. Tus notificaciones de aviso y check-in llegarán exclusivamente aquí.</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3 mb-1">Google Calendar ID</label>
+                        <input type="text" name="google_calendar_id" placeholder="Ej: usuario@gmail.com o ID de calendario" value="<%= app_settings && app_settings.google_calendar_id ? app_settings.google_calendar_id : '' %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
+                        <p class="text-[10px] text-ink3 mt-1">ID de tu calendario personal de Google para agendar bloques macro de trabajo.</p>
+                    </div>
+
+                    <div>
+                        <label class="flex items-center gap-3 cursor-pointer min-h-[44px] py-1">
+                            <input type="checkbox" name="google_calendar_enabled" value="true" <%= (app_settings && app_settings.google_calendar_enabled) ? 'checked' : '' %> class="w-5 h-5 sm:w-4 sm:h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
+                            <span class="text-xs text-ink2 font-medium flex-1">Sincronizar eventos en Google Calendar automáticamente</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
             <div class="flex items-center gap-3 pt-4 border-t border-hairline mt-5">
                 <button type="button" onclick="closeSettingsModal()" class="flex-1 bg-surface2 hover:bg-hairline text-ink2 font-semibold py-3 rounded-lg text-sm transition-colors min-h-[44px]">Cancelar</button>
                 <button type="submit" class="flex-1 bg-brass hover:bg-brassdim text-canvas font-semibold py-3 rounded-lg text-sm transition-colors min-h-[44px]">Guardar ajustes</button>

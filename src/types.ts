@@ -41,6 +41,9 @@ export interface AppSettings {
   min_rain_precipitation_mm: number;
   checkin_hour: number;
   morning_eval_lead_hours: number;
+  telegram_chat_id?: string | null;
+  google_calendar_id?: string | null;
+  google_calendar_enabled?: boolean;
 }
 
 export interface Project {

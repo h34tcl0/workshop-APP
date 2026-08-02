@@ -5,7 +5,7 @@ import { evaluateDayWithOverrides } from './src/evaluator.js';
 import { getHourlyForecast, getWeeklyForecast, MockWeatherService } from './src/weatherService.js';
 import { getHolidayDatesForRange } from './src/holidaysService.js';
 import { formatDateShortEs } from './src/dateUtils.js';
-import { TaskCategory, TaskStatus } from './src/types.js';
+import { TaskCategory, TaskStatus, Task } from './src/types.js';
 import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick } from './src/scheduler.js';
 import { TelegramBotService } from './src/telegramBot.js';
 import { requireAuth, hashPassword, verifyPassword, signToken, createSessionCookie, createClearSessionCookie, AuthenticatedRequest } from './src/auth.js';
@@ -155,7 +155,7 @@ app.get('/logout', (req, res) => {
   res.redirect(303, '/login');
 });
 
-// Password Change API endpoint (Requirement 1)
+// Password Change API endpoint
 app.post('/api/user/change-password', (req: AuthenticatedRequest, res) => {
   if (!req.user) {
     return res.status(401).json({ error: 'No autenticado' });
@@ -177,7 +177,7 @@ app.post('/api/user/change-password', (req: AuthenticatedRequest, res) => {
   return res.status(200).json({ status: 'ok', message: 'Contraseña actualizada correctamente' });
 });
 
-// Admin Online WAL Backup API Endpoint (Requirement 2)
+// Admin Online WAL Backup API Endpoint
 app.post('/api/admin/backup', (req: AuthenticatedRequest, res) => {
   try {
     const backupPath = store.backupDatabase();
@@ -195,8 +195,9 @@ app.post('/api/admin/backup', (req: AuthenticatedRequest, res) => {
 // Constants for labels
 const CATEGORY_LABELS: Record<string, string> = {
   carpentry: 'Carpintería',
-  glue: 'Encolado',
-  varnish: 'Barnizado/Pintura'
+  pva_glue: 'Encolado',
+  varnish_paint: 'Barnizado/Pintura',
+  epoxy: 'Epoxi'
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -209,12 +210,13 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 // GET / - Dashboard
-app.get('/', async (req, res) => {
+app.get('/', async (req: AuthenticatedRequest, res) => {
   try {
+    const userId = req.user!.id;
     const scenario = typeof req.query.scenario === 'string' ? req.query.scenario : undefined;
-    const appSettings = store.getAppSettings();
-    const activeProject = store.getActiveProject();
-    const tasks = store.getPendingTasks(activeProject.id);
+    const appSettings = store.getAppSettings(userId);
+    const activeProject = store.getActiveProject(userId);
+    const tasks = store.getPendingTasks(userId, activeProject.id);
     let simulatedPendingTasks = [...tasks];
 
     const today = new Date();
@@ -241,14 +243,14 @@ app.get('/', async (req, res) => {
       evalDateObj.setDate(evalDateObj.getDate() + d);
       const evalDate = evalDateObj.toISOString().split('T')[0];
 
-      const dayOverride = store.getDayOverride(evalDate);
-      const forcedRows = store.getForcedTasksForDate(evalDate);
+      const dayOverride = store.getDayOverride(userId, evalDate);
+      const forcedRows = store.getForcedTasksForDate(userId, evalDate);
 
       const forcedTasksWithHours = forcedRows.map(fr => ({
-        task: store.getTask(fr.task_id),
+        task: store.getTask(userId, fr.task_id),
         forced_start_hour: fr.forced_start_hour,
         forced_id: fr.id
-      })).filter(item => item.task != null);
+      })).filter((item): item is { task: Task; forced_start_hour: number; forced_id: number } => item.task != null);
 
       let hourly;
       if (scenario) {
@@ -288,9 +290,9 @@ app.get('/', async (req, res) => {
       });
     }
 
-    const completedHistory = store.getCompletedRecently();
-    const favorites = store.getFavoriteTasks();
-    const projectTemplates = store.getProjectTemplates();
+    const completedHistory = store.getCompletedRecently(userId);
+    const favorites = store.getFavoriteTasks(userId);
+    const projectTemplates = store.getProjectTemplates(userId);
 
     res.render('index', {
       project: activeProject,
@@ -312,34 +314,40 @@ app.get('/', async (req, res) => {
 });
 
 // POST /tasks/add
-app.post('/tasks/add', (req, res) => {
+app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const { title, description, category, estimated_hours, curing_hours, order } = req.body;
-  store.addTask({
+  store.addTask(userId, {
     title,
     description: description || '',
     category: category || TaskCategory.CARPENTRY,
     estimated_hours: parseFloat(estimated_hours) || 1.0,
     curing_hours: parseFloat(curing_hours) || 0.0,
-    order: parseInt(order) || 0
+    order: parseInt(order) || undefined
   });
   res.redirect(303, '/');
 });
 
-// POST /tasks/:id/update or /tasks/:id/edit
-app.post('/tasks/:id/update', (req, res) => {
+// POST /tasks/:id/update
+app.post('/tasks/:id/update', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const id = parseInt(req.params.id);
   const { title, estimated_hours, curing_hours, category } = req.body;
-  store.updateTask(id, {
+  const updated = store.updateTask(userId, id, {
     title,
     estimated_hours: parseFloat(estimated_hours),
     curing_hours: parseFloat(curing_hours),
     category
   });
+  if (!updated) {
+    return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });
+  }
   res.redirect(303, '/');
 });
 
 // POST /tasks/:id/update_status
-app.post('/tasks/:id/update_status', (req, res) => {
+app.post('/tasks/:id/update_status', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const id = parseInt(req.params.id);
   const { status, progress } = req.body;
   const progressNum = parseInt(progress) || 0;
@@ -347,41 +355,49 @@ app.post('/tasks/:id/update_status', (req, res) => {
   if (progressNum === 100) {
     newStatus = TaskStatus.COMPLETED;
   }
-  store.updateTask(id, {
+  const updated = store.updateTask(userId, id, {
     status: newStatus,
     progress_percentage: progressNum,
     completed_at: newStatus === TaskStatus.COMPLETED ? new Date().toISOString() : undefined
   });
+  if (!updated) {
+    return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });
+  }
   res.redirect(303, '/');
 });
 
 // POST /tasks/:id/delete
-app.post('/tasks/:id/delete', (req, res) => {
-  store.deleteTask(parseInt(req.params.id));
+app.post('/tasks/:id/delete', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  store.deleteTask(userId, parseInt(req.params.id));
   res.redirect(303, '/');
 });
 
 // POST /tasks/:id/move-up
-app.post('/tasks/:id/move-up', (req, res) => {
-  store.moveTaskUp(parseInt(req.params.id));
+app.post('/tasks/:id/move-up', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  store.moveTaskUp(userId, parseInt(req.params.id));
   res.redirect(303, '/');
 });
 
 // POST /tasks/:id/move-down
-app.post('/tasks/:id/move-down', (req, res) => {
-  store.moveTaskDown(parseInt(req.params.id));
+app.post('/tasks/:id/move-down', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  store.moveTaskDown(userId, parseInt(req.params.id));
   res.redirect(303, '/');
 });
 
 // POST /tasks/reorder
-app.post('/tasks/reorder', (req, res) => {
+app.post('/tasks/reorder', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const taskIds: number[] = req.body.task_ids || [];
-  store.reorderTasks(taskIds);
+  store.reorderTasks(userId, taskIds);
   res.json({ status: 'ok' });
 });
 
 // POST /tasks/import
-app.post('/tasks/import', (req, res) => {
+app.post('/tasks/import', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const payload = req.body;
   const projectName = payload.project_name || 'Proyecto Importado IA';
   const taskList = payload.tasks || [];
@@ -391,9 +407,9 @@ app.post('/tasks/import', (req, res) => {
     return;
   }
 
-  let project = store.getProjects().find(p => p.name === projectName);
+  let project = store.getProjects(userId).find(p => p.name === projectName);
   if (!project) {
-    project = store.addProject(projectName, 'Proyecto creado vía Importación IA');
+    project = store.addProject(userId, projectName, 'Proyecto creado vía Importación IA');
   }
 
   taskList.forEach((tdata: any, idx: number) => {
@@ -401,14 +417,14 @@ app.post('/tasks/import', (req, res) => {
     if (!Object.values(TaskCategory).includes(cat)) {
       cat = TaskCategory.CARPENTRY;
     }
-    store.addTask({
+    store.addTask(userId, {
       project_id: project!.id,
       title: tdata.title || `Tarea ${idx + 1}`,
       description: tdata.description || '',
       category: cat,
       estimated_hours: parseFloat(tdata.estimated_hours) || 1.0,
       curing_hours: parseFloat(tdata.curing_hours) || 0.0,
-      order: store.getTasks().length + 1
+      order: store.getTasks(userId).length + 1
     });
   });
 
@@ -420,10 +436,11 @@ app.post('/tasks/import', (req, res) => {
 });
 
 // Favorite Task routes
-app.post('/tasks/:id/favorite', (req, res) => {
-  const task = store.getTask(parseInt(req.params.id));
+app.post('/tasks/:id/favorite', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const task = store.getTask(userId, parseInt(req.params.id));
   if (task) {
-    store.addFavoriteTask({
+    store.addFavoriteTask(userId, {
       title: task.title,
       category: task.category,
       estimated_hours: task.estimated_hours,
@@ -433,30 +450,33 @@ app.post('/tasks/:id/favorite', (req, res) => {
   res.redirect(303, '/');
 });
 
-app.post('/favorites/:id/use', (req, res) => {
+app.post('/favorites/:id/use', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const favId = parseInt(req.params.id);
-  const favs = store.getFavoriteTasks();
+  const favs = store.getFavoriteTasks(userId);
   const fav = favs.find(f => f.id === favId);
   if (fav) {
-    store.addTask({
+    store.addTask(userId, {
       title: fav.title,
       category: fav.category,
       estimated_hours: fav.estimated_hours,
       curing_hours: fav.curing_hours,
-      order: store.getTasks().length + 1
+      order: store.getTasks(userId).length + 1
     });
   }
   res.redirect(303, '/');
 });
 
-app.post('/favorites/:id/delete', (req, res) => {
-  store.deleteFavoriteTask(parseInt(req.params.id));
+app.post('/favorites/:id/delete', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  store.deleteFavoriteTask(userId, parseInt(req.params.id));
   res.redirect(303, '/');
 });
 
 // Project Template routes
-app.post('/project-templates/save', (req, res) => {
+app.post('/project-templates/save', (req: AuthenticatedRequest, res) => {
   try {
+    const userId = req.user!.id;
     const { name, description } = req.body;
     if (!name || !name.trim()) {
       if (req.headers.accept?.includes('application/json')) {
@@ -464,7 +484,7 @@ app.post('/project-templates/save', (req, res) => {
       }
       return res.redirect(303, '/');
     }
-    const template = store.createProjectTemplateFromBacklog(name.trim(), description ? description.trim() : '');
+    const template = store.createProjectTemplateFromBacklog(userId, name.trim(), description ? description.trim() : '');
     if (req.headers.accept?.includes('application/json')) {
       return res.json({ status: 'success', message: 'Plantilla de proyecto guardada.', template });
     }
@@ -478,10 +498,11 @@ app.post('/project-templates/save', (req, res) => {
   }
 });
 
-app.post('/project-templates/:id/apply', (req, res) => {
+app.post('/project-templates/:id/apply', (req: AuthenticatedRequest, res) => {
   try {
+    const userId = req.user!.id;
     const id = parseInt(req.params.id, 10);
-    const addedTasks = store.applyProjectTemplate(id);
+    const addedTasks = store.applyProjectTemplate(userId, id);
     if (req.headers.accept?.includes('application/json')) {
       return res.json({ status: 'success', message: `Plantilla aplicada (${addedTasks.length} tareas agregadas).` });
     }
@@ -495,10 +516,11 @@ app.post('/project-templates/:id/apply', (req, res) => {
   }
 });
 
-app.post('/project-templates/:id/delete', (req, res) => {
+app.post('/project-templates/:id/delete', (req: AuthenticatedRequest, res) => {
   try {
+    const userId = req.user!.id;
     const id = parseInt(req.params.id, 10);
-    store.deleteProjectTemplate(id);
+    store.deleteProjectTemplate(userId, id);
     if (req.headers.accept?.includes('application/json')) {
       return res.json({ status: 'success', message: 'Plantilla eliminada.' });
     }
@@ -513,7 +535,8 @@ app.post('/project-templates/:id/delete', (req, res) => {
 });
 
 // Day Overrides routes
-app.post('/day-override/:override_date/save', (req, res) => {
+app.post('/day-override/:override_date/save', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const override_date = req.params.override_date;
   const { force_status, custom_start_hour, custom_end_hour, removed_task_ids, note } = req.body;
 
@@ -525,7 +548,7 @@ app.post('/day-override/:override_date/save', (req, res) => {
     if (!isNaN(parsed)) removedIds.push(parsed);
   }
 
-  store.saveDayOverride(override_date, {
+  store.saveDayOverride(userId, override_date, {
     force_status: force_status === 'VIABLE' || force_status === 'BLOCKED' ? force_status : null,
     custom_start_hour: custom_start_hour ? parseInt(custom_start_hour) : null,
     custom_end_hour: custom_end_hour ? parseInt(custom_end_hour) : null,
@@ -536,30 +559,36 @@ app.post('/day-override/:override_date/save', (req, res) => {
   res.redirect(303, '/');
 });
 
-app.post('/day-override/:override_date/clear', (req, res) => {
-  store.clearDayOverride(req.params.override_date);
+app.post('/day-override/:override_date/clear', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  store.clearDayOverride(userId, req.params.override_date);
   res.redirect(303, '/');
 });
 
-app.post('/day-override/:override_date/force-task', (req, res) => {
+app.post('/day-override/:override_date/force-task', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const override_date = req.params.override_date;
   const { task_id, forced_start_hour } = req.body;
-  store.addForcedTask(override_date, parseInt(task_id), parseFloat(forced_start_hour) || 9.0);
+  const parsedTaskId = parseInt(task_id);
+  const task = store.getTask(userId, parsedTaskId);
+  if (task) {
+    store.addForcedTask(userId, override_date, parsedTaskId, parseFloat(forced_start_hour) || 9.0);
+  }
   res.redirect(303, '/');
 });
 
-app.post('/day-override/forced-task/:forced_id/delete', (req, res) => {
-  store.deleteForcedTask(parseInt(req.params.forced_id));
+app.post('/day-override/forced-task/:forced_id/delete', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  store.deleteForcedTask(userId, parseInt(req.params.forced_id));
   res.redirect(303, '/');
 });
 
 // Settings & Evaluation routes
-app.post('/evaluation/force_run', async (req, res) => {
+app.post('/evaluation/force_run', async (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const scenario = req.body.scenario;
   try {
-    const evalResult = await runMorningEvaluation(undefined, scenario || undefined);
-    const telegramBot = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, process.env.TELEGRAM_CHAT_ID);
-    await telegramBot.sendMorningEvaluation(evalResult);
+    await runMorningEvaluation(userId, undefined, scenario || undefined);
   } catch (err) {
     console.error('Error running morning evaluation:', err);
   }
@@ -570,12 +599,11 @@ app.post('/evaluation/force_run', async (req, res) => {
   }
 });
 
-app.post('/evaluation/run', async (req, res) => {
+app.post('/evaluation/run', async (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const scenario = req.body.scenario;
   try {
-    const evalResult = await runMorningEvaluation(undefined, scenario || undefined);
-    const telegramBot = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, process.env.TELEGRAM_CHAT_ID);
-    await telegramBot.sendMorningEvaluation(evalResult);
+    await runMorningEvaluation(userId, undefined, scenario || undefined);
   } catch (err) {
     console.error('Error running morning evaluation:', err);
   }
@@ -586,18 +614,20 @@ app.post('/evaluation/run', async (req, res) => {
   }
 });
 
-app.post('/evaluation/force_checkin', async (req, res) => {
+app.post('/evaluation/force_checkin', async (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   try {
-    await runCheckinTick(undefined, true);
+    await runCheckinTick(undefined, true, userId);
   } catch (err) {
     console.error('Error running forced checkin:', err);
   }
   res.redirect(303, '/');
 });
 
-app.post('/settings/update', (req, res) => {
+app.post('/settings/update', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
   const body = req.body;
-  store.updateAppSettings({
+  store.updateAppSettings(userId, {
     operational_start_hour: parseInt(body.operational_start_hour) || 9,
     operational_end_hour: parseInt(body.operational_end_hour) || 18,
     max_humidity_percent: parseFloat(body.max_humidity_percent) || 80.0,
@@ -613,9 +643,48 @@ app.post('/settings/update', (req, res) => {
     exclude_saturdays: body.exclude_saturdays === 'true' || body.exclude_saturdays === 'on',
     exclude_sundays: body.exclude_sundays === 'true' || body.exclude_sundays === 'on',
     exclude_holidays: body.exclude_holidays === 'true' || body.exclude_holidays === 'on',
-    require_curing_before_cutoff: body.require_curing_before_cutoff === 'true' || body.require_curing_before_cutoff === 'on'
+    require_curing_before_cutoff: body.require_curing_before_cutoff === 'true' || body.require_curing_before_cutoff === 'on',
+    telegram_chat_id: body.telegram_chat_id !== undefined ? String(body.telegram_chat_id).trim() : undefined,
+    google_calendar_id: body.google_calendar_id !== undefined ? String(body.google_calendar_id).trim() : undefined,
+    google_calendar_enabled: body.google_calendar_enabled === 'true' || body.google_calendar_enabled === 'on' || body.google_calendar_enabled === '1'
   });
   res.redirect(303, '/');
+});
+
+// Google Calendar Sync route
+app.post('/calendar/create', async (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const { eval_date, start_time, end_time } = req.body;
+  const settings = store.getAppSettings(userId);
+
+  if (!settings.google_calendar_enabled || !settings.google_calendar_id || !settings.google_calendar_id.trim()) {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Google Calendar not connected for this user account'
+    });
+  }
+
+  const dateIso = eval_date || new Date().toISOString().split('T')[0];
+  const dailyLog = store.getDailyLogByDate(userId, dateIso);
+  let taskIds: number[] = [];
+  if (dailyLog && dailyLog.scheduled_task_ids) {
+    try { taskIds = JSON.parse(dailyLog.scheduled_task_ids); } catch (_) {}
+  }
+  const tasks = taskIds.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null);
+
+  const success = await calendarService.createWorkshopEvent(
+    userId,
+    dateIso,
+    start_time || '09:00',
+    end_time || '18:00',
+    tasks.map(t => ({ title: t.title, estimated_hours: t.estimated_hours }))
+  );
+
+  if (success) {
+    return res.json({ status: 'success', message: 'Evento de Google Calendar creado con éxito.' });
+  } else {
+    return res.status(500).json({ status: 'error', message: 'Google Calendar not connected for this user account' });
+  }
 });
 
 // Telegram Webhook endpoint
@@ -625,8 +694,11 @@ app.post('/webhook/telegram', async (req, res) => {
     if (req.body && req.body.callback_query) {
       const result = await telegramSvc.processCallbackQuery(req.body.callback_query);
       res.json(result);
+    } else if (req.body && req.body.message) {
+      const result = await telegramSvc.handleIncomingMessage(req.body.message);
+      res.json(result);
     } else {
-      res.json({ status: 'ok', message: 'No callback query present' });
+      res.json({ status: 'ok', message: 'No action taken' });
     }
   } catch (err) {
     console.error('Error processing Telegram webhook:', err);
@@ -675,4 +747,3 @@ initDatabase().then(() => {
   console.error('Failed to initialize SQLite Database:', err);
   process.exit(1);
 });
-

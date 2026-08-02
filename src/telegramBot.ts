@@ -8,18 +8,18 @@ export class TelegramBotService {
 
   constructor(
     token: string = process.env.TELEGRAM_BOT_TOKEN || "",
-    chatId: string = process.env.TELEGRAM_CHAT_ID || ""
+    chatId: string = ""
   ) {
     this.token = token;
-    this.chatId = chatId;
+    this.chatId = chatId ? String(chatId).trim() : "";
     this.apiUrl = `https://api.telegram.org/bot${token}`;
   }
 
   private async sendRequest(method: string, payload: any): Promise<boolean> {
     if (!this.token || !this.chatId) {
       const textPreview = (payload.text || "").substring(0, 60).replace(/\n/g, " ");
-      console.log(`[TelegramBotService] Token/ChatID not configured. Simulated '${method}': ${textPreview}`);
-      return true;
+      console.log(`[TelegramBotService] Token or ChatID not configured for target user. Skipping '${method}': ${textPreview}`);
+      return false;
     }
 
     try {
@@ -166,18 +166,81 @@ export class TelegramBotService {
     return this.sendRequest("editMessageText", payload);
   }
 
+  async handleIncomingMessage(msg: any): Promise<{ status: string; message: string }> {
+    const rawChatId = msg.chat?.id || msg.from?.id;
+    if (!rawChatId) {
+      return { status: "error", message: "No chat ID in message" };
+    }
+
+    const chatStr = String(rawChatId).trim();
+    const user = store.getUserByTelegramChatId(chatStr);
+
+    if (!user) {
+      const replyBot = new TelegramBotService(this.token, chatStr);
+      await replyBot.sendRequest("sendMessage", {
+        chat_id: chatStr,
+        text: "Your Telegram account is not linked to any Workshop OS account. Please set your Telegram Chat ID in Workshop OS settings."
+      });
+      return {
+        status: "unauthorized",
+        message: "Your Telegram account is not linked to any Workshop OS account. Please set your Telegram Chat ID in Workshop OS settings."
+      };
+    }
+
+    const text: string = (msg.text || "").trim();
+    const replyBot = new TelegramBotService(this.token, chatStr);
+
+    if (text.startsWith("/start") || text.startsWith("/help")) {
+      await replyBot.sendRequest("sendMessage", {
+        chat_id: chatStr,
+        text: `👋 *Hola (${user.email})*\nTu cuenta de Telegram está correctamente vinculada a Workshop OS.\nRecibirás tus planes de trabajo, alertas climáticas y check-ins nocturnos aquí.`,
+        parse_mode: "Markdown"
+      });
+    } else {
+      await replyBot.sendRequest("sendMessage", {
+        chat_id: chatStr,
+        text: `🤖 *Workshop OS* (${user.email})\nRecibido: "${text}".\nUsa los botones interactivos de la aplicación para responder a los check-ins y alertas.`,
+        parse_mode: "Markdown"
+      });
+    }
+
+    return { status: "ok", message: "Message processed" };
+  }
+
   async processCallbackQuery(callbackQuery: any): Promise<{ status: string; message: string }> {
     const cbId = callbackQuery.id;
     const data: string = callbackQuery.data || "";
     const message = callbackQuery.message || {};
     const messageId = message.message_id;
-    const chatId = (message.chat || {}).id || this.chatId;
+    const rawChatId = (message.chat || {}).id || callbackQuery.from?.id || this.chatId;
+    const chatStr = String(rawChatId).trim();
 
+    const user = store.getUserByTelegramChatId(chatStr);
+    if (!user) {
+      const replyBot = new TelegramBotService(this.token, chatStr);
+      await replyBot.sendRequest("sendMessage", {
+        chat_id: chatStr,
+        text: "Your Telegram account is not linked to any Workshop OS account. Please set your Telegram Chat ID in Workshop OS settings."
+      });
+      if (cbId) {
+        await replyBot.sendRequest("answerCallbackQuery", {
+          callback_query_id: cbId,
+          text: "Cuenta no vinculada."
+        });
+      }
+      return {
+        status: "unauthorized",
+        message: "Your Telegram account is not linked to any Workshop OS account. Please set your Telegram Chat ID in Workshop OS settings."
+      };
+    }
+
+    const userId = user.id;
+    const replyBot = new TelegramBotService(this.token, chatStr);
     let responseText = "Actualizado";
 
     if (data.startsWith("chkall:")) {
       const dailyLogId = parseInt(data.split(":")[1]);
-      const dailyLog = store.getDailyLogById(dailyLogId);
+      const dailyLog = store.getDailyLogById(userId, dailyLogId);
       if (dailyLog && !dailyLog.checkin_resolved) {
         let taskIds: number[] = [];
         try {
@@ -185,36 +248,36 @@ export class TelegramBotService {
         } catch (_) {}
         const nowIso = new Date().toISOString();
         for (const tid of taskIds) {
-          const t = store.getTask(tid);
+          const t = store.getTask(userId, tid);
           if (t && t.status !== TaskStatus.COMPLETED) {
-            store.updateTask(t.id, {
+            store.updateTask(userId, t.id, {
               status: TaskStatus.COMPLETED,
               progress_percentage: 100,
               completed_at: nowIso
             });
           }
         }
-        store.updateDailyLog(dailyLogId, { checkin_resolved: true });
+        store.updateDailyLog(userId, dailyLogId, { checkin_resolved: true });
       }
       responseText = "✅ Día completo. ¡Buen trabajo!";
       if (messageId) {
-        await this.editMessageText(chatId, messageId, "✅ *Día completo.* ¡Buen trabajo!");
+        await replyBot.editMessageText(chatStr, messageId, "✅ *Día completo.* ¡Buen trabajo!");
       }
     } else if (data.startsWith("chkpick:")) {
       const dailyLogId = parseInt(data.split(":")[1]);
-      const dailyLog = store.getDailyLogById(dailyLogId);
+      const dailyLog = store.getDailyLogById(userId, dailyLogId);
       let taskIds: number[] = [];
       if (dailyLog) {
         try {
           taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
         } catch (_) {}
       }
-      const scheduledTasks = taskIds.map(tid => store.getTask(tid)).filter((t): t is Task => t != null);
+      const scheduledTasks = taskIds.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null);
       responseText = "Marca cuáles se completaron";
       if (messageId && scheduledTasks.length > 0) {
         const keyboard = this.buildPickerKeyboard(dailyLogId, scheduledTasks, new Set());
-        await this.editMessageText(
-          chatId,
+        await replyBot.editMessageText(
+          chatStr,
           messageId,
           "🌙 *¿Cuáles tareas se completaron?*\nTócalas para marcar/desmarcar, luego *Confirmar*.",
           keyboard
@@ -248,11 +311,11 @@ export class TelegramBotService {
         checkedIds.add(taskId);
       }
 
-      const scheduledTasks = scheduledIdsInOrder.map(tid => store.getTask(tid)).filter((t): t is Task => t != null);
+      const scheduledTasks = scheduledIdsInOrder.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null);
       responseText = "Marcado";
       if (messageId) {
         const keyboard = this.buildPickerKeyboard(dailyLogId, scheduledTasks, checkedIds);
-        await this.editMessageKeyboard(chatId, messageId, keyboard);
+        await replyBot.editMessageKeyboard(chatStr, messageId, keyboard);
       }
     } else if (data.startsWith("chkconfirm:")) {
       const dailyLogId = parseInt(data.split(":")[1]);
@@ -278,10 +341,10 @@ export class TelegramBotService {
       const pendingTitles: string[] = [];
 
       for (const tid of allIds) {
-        const t = store.getTask(tid);
+        const t = store.getTask(userId, tid);
         if (!t) continue;
         if (checkedIds.has(tid)) {
-          store.updateTask(t.id, {
+          store.updateTask(userId, t.id, {
             status: TaskStatus.COMPLETED,
             progress_percentage: 100,
             completed_at: nowIso
@@ -292,7 +355,7 @@ export class TelegramBotService {
         }
       }
 
-      store.updateDailyLog(dailyLogId, { checkin_resolved: true });
+      store.updateDailyLog(userId, dailyLogId, { checkin_resolved: true });
       responseText = "Confirmado";
 
       if (messageId) {
@@ -300,21 +363,23 @@ export class TelegramBotService {
         if (pendingTitles.length > 0) {
           summary += `↩️ *Vuelven al backlog:* ${pendingTitles.join(", ")}`;
         }
-        await this.editMessageText(chatId, messageId, summary);
+        await replyBot.editMessageText(chatStr, messageId, summary);
       }
     } else if (data.startsWith("wxack:")) {
       const dailyLogId = parseInt(data.split(":")[1]);
-      store.updateDailyLog(dailyLogId, { weather_alert_acknowledged: true });
+      store.updateDailyLog(userId, dailyLogId, { weather_alert_acknowledged: true });
       responseText = "✅ Confirmado, no se insiste más.";
       if (messageId) {
-        await this.editMessageText(chatId, messageId, "✅ *Confirmado.* No se insiste más con esta alerta.");
+        await replyBot.editMessageText(chatStr, messageId, "✅ *Confirmado.* No se insiste más con esta alerta.");
       }
     }
 
-    await this.sendRequest("answerCallbackQuery", {
-      callback_query_id: cbId,
-      text: responseText
-    });
+    if (cbId) {
+      await replyBot.sendRequest("answerCallbackQuery", {
+        callback_query_id: cbId,
+        text: responseText
+      });
+    }
 
     return { status: "ok", message: responseText };
   }

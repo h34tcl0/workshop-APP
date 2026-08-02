@@ -13,13 +13,13 @@ export function getLocalDateIso(d: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
-export async function runMorningEvaluation(targetDateIso?: string, mockScenario?: string): Promise<DayEvaluation> {
+export async function runMorningEvaluation(userId: number, targetDateIso?: string, mockScenario?: string): Promise<DayEvaluation> {
   const todayIso = targetDateIso || getLocalDateIso();
-  console.log(`[Scheduler] Running Morning Evaluation for ${todayIso}...`);
+  console.log(`[Scheduler] Running Morning Evaluation for User #${userId} on ${todayIso}...`);
 
-  const appSettings = store.getAppSettings();
-  const activeProject = store.getActiveProject();
-  const pendingTasks = store.getPendingTasks(activeProject.id);
+  const appSettings = store.getAppSettings(userId);
+  const activeProject = store.getActiveProject(userId);
+  const pendingTasks = store.getPendingTasks(userId, activeProject.id);
 
   let forecasts: HourlyForecast[] = [];
   if (mockScenario) {
@@ -46,7 +46,7 @@ export async function runMorningEvaluation(targetDateIso?: string, mockScenario?
 
   const evalResult = evaluateDayFeasibility(todayIso, pendingTasks, forecasts, appSettings, holidayDates);
 
-  const existingLog = store.getDailyLogByDate(todayIso);
+  const existingLog = store.getDailyLogByDate(userId, todayIso);
   const isNewDay = !existingLog;
 
   let windowStart: string | null = null;
@@ -88,25 +88,30 @@ export async function runMorningEvaluation(targetDateIso?: string, mockScenario?
     logData.telegram_notified = false;
   }
 
-  const savedLog = store.saveDailyLog(logData);
+  const savedLog = store.saveDailyLog(userId, logData);
 
   // Telegram notification handling
-  const telegramBot = new TelegramBotService(
-    process.env.TELEGRAM_BOT_TOKEN,
-    process.env.TELEGRAM_CHAT_ID
-  );
+  const telegramChatId = appSettings.telegram_chat_id;
+  if (telegramChatId && telegramChatId.trim()) {
+    const telegramBot = new TelegramBotService(
+      process.env.TELEGRAM_BOT_TOKEN,
+      telegramChatId.trim()
+    );
 
-  if (!savedLog.telegram_notified) {
-    if ((evalResult.status === DayStatus.DAY_VIABLE && evalResult.scheduled_tasks && evalResult.scheduled_tasks.length > 0) || evalResult.status === DayStatus.DAY_BLOCKED) {
-      const tgSuccess = await telegramBot.sendMorningEvaluation(evalResult);
-      if (tgSuccess) {
-        store.updateDailyLog(savedLog.id, { telegram_notified: true });
+    if (!savedLog.telegram_notified) {
+      if ((evalResult.status === DayStatus.DAY_VIABLE && evalResult.scheduled_tasks && evalResult.scheduled_tasks.length > 0) || evalResult.status === DayStatus.DAY_BLOCKED) {
+        const tgSuccess = await telegramBot.sendMorningEvaluation(evalResult);
+        if (tgSuccess) {
+          store.updateDailyLog(userId, savedLog.id, { telegram_notified: true });
+        }
+      } else {
+        store.updateDailyLog(userId, savedLog.id, { telegram_notified: true });
+        console.log(`[Scheduler] Day blocked or no tasks for User #${userId}. Telegram notification suppressed for ${todayIso}.`);
       }
-    } else {
-      // Suppress message if day has no scheduled tasks or unhandled state
-      store.updateDailyLog(savedLog.id, { telegram_notified: true });
-      console.log(`[Scheduler] Day blocked or no tasks. Telegram notification suppressed for ${todayIso}.`);
     }
+  } else {
+    console.log(`[Scheduler] User #${userId} does not have Telegram Chat ID configured. Skipping Telegram notification.`);
+    store.updateDailyLog(userId, savedLog.id, { telegram_notified: true });
   }
 
   // Google Calendar Event Creation
@@ -116,26 +121,27 @@ export async function runMorningEvaluation(targetDateIso?: string, mockScenario?
       estimated_hours: t.estimated_hours
     }));
     const calCreated = await calendarService.createWorkshopEvent(
+      userId,
       todayIso,
       evalResult.window.start_time,
       evalResult.window.end_time,
       tasksForCal
     );
     if (calCreated) {
-      store.updateDailyLog(savedLog.id, { calendar_created: true });
+      store.updateDailyLog(userId, savedLog.id, { calendar_created: true });
     }
   }
 
-  console.log(`[Scheduler] Morning Evaluation completed for ${todayIso}: ${evalResult.status} - ${evalResult.reason}`);
+  console.log(`[Scheduler] Morning Evaluation completed for User #${userId} on ${todayIso}: ${evalResult.status} - ${evalResult.reason}`);
   return evalResult;
 }
 
-export async function runCheckinTick(nowDate?: Date, force: boolean = false): Promise<void> {
+export async function processCheckinForUser(userId: number, nowDate?: Date, force: boolean = false): Promise<void> {
   const now = nowDate || new Date();
   const todayIso = getLocalDateIso(now);
-  const appSettings = store.getAppSettings();
+  const appSettings = store.getAppSettings(userId);
 
-  const dailyLog = store.getDailyLogByDate(todayIso);
+  const dailyLog = store.getDailyLogByDate(userId, todayIso);
   if (!dailyLog || dailyLog.status !== DayStatus.DAY_VIABLE) {
     return;
   }
@@ -153,27 +159,50 @@ export async function runCheckinTick(nowDate?: Date, force: boolean = false): Pr
     taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
   } catch (_) {}
 
-  const scheduledTasks = taskIds.map(tid => store.getTask(tid)).filter((t): t is any => t != null && t.status !== TaskStatus.COMPLETED);
+  const scheduledTasks = taskIds
+    .map(tid => store.getTask(userId, tid))
+    .filter((t): t is any => t != null && t.status !== TaskStatus.COMPLETED);
 
   if (scheduledTasks.length === 0) {
-    store.updateDailyLog(dailyLog.id, { checkin_sent: true, checkin_resolved: true });
+    store.updateDailyLog(userId, dailyLog.id, { checkin_sent: true, checkin_resolved: true });
     return;
   }
 
-  const telegramSvc = new TelegramBotService();
+  if (!appSettings.telegram_chat_id || !appSettings.telegram_chat_id.trim()) {
+    console.log(`[Scheduler] User #${userId} does not have Telegram Chat ID configured. Skipping checkin prompt.`);
+    return;
+  }
+
+  const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, appSettings.telegram_chat_id.trim());
   const sent = await telegramSvc.sendCheckinPrompt(dailyLog.id, scheduledTasks);
   if (sent) {
-    store.updateDailyLog(dailyLog.id, { checkin_sent: true });
-    console.log(`[Scheduler] Sent check-in prompt for ${todayIso} (${scheduledTasks.length} tasks).`);
+    store.updateDailyLog(userId, dailyLog.id, { checkin_sent: true });
+    console.log(`[Scheduler] Sent check-in prompt for User #${userId} on ${todayIso} (${scheduledTasks.length} tasks).`);
   }
 }
 
-export async function runWeatherAlertTick(nowDate?: Date): Promise<void> {
+export async function runCheckinTick(nowDate?: Date, force: boolean = false, targetUserId?: number): Promise<void> {
+  if (targetUserId) {
+    await processCheckinForUser(targetUserId, nowDate, force);
+    return;
+  }
+
+  const users = store.getAllUsers();
+  for (const user of users) {
+    try {
+      await processCheckinForUser(user.id, nowDate, force);
+    } catch (err) {
+      console.error(`[Scheduler] Error in checkin tick for User #${user.id}:`, err);
+    }
+  }
+}
+
+export async function processWeatherAlertForUser(userId: number, nowDate?: Date): Promise<void> {
   const now = nowDate || new Date();
   const todayIso = getLocalDateIso(now);
-  const appSettings = store.getAppSettings();
+  const appSettings = store.getAppSettings(userId);
 
-  const dailyLog = store.getDailyLogByDate(todayIso);
+  const dailyLog = store.getDailyLogByDate(userId, todayIso);
   if (!dailyLog || dailyLog.status !== DayStatus.DAY_VIABLE || !dailyLog.window_start || !dailyLog.window_end) {
     return;
   }
@@ -192,7 +221,12 @@ export async function runWeatherAlertTick(nowDate?: Date): Promise<void> {
     return; // outside active work window
   }
 
-  const telegramSvc = new TelegramBotService();
+  if (!appSettings.telegram_chat_id || !appSettings.telegram_chat_id.trim()) {
+    console.log(`[Scheduler] User #${userId} does not have Telegram Chat ID configured. Skipping weather alert.`);
+    return;
+  }
+
+  const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, appSettings.telegram_chat_id.trim());
 
   if (dailyLog.weather_alert_sent) {
     if (dailyLog.weather_alert_retry_count >= 6) {
@@ -205,11 +239,11 @@ export async function runWeatherAlertTick(nowDate?: Date): Promise<void> {
 
     const sent = await telegramSvc.sendWeatherAlertBurst(dailyLog.id, dailyLog.weather_alert_message || "Cambio de clima detectado.");
     if (sent) {
-      store.updateDailyLog(dailyLog.id, {
+      store.updateDailyLog(userId, dailyLog.id, {
         weather_alert_retry_count: dailyLog.weather_alert_retry_count + 1,
         weather_alert_last_sent_at: new Date().toISOString()
       });
-      console.log(`[Scheduler] Weather alert retry ${dailyLog.weather_alert_retry_count + 1}/6 sent for ${todayIso}.`);
+      console.log(`[Scheduler] Weather alert retry ${dailyLog.weather_alert_retry_count + 1}/6 sent for User #${userId} on ${todayIso}.`);
     }
     return;
   }
@@ -236,41 +270,59 @@ export async function runWeatherAlertTick(nowDate?: Date): Promise<void> {
 
     const sent = await telegramSvc.sendWeatherAlertBurst(dailyLog.id, risk);
     if (sent) {
-      store.updateDailyLog(dailyLog.id, {
+      store.updateDailyLog(userId, dailyLog.id, {
         weather_alert_sent: true,
         weather_alert_message: risk,
         weather_alert_retry_count: 1,
         weather_alert_last_sent_at: new Date().toISOString()
       });
-      console.log(`[Scheduler] Weather alert triggered for ${todayIso}: ${risk}`);
+      console.log(`[Scheduler] Weather alert triggered for User #${userId} on ${todayIso}: ${risk}`);
     }
   } catch (err) {
-    console.error("[Scheduler] Error checking updated weather for alert tick:", err);
+    console.error(`[Scheduler] Error checking updated weather for alert tick (User #${userId}):`, err);
+  }
+}
+
+export async function runWeatherAlertTick(nowDate?: Date): Promise<void> {
+  const users = store.getAllUsers();
+  for (const user of users) {
+    try {
+      await processWeatherAlertForUser(user.id, nowDate);
+    } catch (err) {
+      console.error(`[Scheduler] Error in weather alert tick for User #${user.id}:`, err);
+    }
   }
 }
 
 export async function runMorningEvalTick(nowDate?: Date): Promise<void> {
   const now = nowDate || new Date();
   const todayIso = getLocalDateIso(now);
+  const users = store.getAllUsers();
 
-  const existingLog = store.getDailyLogByDate(todayIso);
-  if (existingLog) return; // already evaluated
+  for (const user of users) {
+    try {
+      const existingLog = store.getDailyLogByDate(user.id, todayIso);
+      if (existingLog) continue; // already evaluated for this user
 
-  const appSettings = store.getAppSettings();
-  const triggerHour = (appSettings.operational_start_hour - appSettings.morning_eval_lead_hours + 24) % 24;
+      const appSettings = store.getAppSettings(user.id);
+      const triggerHour = (appSettings.operational_start_hour - appSettings.morning_eval_lead_hours + 24) % 24;
 
-  if (now.getHours() < triggerHour) return;
+      if (now.getHours() < triggerHour) continue;
 
-  await runMorningEvaluation(todayIso);
+      await runMorningEvaluation(user.id, todayIso);
+    } catch (err) {
+      console.error(`[Scheduler] Error in morning eval tick for User #${user.id}:`, err);
+    }
+  }
 }
 
 let daemonIntervals: NodeJS.Timeout[] = [];
 
 export function startDaemon(): void {
-  console.log("[Daemon] AGENDAPP 3-Tier Precision Scheduler starting...");
-  console.log("  • Tier 1 (Morning Evaluation): Dynamic trigger at operational start time - lead hours");
-  console.log("  • Tier 2 (Night Check-in): Fixed trigger at configured check-in hour");
-  console.log("  • Tier 3 (Urgent Weather Monitor): 60-min work window scan with 10-min 6-round alert bursts");
+  console.log("[Daemon] AGENDAPP Multi-Tenant 3-Tier Precision Scheduler starting...");
+  console.log("  • Tier 1 (Morning Evaluation): Dynamic trigger at operational start time - lead hours per user");
+  console.log("  • Tier 2 (Night Check-in): Fixed trigger at configured check-in hour per user");
+  console.log("  • Tier 3 (Urgent Weather Monitor): 60-min work window scan with 10-min 6-round alert bursts per user");
 
   stopDaemon();
 
@@ -289,7 +341,7 @@ export function startDaemon(): void {
     runCheckinTick().catch(err => console.error("[Daemon Tier 2 Error]:", err));
   }, 15 * 60 * 1000);
 
-  // Tier 3: Urgent Weather Monitor loop (checks every 10 minutes to support active alert burst retries & hourly scans)
+  // Tier 3: Urgent Weather Monitor loop (checks every 10 minutes)
   const t3 = setInterval(() => {
     runWeatherAlertTick().catch(err => console.error("[Daemon Tier 3 Error]:", err));
   }, 10 * 60 * 1000);

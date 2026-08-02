@@ -44,19 +44,27 @@ export class GoogleCalendarService {
   }
 
   async createWorkshopEvent(
+    userId: number,
     evalDate: string,
     startTime: string,
     endTime: string,
     scheduledTasks: Array<{ title: string; estimated_hours: number }>
   ): Promise<boolean> {
+    const settings = store.getAppSettings(userId);
+
+    if (!settings.google_calendar_enabled || !settings.google_calendar_id || !settings.google_calendar_id.trim()) {
+      console.log(`[GoogleCalendarService] User #${userId}: Google Calendar not connected for this user account`);
+      return false;
+    }
+
     if (!this.calendar) {
-      console.log(`[MockCalendarService] Google Calendar Service not initialized. Event simulated for ${evalDate} (${startTime} - ${endTime}).`);
+      console.log(`[GoogleCalendarService] User #${userId}: Google Calendar service credentials not initialized`);
       return false;
     }
 
     try {
-      const settings = store.getAppSettings() as any;
-      const timezone = settings?.timezone || process.env.TIMEZONE || "America/Santiago";
+      const timezone = (settings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+      const targetCalendarId = settings.google_calendar_id.trim();
 
       const taskLines = scheduledTasks && scheduledTasks.length > 0
         ? scheduledTasks.map(t => `- ${t.title} (${t.estimated_hours}h)`).join("\n")
@@ -89,14 +97,14 @@ export class GoogleCalendarService {
       };
 
       await this.calendar.events.insert({
-        calendarId: this.calendarId,
+        calendarId: targetCalendarId,
         requestBody: event
       });
 
-      console.log(`[GoogleCalendarService] Event created successfully in Google Calendar for ${evalDate}.`);
+      console.log(`[GoogleCalendarService] Event created successfully in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}.`);
       return true;
     } catch (err) {
-      console.error(`[GoogleCalendarService] Error creating event in Google Calendar for ${evalDate}:`, err);
+      console.error(`[GoogleCalendarService] Error creating event in Google Calendar for User #${userId} on ${evalDate}:`, err);
       return false;
     }
   }

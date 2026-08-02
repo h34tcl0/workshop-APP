@@ -48,17 +48,51 @@ export async function initDatabase(): Promise<Database.Database> {
   dbInstance = new Database(DB_PATH);
   dbInstance.pragma("journal_mode = WAL");
 
-  // Ensure tables exist
+  // Create users table first
+  dbInstance.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      must_change_password INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
+  `);
+
+  try {
+    dbInstance.exec("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;");
+  } catch {
+    // Column already exists
+  }
+
+  // Ensure default user exists for migrations
+  const userCountRow = dbInstance.prepare("SELECT COUNT(*) as count FROM users").get() as any;
+  if (!userCountRow || userCountRow.count === 0) {
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@workshop.os').trim();
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin123!';
+    const adminHash = hashPassword(adminPassword);
+    dbInstance.prepare(
+      "INSERT INTO users (email, password_hash, must_change_password, created_at) VALUES (?, ?, ?, datetime('now'))"
+    ).run(adminEmail.toLowerCase(), adminHash, 1);
+  }
+
+  const defaultUser = dbInstance.prepare("SELECT id FROM users ORDER BY id ASC LIMIT 1").get() as any;
+  const defaultUserId = defaultUser ? Number(defaultUser.id) : 1;
+
+  // Ensure tables exist with user_id
   dbInstance.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       description TEXT,
-      is_active INTEGER NOT NULL DEFAULT 0
+      is_active INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
       project_id INTEGER NOT NULL,
       title TEXT NOT NULL,
       description TEXT,
@@ -69,19 +103,23 @@ export async function initDatabase(): Promise<Database.Database> {
       status TEXT NOT NULL DEFAULT 'pending',
       progress_percentage INTEGER NOT NULL DEFAULT 0,
       order_num INTEGER NOT NULL DEFAULT 1,
-      completed_at TEXT
+      completed_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS favorites (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
       title TEXT NOT NULL,
       category TEXT NOT NULL,
       estimated_hours REAL NOT NULL DEFAULT 1.0,
-      curing_hours REAL NOT NULL DEFAULT 0.0
+      curing_hours REAL NOT NULL DEFAULT 0.0,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS app_settings (
-      id INTEGER PRIMARY KEY CHECK (id = 1),
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER UNIQUE NOT NULL,
       operational_start_hour INTEGER NOT NULL DEFAULT 9,
       operational_end_hour INTEGER NOT NULL DEFAULT 18,
       max_humidity_percent REAL NOT NULL DEFAULT 80.0,
@@ -97,30 +135,40 @@ export async function initDatabase(): Promise<Database.Database> {
       exclude_saturdays INTEGER NOT NULL DEFAULT 1,
       exclude_sundays INTEGER NOT NULL DEFAULT 1,
       exclude_holidays INTEGER NOT NULL DEFAULT 1,
-      require_curing_before_cutoff INTEGER NOT NULL DEFAULT 1
+      require_curing_before_cutoff INTEGER NOT NULL DEFAULT 1,
+      telegram_chat_id TEXT,
+      google_calendar_id TEXT,
+      google_calendar_enabled INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS day_overrides (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      override_date TEXT UNIQUE NOT NULL,
+      user_id INTEGER NOT NULL,
+      override_date TEXT NOT NULL,
       force_status TEXT,
       custom_start_hour INTEGER,
       custom_end_hour INTEGER,
       removed_task_ids TEXT,
       note TEXT,
-      updated_at TEXT
+      updated_at TEXT,
+      UNIQUE(user_id, override_date),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS forced_tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
       forced_date TEXT NOT NULL,
       task_id INTEGER NOT NULL,
-      forced_start_hour REAL NOT NULL DEFAULT 9.0
+      forced_start_hour REAL NOT NULL DEFAULT 9.0,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS daily_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      eval_date TEXT UNIQUE NOT NULL,
+      user_id INTEGER NOT NULL,
+      eval_date TEXT NOT NULL,
       status TEXT NOT NULL,
       block_reason TEXT,
       window_start TEXT,
@@ -138,18 +186,23 @@ export async function initDatabase(): Promise<Database.Database> {
       weather_alert_retry_count INTEGER NOT NULL DEFAULT 0,
       weather_alert_last_sent_at TEXT,
       weather_alert_message TEXT,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      UNIQUE(user_id, eval_date),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS project_templates (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       description TEXT,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS project_template_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
       template_id INTEGER NOT NULL,
       title TEXT NOT NULL,
       description TEXT,
@@ -157,22 +210,168 @@ export async function initDatabase(): Promise<Database.Database> {
       estimated_hours REAL NOT NULL DEFAULT 1.0,
       curing_hours REAL NOT NULL DEFAULT 0.0,
       order_num INTEGER NOT NULL DEFAULT 1,
-      FOREIGN KEY (template_id) REFERENCES project_templates(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      must_change_password INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL
+      FOREIGN KEY (template_id) REFERENCES project_templates(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
   `);
 
-  try {
-    dbInstance.exec("ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0;");
-  } catch {
-    // Column already exists
+  // Migration logic for existing tables missing user_id
+  const tablesToMigrate = [
+    'projects', 'tasks', 'favorites', 'forced_tasks', 'project_templates', 'project_template_items'
+  ];
+
+  for (const table of tablesToMigrate) {
+    const cols = dbInstance.prepare(`PRAGMA table_info(${table})`).all() as any[];
+    const hasUserId = cols.some(c => c.name === 'user_id');
+    if (!hasUserId) {
+      console.log(`[DB MIGRATION] Adding user_id column to ${table}...`);
+      dbInstance.exec(`ALTER TABLE ${table} ADD COLUMN user_id INTEGER DEFAULT ${defaultUserId};`);
+      dbInstance.prepare(`UPDATE ${table} SET user_id = ? WHERE user_id IS NULL`).run(defaultUserId);
+    }
+  }
+
+  // Special migration for app_settings (recreate to ensure per-user UNIQUE constraint and drop CHECK(id=1))
+  const appSettingsCols = dbInstance.prepare("PRAGMA table_info(app_settings)").all() as any[];
+  const hasUserIdInSettings = appSettingsCols.some(c => c.name === 'user_id');
+  if (!hasUserIdInSettings) {
+    console.log('[DB MIGRATION] Migrating app_settings table for multi-tenancy...');
+    dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS app_settings_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE NOT NULL,
+        operational_start_hour INTEGER NOT NULL DEFAULT 9,
+        operational_end_hour INTEGER NOT NULL DEFAULT 18,
+        max_humidity_percent REAL NOT NULL DEFAULT 80.0,
+        latitude REAL NOT NULL DEFAULT -32.99,
+        longitude REAL NOT NULL DEFAULT -71.27,
+        setup_hours REAL NOT NULL DEFAULT 1.0,
+        teardown_hours REAL NOT NULL DEFAULT 1.0,
+        min_work_hours REAL NOT NULL DEFAULT 1.0,
+        min_work_hours_unless_final REAL NOT NULL DEFAULT 4.0,
+        min_rain_precipitation_mm REAL NOT NULL DEFAULT 0.2,
+        checkin_hour INTEGER NOT NULL DEFAULT 19,
+        morning_eval_lead_hours INTEGER NOT NULL DEFAULT 1,
+        exclude_saturdays INTEGER NOT NULL DEFAULT 1,
+        exclude_sundays INTEGER NOT NULL DEFAULT 1,
+        exclude_holidays INTEGER NOT NULL DEFAULT 1,
+        require_curing_before_cutoff INTEGER NOT NULL DEFAULT 1,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
+    dbInstance.exec(`
+      INSERT OR IGNORE INTO app_settings_new (
+        user_id, operational_start_hour, operational_end_hour, max_humidity_percent,
+        latitude, longitude, setup_hours, teardown_hours, min_work_hours,
+        min_work_hours_unless_final, min_rain_precipitation_mm, checkin_hour,
+        morning_eval_lead_hours, exclude_saturdays, exclude_sundays, exclude_holidays,
+        require_curing_before_cutoff
+      )
+      SELECT
+        ${defaultUserId} as user_id, operational_start_hour, operational_end_hour, max_humidity_percent,
+        latitude, longitude, setup_hours, teardown_hours, min_work_hours,
+        min_work_hours_unless_final, min_rain_precipitation_mm, checkin_hour,
+        morning_eval_lead_hours, exclude_saturdays, exclude_sundays, exclude_holidays,
+        require_curing_before_cutoff
+      FROM app_settings;
+    `);
+    dbInstance.exec("DROP TABLE app_settings;");
+    dbInstance.exec("ALTER TABLE app_settings_new RENAME TO app_settings;");
+  }
+
+  // Ensure new columns exist on app_settings
+  const currentAppSettingsCols = dbInstance.prepare("PRAGMA table_info(app_settings)").all() as any[];
+  if (!currentAppSettingsCols.some(c => c.name === 'telegram_chat_id')) {
+    dbInstance.exec("ALTER TABLE app_settings ADD COLUMN telegram_chat_id TEXT;");
+  }
+  if (!currentAppSettingsCols.some(c => c.name === 'google_calendar_id')) {
+    dbInstance.exec("ALTER TABLE app_settings ADD COLUMN google_calendar_id TEXT;");
+  }
+  if (!currentAppSettingsCols.some(c => c.name === 'google_calendar_enabled')) {
+    dbInstance.exec("ALTER TABLE app_settings ADD COLUMN google_calendar_enabled INTEGER NOT NULL DEFAULT 0;");
+  }
+
+  // Special migration for day_overrides (recreate for per-user UNIQUE constraint)
+  const dayOverrideCols = dbInstance.prepare("PRAGMA table_info(day_overrides)").all() as any[];
+  const hasUserIdInOverrides = dayOverrideCols.some(c => c.name === 'user_id');
+  if (!hasUserIdInOverrides) {
+    console.log('[DB MIGRATION] Migrating day_overrides table for multi-tenancy...');
+    dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS day_overrides_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        override_date TEXT NOT NULL,
+        force_status TEXT,
+        custom_start_hour INTEGER,
+        custom_end_hour INTEGER,
+        removed_task_ids TEXT,
+        note TEXT,
+        updated_at TEXT,
+        UNIQUE(user_id, override_date),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
+    dbInstance.exec(`
+      INSERT OR IGNORE INTO day_overrides_new (
+        user_id, override_date, force_status, custom_start_hour, custom_end_hour, removed_task_ids, note, updated_at
+      )
+      SELECT
+        ${defaultUserId} as user_id, override_date, force_status, custom_start_hour, custom_end_hour, removed_task_ids, note, updated_at
+      FROM day_overrides;
+    `);
+    dbInstance.exec("DROP TABLE day_overrides;");
+    dbInstance.exec("ALTER TABLE day_overrides_new RENAME TO day_overrides;");
+  }
+
+  // Special migration for daily_logs (recreate for per-user UNIQUE constraint)
+  const dailyLogsCols = dbInstance.prepare("PRAGMA table_info(daily_logs)").all() as any[];
+  const hasUserIdInDailyLogs = dailyLogsCols.some(c => c.name === 'user_id');
+  if (!hasUserIdInDailyLogs) {
+    console.log('[DB MIGRATION] Migrating daily_logs table for multi-tenancy...');
+    dbInstance.exec(`
+      CREATE TABLE IF NOT EXISTS daily_logs_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        eval_date TEXT NOT NULL,
+        status TEXT NOT NULL,
+        block_reason TEXT,
+        window_start TEXT,
+        window_end TEXT,
+        net_work_hours REAL,
+        tasks_summary TEXT,
+        scheduled_task_ids TEXT,
+        morning_climate_snapshot TEXT,
+        telegram_notified INTEGER NOT NULL DEFAULT 0,
+        calendar_created INTEGER NOT NULL DEFAULT 0,
+        checkin_sent INTEGER NOT NULL DEFAULT 0,
+        checkin_resolved INTEGER NOT NULL DEFAULT 0,
+        weather_alert_sent INTEGER NOT NULL DEFAULT 0,
+        weather_alert_acknowledged INTEGER NOT NULL DEFAULT 0,
+        weather_alert_retry_count INTEGER NOT NULL DEFAULT 0,
+        weather_alert_last_sent_at TEXT,
+        weather_alert_message TEXT,
+        updated_at TEXT NOT NULL,
+        UNIQUE(user_id, eval_date),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
+    dbInstance.exec(`
+      INSERT OR IGNORE INTO daily_logs_new (
+        user_id, eval_date, status, block_reason, window_start, window_end, net_work_hours,
+        tasks_summary, scheduled_task_ids, morning_climate_snapshot, telegram_notified,
+        calendar_created, checkin_sent, checkin_resolved, weather_alert_sent,
+        weather_alert_acknowledged, weather_alert_retry_count, weather_alert_last_sent_at,
+        weather_alert_message, updated_at
+      )
+      SELECT
+        ${defaultUserId} as user_id, eval_date, status, block_reason, window_start, window_end, net_work_hours,
+        tasks_summary, scheduled_task_ids, morning_climate_snapshot, telegram_notified,
+        calendar_created, checkin_sent, checkin_resolved, weather_alert_sent,
+        weather_alert_acknowledged, weather_alert_retry_count, weather_alert_last_sent_at,
+        weather_alert_message, updated_at
+      FROM daily_logs;
+    `);
+    dbInstance.exec("DROP TABLE daily_logs;");
+    dbInstance.exec("ALTER TABLE daily_logs_new RENAME TO daily_logs;");
   }
 
   seedDefaultsIfEmpty(dbInstance);
@@ -189,7 +388,6 @@ export function closeDatabase(): void {
 }
 
 function seedDefaultsIfEmpty(db: Database.Database) {
-  // Check default admin user credentials from env or defaults
   const adminEmail = (process.env.ADMIN_EMAIL || 'admin@workshop.os').trim();
   const adminPassword = process.env.ADMIN_PASSWORD || 'Admin123!';
 
@@ -202,12 +400,10 @@ function seedDefaultsIfEmpty(db: Database.Database) {
     ).run(adminEmail.toLowerCase(), adminHash, isDefault ? 1 : 0);
     console.log(`[AUTH] Seeded initial admin user: ${adminEmail}`);
   } else {
-    // Check if the configured admin user exists
     const userRow = db.prepare("SELECT id, password_hash FROM users WHERE LOWER(email) = LOWER(?)").get(adminEmail) as any;
     if (userRow) {
       const isCurrentValid = verifyPassword(adminPassword, userRow.password_hash as string);
       if (!isCurrentValid) {
-        // If password changed in env or legacy default, re-hash and update
         const newHash = hashPassword(adminPassword);
         db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(newHash, userRow.id);
         console.log(`[AUTH] Updated password hash for admin user: ${adminEmail}`);
@@ -217,7 +413,6 @@ function seedDefaultsIfEmpty(db: Database.Database) {
     }
   }
 
-  // Security Check & High-Visibility Warning for Default Admin Credentials
   const activeUser = db.prepare("SELECT id, password_hash FROM users WHERE LOWER(email) = LOWER(?)").get(adminEmail) as any;
   if (activeUser) {
     const isUsingDefaultCreds = verifyPassword('Admin123!', activeUser.password_hash) || verifyPassword('password123', activeUser.password_hash);
@@ -235,28 +430,34 @@ Standard API access is restricted until password is updated.
     }
   }
 
-  // Check settings
-  const settingsRow = db.prepare("SELECT COUNT(*) as count FROM app_settings").get() as any;
+  const defaultUser = db.prepare("SELECT id FROM users ORDER BY id ASC LIMIT 1").get() as any;
+  const adminUserId = defaultUser ? Number(defaultUser.id) : 1;
+
+  // Check settings for admin user
+  const settingsRow = db.prepare("SELECT COUNT(*) as count FROM app_settings WHERE user_id = ?").get(adminUserId) as any;
   if (!settingsRow || settingsRow.count === 0) {
     db.prepare(`
       INSERT INTO app_settings (
-        id, operational_start_hour, operational_end_hour, max_humidity_percent,
+        user_id, operational_start_hour, operational_end_hour, max_humidity_percent,
         latitude, longitude, setup_hours, teardown_hours, min_work_hours,
         min_work_hours_unless_final, min_rain_precipitation_mm, checkin_hour,
         morning_eval_lead_hours, exclude_saturdays, exclude_sundays, exclude_holidays,
         require_curing_before_cutoff
-      ) VALUES (1, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.2, 19, 1, 1, 1, 1, 1);
-    `).run();
+      ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.2, 19, 1, 1, 1, 1, 1);
+    `).run(adminUserId);
   }
 
-  // Check projects
-  const projRow = db.prepare("SELECT COUNT(*) as count FROM projects").get() as any;
+  // Check projects for admin user
+  const projRow = db.prepare("SELECT COUNT(*) as count FROM projects WHERE user_id = ?").get(adminUserId) as any;
   if (!projRow || projRow.count === 0) {
-    db.prepare("INSERT INTO projects (id, name, description, is_active) VALUES (1, 'Taller Principal', 'Proyecto por defecto', 1)").run();
+    db.prepare("INSERT INTO projects (user_id, name, description, is_active) VALUES (?, 'Taller Principal', 'Proyecto por defecto', 1)").run(adminUserId);
   }
 
-  // Check tasks
-  const tasksRow = db.prepare("SELECT COUNT(*) as count FROM tasks").get() as any;
+  const adminProj = db.prepare("SELECT id FROM projects WHERE user_id = ? AND is_active = 1").get(adminUserId) as any;
+  const adminProjId = adminProj ? Number(adminProj.id) : 1;
+
+  // Check tasks for admin user
+  const tasksRow = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE user_id = ?").get(adminUserId) as any;
   if (!tasksRow || tasksRow.count === 0) {
     const defaultTasks = [
       {
@@ -294,13 +495,15 @@ Standard API access is restricted until password is updated.
     ];
 
     const insertStmt = db.prepare(`
-      INSERT INTO tasks (project_id, title, description, category, estimated_hours, curing_hours, requires_curing, status, progress_percentage, order_num)
-      VALUES (1, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)
+      INSERT INTO tasks (user_id, project_id, title, description, category, estimated_hours, curing_hours, requires_curing, status, progress_percentage, order_num)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?)
     `);
 
     defaultTasks.forEach(t => {
       const reqCur = computeRequiresCuring(t.category, t.curing_hours) ? 1 : 0;
       insertStmt.run(
+        adminUserId,
+        adminProjId,
         t.title,
         t.description,
         t.category,
@@ -322,27 +525,23 @@ export class SQLiteStore {
   }
 
   // --- APP SETTINGS ---
-  getAppSettings(): AppSettings {
-    const row = this.db.prepare("SELECT * FROM app_settings WHERE id = 1").get() as any;
+  getAppSettings(userId: number): AppSettings {
+    let row = this.db.prepare("SELECT * FROM app_settings WHERE user_id = ?").get(userId) as any;
     if (!row) {
-      return {
-        operational_start_hour: 9,
-        operational_end_hour: 18,
-        max_humidity_percent: 80.0,
-        latitude: -32.99,
-        longitude: -71.27,
-        setup_hours: 1.0,
-        teardown_hours: 1.0,
-        min_work_hours: 1.0,
-        min_work_hours_unless_final: 4.0,
-        min_rain_precipitation_mm: 0.2,
-        checkin_hour: 19,
-        morning_eval_lead_hours: 1,
-        exclude_saturdays: true,
-        exclude_sundays: true,
-        exclude_holidays: true,
-        require_curing_before_cutoff: true
-      };
+      const defaultChatId = userId === 1 ? (process.env.TELEGRAM_CHAT_ID || null) : null;
+      const defaultCalId = userId === 1 ? (process.env.GOOGLE_CALENDAR_ID || null) : null;
+      const defaultCalEnabled = userId === 1 && Boolean(process.env.GOOGLE_CALENDAR_ID) ? 1 : 0;
+
+      this.db.prepare(`
+        INSERT INTO app_settings (
+          user_id, operational_start_hour, operational_end_hour, max_humidity_percent,
+          latitude, longitude, setup_hours, teardown_hours, min_work_hours,
+          min_work_hours_unless_final, min_rain_precipitation_mm, checkin_hour,
+          morning_eval_lead_hours, exclude_saturdays, exclude_sundays, exclude_holidays,
+          require_curing_before_cutoff, telegram_chat_id, google_calendar_id, google_calendar_enabled
+        ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.2, 19, 1, 1, 1, 1, 1, ?, ?, ?);
+      `).run(userId, defaultChatId, defaultCalId, defaultCalEnabled);
+      row = this.db.prepare("SELECT * FROM app_settings WHERE user_id = ?").get(userId) as any;
     }
 
     return {
@@ -361,12 +560,15 @@ export class SQLiteStore {
       exclude_saturdays: Boolean(row.exclude_saturdays),
       exclude_sundays: Boolean(row.exclude_sundays),
       exclude_holidays: Boolean(row.exclude_holidays),
-      require_curing_before_cutoff: Boolean(row.require_curing_before_cutoff)
+      require_curing_before_cutoff: Boolean(row.require_curing_before_cutoff),
+      telegram_chat_id: row.telegram_chat_id ? String(row.telegram_chat_id) : null,
+      google_calendar_id: row.google_calendar_id ? String(row.google_calendar_id) : null,
+      google_calendar_enabled: Boolean(row.google_calendar_enabled)
     };
   }
 
-  updateAppSettings(data: Partial<AppSettings>): AppSettings {
-    const current = this.getAppSettings();
+  updateAppSettings(userId: number, data: Partial<AppSettings>): AppSettings {
+    const current = this.getAppSettings(userId);
     const updated = { ...current, ...data };
 
     this.db.prepare(
@@ -386,8 +588,11 @@ export class SQLiteStore {
         exclude_saturdays = ?,
         exclude_sundays = ?,
         exclude_holidays = ?,
-        require_curing_before_cutoff = ?
-      WHERE id = 1;`
+        require_curing_before_cutoff = ?,
+        telegram_chat_id = ?,
+        google_calendar_id = ?,
+        google_calendar_enabled = ?
+      WHERE user_id = ?;`
     ).run(
       updated.operational_start_hour,
       updated.operational_end_hour,
@@ -404,15 +609,35 @@ export class SQLiteStore {
       updated.exclude_saturdays ? 1 : 0,
       updated.exclude_sundays ? 1 : 0,
       updated.exclude_holidays ? 1 : 0,
-      updated.require_curing_before_cutoff ? 1 : 0
+      updated.require_curing_before_cutoff ? 1 : 0,
+      updated.telegram_chat_id ? String(updated.telegram_chat_id).trim() : null,
+      updated.google_calendar_id ? String(updated.google_calendar_id).trim() : null,
+      updated.google_calendar_enabled ? 1 : 0,
+      userId
     );
 
     return updated;
   }
 
+  getUserByTelegramChatId(telegramChatId: string | number): { id: number; email: string } | undefined {
+    if (telegramChatId === undefined || telegramChatId === null || telegramChatId === "") return undefined;
+    const chatStr = String(telegramChatId).trim();
+    if (!chatStr) return undefined;
+
+    const row = this.db.prepare(`
+      SELECT u.id, u.email
+      FROM users u
+      JOIN app_settings s ON s.user_id = u.id
+      WHERE CAST(s.telegram_chat_id AS TEXT) = ?
+    `).get(chatStr) as any;
+
+    if (!row) return undefined;
+    return { id: Number(row.id), email: String(row.email) };
+  }
+
   // --- PROJECTS ---
-  getProjects(): Project[] {
-    const rows = this.db.prepare("SELECT * FROM projects ORDER BY id ASC").all() as any[];
+  getProjects(userId: number): Project[] {
+    const rows = this.db.prepare("SELECT * FROM projects WHERE user_id = ? ORDER BY id ASC").all(userId) as any[];
     return rows.map(row => ({
       id: Number(row.id),
       name: String(row.name),
@@ -421,21 +646,24 @@ export class SQLiteStore {
     }));
   }
 
-  getActiveProject(): Project {
-    const projects = this.getProjects();
+  getActiveProject(userId: number): Project {
+    const projects = this.getProjects(userId);
     const active = projects.find(p => p.is_active);
     if (active) return active;
     if (projects.length > 0) return projects[0];
 
-    this.db.prepare("INSERT INTO projects (name, description, is_active) VALUES ('Taller Principal', 'Proyecto por defecto', 1)").run();
-    return { id: 1, name: "Taller Principal", description: "Proyecto por defecto", is_active: true };
+    const info = this.db.prepare(
+      "INSERT INTO projects (user_id, name, description, is_active) VALUES (?, 'Taller Principal', 'Proyecto por defecto', 1)"
+    ).run(userId);
+    return { id: Number(info.lastInsertRowid), name: "Taller Principal", description: "Proyecto por defecto", is_active: true };
   }
 
-  addProject(name: string, description?: string): Project {
-    this.db.prepare("UPDATE projects SET is_active = 0").run();
-    this.db.prepare("INSERT INTO projects (name, description, is_active) VALUES (?, ?, 1)").run(name, description || "");
-    const projects = this.getProjects();
-    return projects[projects.length - 1];
+  addProject(userId: number, name: string, description?: string): Project {
+    this.db.prepare("UPDATE projects SET is_active = 0 WHERE user_id = ?").run(userId);
+    const info = this.db.prepare(
+      "INSERT INTO projects (user_id, name, description, is_active) VALUES (?, ?, ?, 1)"
+    ).run(userId, name, description || "");
+    return { id: Number(info.lastInsertRowid), name, description: description || "", is_active: true };
   }
 
   // --- TASKS ---
@@ -460,30 +688,36 @@ export class SQLiteStore {
     };
   }
 
-  getTasks(): Task[] {
-    const rows = this.db.prepare("SELECT * FROM tasks ORDER BY order_num ASC, id ASC").all();
+  getTasks(userId: number): Task[] {
+    const rows = this.db.prepare("SELECT * FROM tasks WHERE user_id = ? ORDER BY order_num ASC, id ASC").all(userId);
     return rows.map(row => this.rowToTask(row));
   }
 
-  getPendingTasks(projectId?: number): Task[] {
-    const pId = projectId ?? this.getActiveProject().id;
-    return this.getPendingTasksForProject(pId);
+  getPendingTasks(userId: number, projectId?: number): Task[] {
+    const pId = projectId ?? this.getActiveProject(userId).id;
+    return this.getPendingTasksForProject(userId, pId);
   }
 
-  getPendingTasksForProject(projectId: number): Task[] {
+  getPendingTasksForProject(userId: number, projectId: number): Task[] {
     const rows = this.db.prepare(
-      "SELECT * FROM tasks WHERE project_id = ? AND status != 'completed' ORDER BY order_num ASC, id ASC"
-    ).all(projectId);
+      "SELECT * FROM tasks WHERE user_id = ? AND project_id = ? AND status != 'completed' ORDER BY order_num ASC, id ASC"
+    ).all(userId, projectId);
     return rows.map(row => this.rowToTask(row));
   }
 
-  getTask(id: number): Task | null {
+  getTask(userId: number, id: number): Task | null {
+    const row = this.db.prepare("SELECT * FROM tasks WHERE id = ? AND user_id = ?").get(id, userId);
+    if (!row) return null;
+    return this.rowToTask(row);
+  }
+
+  getTaskGlobal(id: number): Task | null {
     const row = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
     if (!row) return null;
     return this.rowToTask(row);
   }
 
-  addTask(taskData: {
+  addTask(userId: number, taskData: {
     project_id?: number;
     title: string;
     description?: string;
@@ -492,7 +726,7 @@ export class SQLiteStore {
     curing_hours?: number;
     order?: number;
   }): Task {
-    const activeProject = this.getActiveProject();
+    const activeProject = this.getActiveProject(userId);
     const pId = taskData.project_id || activeProject.id;
     const cat = taskData.category || TaskCategory.CARPENTRY;
     const est = taskData.estimated_hours !== undefined ? taskData.estimated_hours : 1.0;
@@ -507,21 +741,59 @@ export class SQLiteStore {
 
     let ord = taskData.order;
     if (ord === undefined) {
-      const maxRow = this.db.prepare("SELECT MAX(order_num) as max_ord FROM tasks WHERE project_id = ?").get(pId) as any;
+      const maxRow = this.db.prepare("SELECT MAX(order_num) as max_ord FROM tasks WHERE user_id = ? AND project_id = ?").get(userId, pId) as any;
       ord = (maxRow && maxRow.max_ord != null ? Number(maxRow.max_ord) : 0) + 1;
     }
 
     const info = this.db.prepare(
-      `INSERT INTO tasks (project_id, title, description, category, estimated_hours, curing_hours, requires_curing, status, progress_percentage, order_num)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?);`
-    ).run(pId, taskData.title, taskData.description || "", cat, est, cur, reqCurInt, ord);
+      `INSERT INTO tasks (user_id, project_id, title, description, category, estimated_hours, curing_hours, requires_curing, status, progress_percentage, order_num)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?);`
+    ).run(userId, pId, taskData.title, taskData.description || "", cat, est, cur, reqCurInt, ord);
 
     const createdId = Number(info.lastInsertRowid);
-    return this.getTask(createdId)!;
+    return this.getTask(userId, createdId)!;
   }
 
-  updateTask(id: number, data: Partial<Task>): Task | null {
-    const existing = this.getTask(id);
+  updateTask(userId: number, id: number, data: Partial<Task>): Task | null {
+    const existing = this.getTask(userId, id);
+    if (!existing) return null;
+
+    const updated = { ...existing, ...data };
+    const reqCurInt = computeRequiresCuring(updated.category, updated.curing_hours) ? 1 : 0;
+
+    this.db.prepare(
+      `UPDATE tasks SET
+        title = ?,
+        description = ?,
+        category = ?,
+        estimated_hours = ?,
+        curing_hours = ?,
+        requires_curing = ?,
+        status = ?,
+        progress_percentage = ?,
+        order_num = ?,
+        completed_at = ?
+      WHERE id = ? AND user_id = ?;`
+    ).run(
+      updated.title,
+      updated.description || "",
+      updated.category,
+      updated.estimated_hours,
+      updated.curing_hours,
+      reqCurInt,
+      updated.status,
+      updated.progress_percentage,
+      updated.order,
+      updated.completed_at ? String(updated.completed_at) : null,
+      id,
+      userId
+    );
+
+    return this.getTask(userId, id);
+  }
+
+  updateTaskGlobal(id: number, data: Partial<Task>): Task | null {
+    const existing = this.getTaskGlobal(id);
     if (!existing) return null;
 
     const updated = { ...existing, ...data };
@@ -554,67 +826,69 @@ export class SQLiteStore {
       id
     );
 
-    return this.getTask(id);
+    return this.getTaskGlobal(id);
   }
 
-  deleteTask(id: number): boolean {
-    this.db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
-    return true;
+  deleteTask(userId: number, id: number): boolean {
+    const res = this.db.prepare("DELETE FROM tasks WHERE id = ? AND user_id = ?").run(id, userId);
+    return res.changes > 0;
   }
 
-  moveTaskUp(id: number): boolean {
-    const task = this.getTask(id);
+  moveTaskUp(userId: number, id: number): boolean {
+    const task = this.getTask(userId, id);
     if (!task) return false;
 
-    const pending = this.getPendingTasksForProject(task.project_id);
+    const pending = this.getPendingTasksForProject(userId, task.project_id);
     const idx = pending.findIndex(t => t.id === id);
     if (idx <= 0) return false;
 
     const prevTask = pending[idx - 1];
     const tempOrder = task.order;
-    this.updateTask(task.id, { order: prevTask.order });
-    this.updateTask(prevTask.id, { order: tempOrder });
+    this.updateTask(userId, task.id, { order: prevTask.order });
+    this.updateTask(userId, prevTask.id, { order: tempOrder });
     return true;
   }
 
-  moveTaskDown(id: number): boolean {
-    const task = this.getTask(id);
+  moveTaskDown(userId: number, id: number): boolean {
+    const task = this.getTask(userId, id);
     if (!task) return false;
 
-    const pending = this.getPendingTasksForProject(task.project_id);
+    const pending = this.getPendingTasksForProject(userId, task.project_id);
     const idx = pending.findIndex(t => t.id === id);
     if (idx < 0 || idx >= pending.length - 1) return false;
 
     const nextTask = pending[idx + 1];
     const tempOrder = task.order;
-    this.updateTask(task.id, { order: nextTask.order });
-    this.updateTask(nextTask.id, { order: tempOrder });
+    this.updateTask(userId, task.id, { order: nextTask.order });
+    this.updateTask(userId, nextTask.id, { order: tempOrder });
     return true;
   }
 
-  reorderTasks(taskIds: number[]): boolean {
-    const stmt = this.db.prepare("UPDATE tasks SET order_num = ? WHERE id = ?");
+  reorderTasks(userId: number, taskIds: number[]): boolean {
+    const stmt = this.db.prepare("UPDATE tasks SET order_num = ? WHERE id = ? AND user_id = ?");
     const transaction = this.db.transaction((ids: number[]) => {
       ids.forEach((id, index) => {
-        stmt.run(index + 1, id);
+        stmt.run(index + 1, id, userId);
       });
     });
     transaction(taskIds);
     return true;
   }
 
-  getRecentCompletedHistory(): Task[] {
-    const rows = this.db.prepare("SELECT * FROM tasks WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 10").all();
+  getRecentCompletedHistory(userId: number): Task[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM tasks WHERE user_id = ? AND status = 'completed' ORDER BY completed_at DESC LIMIT 10"
+    ).all(userId);
     return rows.map(r => this.rowToTask(r));
   }
 
-  getCompletedRecently(): Task[] {
-    return this.getRecentCompletedHistory();
+  getCompletedRecently(userId: number): Task[] {
+    return this.getRecentCompletedHistory(userId);
   }
 
   // --- FAVORITES ---
-  getFavoriteTasks(): FavoriteTask[] {
-    const rows = this.db.prepare("SELECT * FROM favorites ORDER BY id ASC").all() as any[];
+  getFavoriteTasks(userId: number): FavoriteTask[] {
+    const rows = this.db.prepare("SELECT * FROM favorites WHERE user_id = ? ORDER BY id ASC").all(userId) as any[];
     return rows.map(row => ({
       id: Number(row.id),
       title: String(row.title),
@@ -624,32 +898,32 @@ export class SQLiteStore {
     }));
   }
 
-  addFavoriteTask(data: Partial<FavoriteTask>): FavoriteTask {
+  addFavoriteTask(userId: number, data: Partial<FavoriteTask>): FavoriteTask {
     const title = data.title || "Favorito";
     const cat = data.category || TaskCategory.CARPENTRY;
     const est = data.estimated_hours || 1.0;
     const cur = data.curing_hours || 0.0;
 
     const info = this.db.prepare(
-      "INSERT INTO favorites (title, category, estimated_hours, curing_hours) VALUES (?, ?, ?, ?);"
-    ).run(title, cat, est, cur);
+      "INSERT INTO favorites (user_id, title, category, estimated_hours, curing_hours) VALUES (?, ?, ?, ?, ?);"
+    ).run(userId, title, cat, est, cur);
 
-    const favs = this.getFavoriteTasks();
+    const favs = this.getFavoriteTasks(userId);
     return favs.find(f => f.id === Number(info.lastInsertRowid)) || favs[favs.length - 1];
   }
 
-  deleteFavoriteTask(id: number): boolean {
-    this.db.prepare("DELETE FROM favorites WHERE id = ?").run(id);
-    return true;
+  deleteFavoriteTask(userId: number, id: number): boolean {
+    const res = this.db.prepare("DELETE FROM favorites WHERE id = ? AND user_id = ?").run(id, userId);
+    return res.changes > 0;
   }
 
-  deleteFavorite(id: number): boolean {
-    return this.deleteFavoriteTask(id);
+  deleteFavorite(userId: number, id: number): boolean {
+    return this.deleteFavoriteTask(userId, id);
   }
 
   // --- DAY OVERRIDES ---
-  getDayOverride(overrideDate: string): DayOverride | undefined {
-    const row = this.db.prepare("SELECT * FROM day_overrides WHERE override_date = ?").get(overrideDate) as any;
+  getDayOverride(userId: number, overrideDate: string): DayOverride | undefined {
+    const row = this.db.prepare("SELECT * FROM day_overrides WHERE user_id = ? AND override_date = ?").get(userId, overrideDate) as any;
     if (!row) return undefined;
 
     return {
@@ -665,6 +939,7 @@ export class SQLiteStore {
   }
 
   saveDayOverride(
+    userId: number,
     overrideDate: string,
     data: {
       force_status?: "VIABLE" | "BLOCKED" | null;
@@ -682,7 +957,7 @@ export class SQLiteStore {
     }
 
     const nowIso = new Date().toISOString();
-    const existing = this.getDayOverride(overrideDate);
+    const existing = this.getDayOverride(userId, overrideDate);
 
     if (existing) {
       this.db.prepare(
@@ -693,7 +968,7 @@ export class SQLiteStore {
           removed_task_ids = ?,
           note = ?,
           updated_at = ?
-        WHERE override_date = ?;`
+        WHERE user_id = ? AND override_date = ?;`
       ).run(
         data.force_status || null,
         data.custom_start_hour ?? null,
@@ -701,13 +976,15 @@ export class SQLiteStore {
         removedStr,
         data.note || "",
         nowIso,
+        userId,
         overrideDate
       );
     } else {
       this.db.prepare(
-        `INSERT INTO day_overrides (override_date, force_status, custom_start_hour, custom_end_hour, removed_task_ids, note, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?);`
+        `INSERT INTO day_overrides (user_id, override_date, force_status, custom_start_hour, custom_end_hour, removed_task_ids, note, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?);`
       ).run(
+        userId,
         overrideDate,
         data.force_status || null,
         data.custom_start_hour ?? null,
@@ -718,21 +995,21 @@ export class SQLiteStore {
       );
     }
 
-    return this.getDayOverride(overrideDate)!;
+    return this.getDayOverride(userId, overrideDate)!;
   }
 
-  clearDayOverride(overrideDate: string): boolean {
-    this.db.prepare("DELETE FROM day_overrides WHERE override_date = ?").run(overrideDate);
-    return true;
+  clearDayOverride(userId: number, overrideDate: string): boolean {
+    const res = this.db.prepare("DELETE FROM day_overrides WHERE user_id = ? AND override_date = ?").run(userId, overrideDate);
+    return res.changes > 0;
   }
 
   // --- FORCED TASKS ---
-  getForcedTasksForDate(dateIso: string): { id: number; forced_id: number; task_id: number; forced_start_hour: number; task: Task }[] {
-    const rows = this.db.prepare("SELECT * FROM forced_tasks WHERE forced_date = ?").all(dateIso) as any[];
+  getForcedTasksForDate(userId: number, dateIso: string): { id: number; forced_id: number; task_id: number; forced_start_hour: number; task: Task }[] {
+    const rows = this.db.prepare("SELECT * FROM forced_tasks WHERE user_id = ? AND forced_date = ?").all(userId, dateIso) as any[];
     const output: { id: number; forced_id: number; task_id: number; forced_start_hour: number; task: Task }[] = [];
 
     for (const row of rows) {
-      const task = this.getTask(Number(row.task_id));
+      const task = this.getTask(userId, Number(row.task_id));
       if (task) {
         output.push({
           id: Number(row.id),
@@ -746,8 +1023,9 @@ export class SQLiteStore {
     return output;
   }
 
-  addForcedTask(dateIso: string, taskId: number, forcedStartHour: number): ForcedTask {
-    const info = this.db.prepare("INSERT INTO forced_tasks (forced_date, task_id, forced_start_hour) VALUES (?, ?, ?);").run(
+  addForcedTask(userId: number, dateIso: string, taskId: number, forcedStartHour: number): ForcedTask {
+    const info = this.db.prepare("INSERT INTO forced_tasks (user_id, forced_date, task_id, forced_start_hour) VALUES (?, ?, ?, ?);").run(
+      userId,
       dateIso,
       taskId,
       forcedStartHour
@@ -762,14 +1040,14 @@ export class SQLiteStore {
     };
   }
 
-  deleteForcedTask(id: number): boolean {
-    this.db.prepare("DELETE FROM forced_tasks WHERE id = ?").run(id);
-    return true;
+  deleteForcedTask(userId: number, id: number): boolean {
+    const res = this.db.prepare("DELETE FROM forced_tasks WHERE id = ? AND user_id = ?").run(id, userId);
+    return res.changes > 0;
   }
 
   // --- DAILY LOGS ---
-  getDailyLogByDate(evalDate: string): DailyLog | null {
-    const row = this.db.prepare("SELECT * FROM daily_logs WHERE eval_date = ?").get(evalDate) as any;
+  getDailyLogByDate(userId: number, evalDate: string): DailyLog | null {
+    const row = this.db.prepare("SELECT * FROM daily_logs WHERE user_id = ? AND eval_date = ?").get(userId, evalDate) as any;
     if (!row) return null;
 
     return {
@@ -796,12 +1074,41 @@ export class SQLiteStore {
     };
   }
 
-  getDailyLogById(id: number): DailyLog | null {
+  getDailyLogById(userId: number, id: number): DailyLog | null {
+    const row = this.db.prepare("SELECT * FROM daily_logs WHERE id = ? AND user_id = ?").get(id, userId) as any;
+    if (!row) return null;
+
+    return {
+      id: Number(row.id),
+      eval_date: String(row.eval_date),
+      status: row.status as DayStatus,
+      block_reason: row.block_reason || null,
+      window_start: row.window_start || null,
+      window_end: row.window_end || null,
+      net_work_hours: row.net_work_hours != null ? Number(row.net_work_hours) : null,
+      tasks_summary: row.tasks_summary || null,
+      scheduled_task_ids: row.scheduled_task_ids || null,
+      morning_climate_snapshot: row.morning_climate_snapshot || null,
+      telegram_notified: Boolean(row.telegram_notified),
+      calendar_created: Boolean(row.calendar_created),
+      checkin_sent: Boolean(row.checkin_sent),
+      checkin_resolved: Boolean(row.checkin_resolved),
+      weather_alert_sent: Boolean(row.weather_alert_sent),
+      weather_alert_acknowledged: Boolean(row.weather_alert_acknowledged),
+      weather_alert_retry_count: Number(row.weather_alert_retry_count || 0),
+      weather_alert_last_sent_at: row.weather_alert_last_sent_at || null,
+      weather_alert_message: row.weather_alert_message || null,
+      updated_at: String(row.updated_at)
+    };
+  }
+
+  getDailyLogByIdGlobal(id: number): (DailyLog & { user_id: number }) | null {
     const row = this.db.prepare("SELECT * FROM daily_logs WHERE id = ?").get(id) as any;
     if (!row) return null;
 
     return {
       id: Number(row.id),
+      user_id: Number(row.user_id),
       eval_date: String(row.eval_date),
       status: row.status as DayStatus,
       block_reason: row.block_reason || null,
@@ -824,23 +1131,24 @@ export class SQLiteStore {
     };
   }
 
-  saveDailyLog(logData: Partial<DailyLog> & { eval_date: string; status: DayStatus }): DailyLog {
+  saveDailyLog(userId: number, logData: Partial<DailyLog> & { eval_date: string; status: DayStatus }): DailyLog {
     const nowIso = new Date().toISOString();
-    const existing = this.getDailyLogByDate(logData.eval_date);
+    const existing = this.getDailyLogByDate(userId, logData.eval_date);
 
     if (existing) {
-      return this.updateDailyLog(existing.id, logData)!;
+      return this.updateDailyLog(userId, existing.id, logData)!;
     }
 
     this.db.prepare(
       `INSERT INTO daily_logs (
-        eval_date, status, block_reason, window_start, window_end, net_work_hours,
+        user_id, eval_date, status, block_reason, window_start, window_end, net_work_hours,
         tasks_summary, scheduled_task_ids, morning_climate_snapshot,
         telegram_notified, calendar_created, checkin_sent, checkin_resolved,
         weather_alert_sent, weather_alert_acknowledged, weather_alert_retry_count,
         weather_alert_last_sent_at, weather_alert_message, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
     ).run(
+      userId,
       logData.eval_date,
       logData.status,
       logData.block_reason || null,
@@ -862,11 +1170,64 @@ export class SQLiteStore {
       nowIso
     );
 
-    return this.getDailyLogByDate(logData.eval_date)!;
+    return this.getDailyLogByDate(userId, logData.eval_date)!;
   }
 
-  updateDailyLog(id: number, data: Partial<DailyLog>): DailyLog | null {
-    const existing = this.getDailyLogById(id);
+  updateDailyLog(userId: number, id: number, data: Partial<DailyLog>): DailyLog | null {
+    const existing = this.getDailyLogById(userId, id);
+    if (!existing) return null;
+
+    const updated = { ...existing, ...data, updated_at: new Date().toISOString() };
+
+    this.db.prepare(
+      `UPDATE daily_logs SET
+        status = ?,
+        block_reason = ?,
+        window_start = ?,
+        window_end = ?,
+        net_work_hours = ?,
+        tasks_summary = ?,
+        scheduled_task_ids = ?,
+        morning_climate_snapshot = ?,
+        telegram_notified = ?,
+        calendar_created = ?,
+        checkin_sent = ?,
+        checkin_resolved = ?,
+        weather_alert_sent = ?,
+        weather_alert_acknowledged = ?,
+        weather_alert_retry_count = ?,
+        weather_alert_last_sent_at = ?,
+        weather_alert_message = ?,
+        updated_at = ?
+      WHERE id = ? AND user_id = ?;`
+    ).run(
+      updated.status,
+      updated.block_reason || null,
+      updated.window_start || null,
+      updated.window_end || null,
+      updated.net_work_hours ?? null,
+      updated.tasks_summary || null,
+      updated.scheduled_task_ids || null,
+      updated.morning_climate_snapshot || null,
+      updated.telegram_notified ? 1 : 0,
+      updated.calendar_created ? 1 : 0,
+      updated.checkin_sent ? 1 : 0,
+      updated.checkin_resolved ? 1 : 0,
+      updated.weather_alert_sent ? 1 : 0,
+      updated.weather_alert_acknowledged ? 1 : 0,
+      updated.weather_alert_retry_count,
+      updated.weather_alert_last_sent_at || null,
+      updated.weather_alert_message || null,
+      updated.updated_at,
+      id,
+      userId
+    );
+
+    return this.getDailyLogById(userId, id);
+  }
+
+  updateDailyLogGlobal(id: number, data: Partial<DailyLog>): DailyLog | null {
+    const existing = this.getDailyLogByIdGlobal(id);
     if (!existing) return null;
 
     const updated = { ...existing, ...data, updated_at: new Date().toISOString() };
@@ -914,38 +1275,12 @@ export class SQLiteStore {
       id
     );
 
-    return this.getDailyLogById(id);
-  }
-
-  getUnnotifiedDailyLogs(): DailyLog[] {
-    const rows = this.db.prepare("SELECT * FROM daily_logs WHERE telegram_notified = 0").all() as any[];
-    return rows.map(row => ({
-      id: Number(row.id),
-      eval_date: String(row.eval_date),
-      status: row.status as DayStatus,
-      block_reason: row.block_reason || null,
-      window_start: row.window_start || null,
-      window_end: row.window_end || null,
-      net_work_hours: row.net_work_hours != null ? Number(row.net_work_hours) : null,
-      tasks_summary: row.tasks_summary || null,
-      scheduled_task_ids: row.scheduled_task_ids || null,
-      morning_climate_snapshot: row.morning_climate_snapshot || null,
-      telegram_notified: Boolean(row.telegram_notified),
-      calendar_created: Boolean(row.calendar_created),
-      checkin_sent: Boolean(row.checkin_sent),
-      checkin_resolved: Boolean(row.checkin_resolved),
-      weather_alert_sent: Boolean(row.weather_alert_sent),
-      weather_alert_acknowledged: Boolean(row.weather_alert_acknowledged),
-      weather_alert_retry_count: Number(row.weather_alert_retry_count || 0),
-      weather_alert_last_sent_at: row.weather_alert_last_sent_at || null,
-      weather_alert_message: row.weather_alert_message || null,
-      updated_at: String(row.updated_at)
-    }));
+    return this.getDailyLogByIdGlobal(id);
   }
 
   // --- PROJECT TEMPLATES ---
-  getProjectTemplates(): ProjectTemplate[] {
-    const rows = this.db.prepare("SELECT * FROM project_templates ORDER BY id DESC").all() as any[];
+  getProjectTemplates(userId: number): ProjectTemplate[] {
+    const rows = this.db.prepare("SELECT * FROM project_templates WHERE user_id = ? ORDER BY id DESC").all(userId) as any[];
     const templates: ProjectTemplate[] = rows.map(row => ({
       id: Number(row.id),
       name: String(row.name),
@@ -955,14 +1290,14 @@ export class SQLiteStore {
     }));
 
     templates.forEach(t => {
-      t.items = this.getProjectTemplateItems(t.id);
+      t.items = this.getProjectTemplateItems(userId, t.id);
     });
 
     return templates;
   }
 
-  getProjectTemplate(id: number): ProjectTemplate | null {
-    const row = this.db.prepare("SELECT * FROM project_templates WHERE id = ?").get(id) as any;
+  getProjectTemplate(userId: number, id: number): ProjectTemplate | null {
+    const row = this.db.prepare("SELECT * FROM project_templates WHERE id = ? AND user_id = ?").get(id, userId) as any;
     if (!row) return null;
 
     return {
@@ -970,12 +1305,14 @@ export class SQLiteStore {
       name: String(row.name),
       description: row.description || "",
       created_at: String(row.created_at),
-      items: this.getProjectTemplateItems(Number(row.id))
+      items: this.getProjectTemplateItems(userId, Number(row.id))
     };
   }
 
-  getProjectTemplateItems(templateId: number): ProjectTemplateItem[] {
-    const rows = this.db.prepare("SELECT * FROM project_template_items WHERE template_id = ? ORDER BY order_num ASC").all(templateId) as any[];
+  getProjectTemplateItems(userId: number, templateId: number): ProjectTemplateItem[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM project_template_items WHERE template_id = ? AND user_id = ? ORDER BY order_num ASC"
+    ).all(templateId, userId) as any[];
     return rows.map(row => ({
       id: Number(row.id),
       template_id: Number(row.template_id),
@@ -988,12 +1325,13 @@ export class SQLiteStore {
     }));
   }
 
-  createProjectTemplateFromBacklog(name: string, description?: string, projectId?: number): ProjectTemplate {
-    const pId = projectId ?? this.getActiveProject().id;
-    const pendingTasks = this.getPendingTasksForProject(pId);
+  createProjectTemplateFromBacklog(userId: number, name: string, description?: string, projectId?: number): ProjectTemplate {
+    const pId = projectId ?? this.getActiveProject(userId).id;
+    const pendingTasks = this.getPendingTasksForProject(userId, pId);
     const nowIso = new Date().toISOString();
 
-    const info = this.db.prepare("INSERT INTO project_templates (name, description, created_at) VALUES (?, ?, ?);").run(
+    const info = this.db.prepare("INSERT INTO project_templates (user_id, name, description, created_at) VALUES (?, ?, ?, ?);").run(
+      userId,
       name,
       description || "",
       nowIso
@@ -1001,12 +1339,13 @@ export class SQLiteStore {
     const templateId = Number(info.lastInsertRowid);
 
     const itemStmt = this.db.prepare(
-      `INSERT INTO project_template_items (template_id, title, description, category, estimated_hours, curing_hours, order_num)
-       VALUES (?, ?, ?, ?, ?, ?, ?);`
+      `INSERT INTO project_template_items (user_id, template_id, title, description, category, estimated_hours, curing_hours, order_num)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?);`
     );
 
     pendingTasks.forEach((t, idx) => {
       itemStmt.run(
+        userId,
         templateId,
         t.title,
         t.description || "",
@@ -1017,20 +1356,20 @@ export class SQLiteStore {
       );
     });
 
-    return this.getProjectTemplate(templateId)!;
+    return this.getProjectTemplate(userId, templateId)!;
   }
 
-  applyProjectTemplate(templateId: number, projectId?: number): Task[] {
-    const template = this.getProjectTemplate(templateId);
+  applyProjectTemplate(userId: number, templateId: number, projectId?: number): Task[] {
+    const template = this.getProjectTemplate(userId, templateId);
     if (!template || !template.items || template.items.length === 0) return [];
 
-    const pId = projectId ?? this.getActiveProject().id;
-    const currentTasks = this.getPendingTasksForProject(pId);
+    const pId = projectId ?? this.getActiveProject(userId).id;
+    const currentTasks = this.getPendingTasksForProject(userId, pId);
     const maxOrder = currentTasks.reduce((max, t) => Math.max(max, t.order), 0);
 
     const addedTasks: Task[] = [];
     template.items.forEach((item, idx) => {
-      const newTask = this.addTask({
+      const newTask = this.addTask(userId, {
         project_id: pId,
         title: item.title,
         description: item.description,
@@ -1045,10 +1384,10 @@ export class SQLiteStore {
     return addedTasks;
   }
 
-  deleteProjectTemplate(id: number): boolean {
-    this.db.prepare("DELETE FROM project_template_items WHERE template_id = ?").run(id);
-    this.db.prepare("DELETE FROM project_templates WHERE id = ?").run(id);
-    return true;
+  deleteProjectTemplate(userId: number, id: number): boolean {
+    this.db.prepare("DELETE FROM project_template_items WHERE template_id = ? AND user_id = ?").run(id, userId);
+    const res = this.db.prepare("DELETE FROM project_templates WHERE id = ? AND user_id = ?").run(id, userId);
+    return res.changes > 0;
   }
 
   // Backup database using SQLite native VACUUM INTO
@@ -1062,6 +1401,17 @@ export class SQLiteStore {
   }
 
   // Users Management
+  getAllUsers(): User[] {
+    const rows = this.db.prepare("SELECT * FROM users ORDER BY id ASC").all() as any[];
+    return rows.map(row => ({
+      id: Number(row.id),
+      email: String(row.email),
+      password_hash: String(row.password_hash),
+      must_change_password: Boolean(row.must_change_password),
+      created_at: String(row.created_at)
+    }));
+  }
+
   getUserByEmail(email: string): User | null {
     const row = this.db.prepare("SELECT * FROM users WHERE LOWER(email) = LOWER(?)").get(email.trim()) as any;
     if (!row) return null;
