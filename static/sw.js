@@ -1,7 +1,9 @@
-const CACHE_NAME = 'workshop-os-v2';
+const CACHE_NAME = 'workshop-os-v3';
 const PRECACHE_ASSETS = [
   '/',
   '/manifest.json',
+  '/static/icons/icon-192.png',
+  '/static/icons/icon-512.png',
   '/static/icons/icon.svg',
   '/static/icons/screenshot-narrow.svg',
   '/static/icons/screenshot-wide.svg'
