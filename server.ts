@@ -4,7 +4,7 @@ import { initDatabase, store, closeDatabase } from './src/db.js';
 import { evaluateDayWithOverrides } from './src/evaluator.js';
 import { getHourlyForecast, getWeeklyForecast, MockWeatherService } from './src/weatherService.js';
 import { getHolidayDatesForRange } from './src/holidaysService.js';
-import { formatDateShortEs } from './src/dateUtils.js';
+import { formatDateShortEs, getLocalDateIso, getWorkshopLocalTime, getTimezoneByCoords } from './src/dateUtils.js';
 import { TaskCategory, TaskStatus, Task } from './src/types.js';
 import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick } from './src/scheduler.js';
 import { TelegramBotService } from './src/telegramBot.js';
@@ -227,8 +227,9 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     const tasks = store.getPendingTasks(userId, activeProject.id);
     let simulatedPendingTasks = [...tasks];
 
+    const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || 'America/Santiago';
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = getLocalDateIso(today, userTz);
 
     // Holidays
     let holidayDates = new Set<string>();
@@ -301,6 +302,7 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     const completedHistory = store.getCompletedRecently(userId);
     const favorites = store.getFavoriteTasks(userId);
     const projectTemplates = store.getProjectTemplates(userId);
+    const localTimeInfo = getWorkshopLocalTime(new Date(), appSettings.timezone);
 
     res.render('index', {
       project: activeProject,
@@ -311,6 +313,7 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
       category_labels: CATEGORY_LABELS,
       status_labels: STATUS_LABELS,
       app_settings: appSettings,
+      local_time_info: localTimeInfo,
       completed_history: completedHistory,
       favorites,
       project_templates: projectTemplates
@@ -654,6 +657,22 @@ app.post('/evaluation/force_checkin', async (req: AuthenticatedRequest, res) => 
   res.redirect(303, '/');
 });
 
+app.get('/api/timezone', (req: AuthenticatedRequest, res) => {
+  const lat = parseFloat(req.query.lat as string);
+  const lon = parseFloat(req.query.lon as string);
+  if (isNaN(lat) || isNaN(lon)) {
+    return res.status(400).json({ error: 'Latitud y longitud no válidos' });
+  }
+  const tz = getTimezoneByCoords(lat, lon);
+  const timeInfo = getWorkshopLocalTime(new Date(), tz);
+  res.json({
+    timezone: tz,
+    time_str: timeInfo.timeStr,
+    date_iso: timeInfo.dateIso,
+    formatted_display: `${timeInfo.timeStr} (${tz})`
+  });
+});
+
 app.post('/settings/update', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
   const body = req.body;
@@ -663,6 +682,7 @@ app.post('/settings/update', (req: AuthenticatedRequest, res) => {
     max_humidity_percent: parseFloat(body.max_humidity_percent) || 80.0,
     latitude: parseFloat(body.latitude) || -32.99,
     longitude: parseFloat(body.longitude) || -71.27,
+    timezone: body.timezone ? String(body.timezone).trim() : undefined,
     setup_hours: parseFloat(body.setup_hours) || 1.0,
     teardown_hours: parseFloat(body.teardown_hours) || 1.0,
     min_work_hours: parseFloat(body.min_work_hours) || 1.0,
@@ -694,7 +714,8 @@ app.post('/calendar/create', async (req: AuthenticatedRequest, res) => {
     });
   }
 
-  const dateIso = eval_date || new Date().toISOString().split('T')[0];
+  const userTz = (settings as any)?.timezone || process.env.TIMEZONE || 'America/Santiago';
+  const dateIso = eval_date || getLocalDateIso(new Date(), userTz);
   const dailyLog = store.getDailyLogByDate(userId, dateIso);
   let taskIds: number[] = [];
   if (dailyLog && dailyLog.scheduled_task_ids) {

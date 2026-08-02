@@ -17,6 +17,7 @@ import {
   ProjectTemplateItem
 } from "./types.js";
 import { hashPassword, verifyPassword } from "./auth.js";
+import { getTimezoneByCoords } from "./dateUtils.js";
 
 const DB_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(process.cwd(), "data");
 const DB_PATH = path.join(DB_DIR, "workshop.db");
@@ -289,6 +290,9 @@ export async function initDatabase(): Promise<Database.Database> {
   if (!currentAppSettingsCols.some(c => c.name === 'google_calendar_enabled')) {
     dbInstance.exec("ALTER TABLE app_settings ADD COLUMN google_calendar_enabled INTEGER NOT NULL DEFAULT 0;");
   }
+  if (!currentAppSettingsCols.some(c => c.name === 'timezone')) {
+    dbInstance.exec("ALTER TABLE app_settings ADD COLUMN timezone TEXT;");
+  }
 
   // Special migration for day_overrides (recreate for per-user UNIQUE constraint)
   const dayOverrideCols = dbInstance.prepare("PRAGMA table_info(day_overrides)").all() as any[];
@@ -554,12 +558,23 @@ export class SQLiteStore {
       googleCalId = process.env.GOOGLE_CALENDAR_ID.trim();
     }
 
+    const lat = Number(row.latitude);
+    const lon = Number(row.longitude);
+    const computedTz = getTimezoneByCoords(lat, lon);
+    const tz = row.timezone && String(row.timezone).trim() ? String(row.timezone).trim() : computedTz;
+
+    if (!row.timezone || String(row.timezone).trim() !== tz) {
+      try {
+        this.db.prepare("UPDATE app_settings SET timezone = ? WHERE user_id = ?").run(tz, userId);
+      } catch (_) {}
+    }
+
     return {
       operational_start_hour: Number(row.operational_start_hour),
       operational_end_hour: Number(row.operational_end_hour),
       max_humidity_percent: Number(row.max_humidity_percent),
-      latitude: Number(row.latitude),
-      longitude: Number(row.longitude),
+      latitude: lat,
+      longitude: lon,
       setup_hours: Number(row.setup_hours),
       teardown_hours: Number(row.teardown_hours),
       min_work_hours: Number(row.min_work_hours),
@@ -573,13 +588,20 @@ export class SQLiteStore {
       require_curing_before_cutoff: Boolean(row.require_curing_before_cutoff),
       telegram_chat_id: telegramChatId,
       google_calendar_id: googleCalId,
-      google_calendar_enabled: Boolean(row.google_calendar_enabled || (userId === 1 && process.env.GOOGLE_CALENDAR_ID))
+      google_calendar_enabled: Boolean(row.google_calendar_enabled || (userId === 1 && process.env.GOOGLE_CALENDAR_ID)),
+      timezone: tz
     };
   }
 
   updateAppSettings(userId: number, data: Partial<AppSettings>): AppSettings {
     const current = this.getAppSettings(userId);
     const updated = { ...current, ...data };
+
+    const updatedLat = Number(updated.latitude);
+    const updatedLon = Number(updated.longitude);
+    const computedTz = getTimezoneByCoords(updatedLat, updatedLon);
+    const tz = data.timezone && String(data.timezone).trim() ? String(data.timezone).trim() : computedTz;
+    updated.timezone = tz;
 
     this.db.prepare(
       `UPDATE app_settings SET
@@ -601,7 +623,8 @@ export class SQLiteStore {
         require_curing_before_cutoff = ?,
         telegram_chat_id = ?,
         google_calendar_id = ?,
-        google_calendar_enabled = ?
+        google_calendar_enabled = ?,
+        timezone = ?
       WHERE user_id = ?;`
     ).run(
       updated.operational_start_hour,
@@ -623,6 +646,7 @@ export class SQLiteStore {
       updated.telegram_chat_id ? String(updated.telegram_chat_id).trim() : null,
       updated.google_calendar_id ? String(updated.google_calendar_id).trim() : null,
       updated.google_calendar_enabled ? 1 : 0,
+      updated.timezone,
       userId
     );
 

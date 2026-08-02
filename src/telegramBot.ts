@@ -251,178 +251,253 @@ export class TelegramBotService {
     return { status: "ok", message: "Message processed" };
   }
 
+  public async answerCallbackQuery(callbackQueryId: string, text?: string, showAlert: boolean = false): Promise<boolean> {
+    if (!callbackQueryId) return false;
+    return this.sendRequest("answerCallbackQuery", {
+      callback_query_id: callbackQueryId,
+      text,
+      show_alert: showAlert
+    });
+  }
+
   async processCallbackQuery(callbackQuery: any): Promise<{ status: string; message: string }> {
-    const cbId = callbackQuery.id;
-    const data: string = callbackQuery.data || "";
-    const message = callbackQuery.message || {};
+    const cbId = callbackQuery?.id;
+    const data: string = (callbackQuery?.data || "").trim();
+    const message = callbackQuery?.message || {};
     const messageId = message.message_id;
-    const rawChatId = (message.chat || {}).id || callbackQuery.from?.id || this.chatId;
+    const rawChatId = (message.chat || {}).id || callbackQuery?.from?.id || this.chatId;
     const chatStr = String(rawChatId).trim();
 
-    const user = store.getUserByTelegramChatId(chatStr);
-    if (!user) {
-      const replyBot = new TelegramBotService(this.token, chatStr);
-      await replyBot.sendRequest("sendMessage", {
-        chat_id: chatStr,
-        text: "Your Telegram account is not linked to any Workshop OS account. Please set your Telegram Chat ID in Workshop OS settings."
-      });
-      if (cbId) {
-        await replyBot.sendRequest("answerCallbackQuery", {
-          callback_query_id: cbId,
-          text: "Cuenta no vinculada."
-        });
-      }
-      return {
-        status: "unauthorized",
-        message: "Your Telegram account is not linked to any Workshop OS account. Please set your Telegram Chat ID in Workshop OS settings."
-      };
-    }
-
-    const userId = user.id;
-    const replyBot = new TelegramBotService(this.token, chatStr);
+    let cbAnswered = false;
     let responseText = "Actualizado";
+    let showAlert = false;
 
-    if (data.startsWith("chkall:")) {
-      const dailyLogId = parseInt(data.split(":")[1]);
-      const dailyLog = store.getDailyLogById(userId, dailyLogId);
-      if (dailyLog && !dailyLog.checkin_resolved) {
-        let taskIds: number[] = [];
-        try {
-          taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
-        } catch (_) {}
-        const nowIso = new Date().toISOString();
-        for (const tid of taskIds) {
-          const t = store.getTask(userId, tid);
-          if (t && t.status !== TaskStatus.COMPLETED) {
-            store.updateTask(userId, t.id, {
+    const replyBot = new TelegramBotService(this.token, chatStr);
+
+    try {
+      const user = store.getUserByTelegramChatId(chatStr);
+      if (!user) {
+        responseText = "No tienes permiso para modificar esta tarea";
+        showAlert = true;
+        if (cbId) {
+          await replyBot.answerCallbackQuery(cbId, responseText, true);
+          cbAnswered = true;
+        }
+        await replyBot.sendRequest("sendMessage", {
+          chat_id: chatStr,
+          text: "Su cuenta de Telegram no está vinculada a ningún usuario de Workshop OS."
+        });
+        return { status: "unauthorized", message: responseText };
+      }
+
+      const userId = user.id;
+
+      if (data.startsWith("task_complete:")) {
+        // Format: task_complete:<taskId> or task_complete:<taskId>:<userId>
+        const parts = data.split(":");
+        const taskId = parseInt(parts[1], 10);
+        const targetUserId = parts[2] ? parseInt(parts[2], 10) : userId;
+
+        if (isNaN(taskId)) {
+          responseText = "ID de tarea no válido";
+          showAlert = true;
+        } else if (targetUserId !== userId) {
+          responseText = "No tienes permiso para modificar esta tarea";
+          showAlert = true;
+        } else {
+          const task = store.getTask(userId, taskId);
+          if (!task || task.user_id !== userId) {
+            responseText = "No tienes permiso para modificar esta tarea";
+            showAlert = true;
+          } else {
+            const nowIso = new Date().toISOString();
+            store.updateTask(userId, task.id, {
               status: TaskStatus.COMPLETED,
               progress_percentage: 100,
               completed_at: nowIso
             });
-          }
-        }
-        store.updateDailyLog(userId, dailyLogId, { checkin_resolved: true });
-      }
-      responseText = "✅ Día completo. ¡Buen trabajo!";
-      if (messageId) {
-        await replyBot.editMessageText(chatStr, messageId, "✅ *Día completo.* ¡Buen trabajo!");
-      }
-    } else if (data.startsWith("chkpick:")) {
-      const dailyLogId = parseInt(data.split(":")[1]);
-      const dailyLog = store.getDailyLogById(userId, dailyLogId);
-      let taskIds: number[] = [];
-      if (dailyLog) {
-        try {
-          taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
-        } catch (_) {}
-      }
-      const scheduledTasks = taskIds.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null);
-      responseText = "Marca cuáles se completaron";
-      if (messageId && scheduledTasks.length > 0) {
-        const keyboard = this.buildPickerKeyboard(dailyLogId, scheduledTasks, new Set());
-        await replyBot.editMessageText(
-          chatStr,
-          messageId,
-          "🌙 *¿Cuáles tareas se completaron?*\nTócalas para marcar/desmarcar, luego *Confirmar*.",
-          keyboard
-        );
-      }
-    } else if (data.startsWith("chk:")) {
-      const parts = data.split(":");
-      const dailyLogId = parseInt(parts[1]);
-      const taskId = parseInt(parts[2]);
-
-      const currentKeyboard = (message.reply_markup || {}).inline_keyboard || [];
-      const checkedIds = new Set<number>();
-      const scheduledIdsInOrder: number[] = [];
-
-      for (const row of currentKeyboard) {
-        for (const btn of row) {
-          const cb = btn.callback_data || "";
-          if (cb.startsWith("chk:")) {
-            const tid = parseInt(cb.split(":")[2]);
-            scheduledIdsInOrder.push(tid);
-            if ((btn.text || "").startsWith("✅")) {
-              checkedIds.add(tid);
+            responseText = "✅ Tarea completada";
+            if (messageId) {
+              await replyBot.editMessageText(
+                chatStr,
+                messageId,
+                `✅ *Tarea completada:* ${task.title}`
+              );
             }
           }
         }
-      }
-
-      if (checkedIds.has(taskId)) {
-        checkedIds.delete(taskId);
-      } else {
-        checkedIds.add(taskId);
-      }
-
-      const scheduledTasks = scheduledIdsInOrder.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null);
-      responseText = "Marcado";
-      if (messageId) {
-        const keyboard = this.buildPickerKeyboard(dailyLogId, scheduledTasks, checkedIds);
-        await replyBot.editMessageKeyboard(chatStr, messageId, keyboard);
-      }
-    } else if (data.startsWith("chkconfirm:")) {
-      const dailyLogId = parseInt(data.split(":")[1]);
-      const currentKeyboard = (message.reply_markup || {}).inline_keyboard || [];
-      const checkedIds = new Set<number>();
-      const allIds: number[] = [];
-
-      for (const row of currentKeyboard) {
-        for (const btn of row) {
-          const cb = btn.callback_data || "";
-          if (cb.startsWith("chk:")) {
-            const tid = parseInt(cb.split(":")[2]);
-            allIds.push(tid);
-            if ((btn.text || "").startsWith("✅")) {
-              checkedIds.add(tid);
-            }
-          }
-        }
-      }
-
-      const nowIso = new Date().toISOString();
-      const completedTitles: string[] = [];
-      const pendingTitles: string[] = [];
-
-      for (const tid of allIds) {
-        const t = store.getTask(userId, tid);
-        if (!t) continue;
-        if (checkedIds.has(tid)) {
-          store.updateTask(userId, t.id, {
-            status: TaskStatus.COMPLETED,
-            progress_percentage: 100,
-            completed_at: nowIso
-          });
-          completedTitles.push(t.title);
+      } else if (data.startsWith("chkall:")) {
+        const dailyLogId = parseInt(data.split(":")[1], 10);
+        const dailyLog = store.getDailyLogById(userId, dailyLogId);
+        if (!dailyLog || dailyLog.user_id !== userId) {
+          responseText = "No tienes permiso para modificar esta tarea";
+          showAlert = true;
         } else {
-          pendingTitles.push(t.title);
+          if (!dailyLog.checkin_resolved) {
+            let taskIds: number[] = [];
+            try {
+              taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
+            } catch (_) {}
+            const nowIso = new Date().toISOString();
+            for (const tid of taskIds) {
+              const t = store.getTask(userId, tid);
+              if (t && t.user_id === userId && t.status !== TaskStatus.COMPLETED) {
+                store.updateTask(userId, t.id, {
+                  status: TaskStatus.COMPLETED,
+                  progress_percentage: 100,
+                  completed_at: nowIso
+                });
+              }
+            }
+            store.updateDailyLog(userId, dailyLogId, { checkin_resolved: true });
+          }
+          responseText = "✅ Día completo. ¡Buen trabajo!";
+          if (messageId) {
+            await replyBot.editMessageText(chatStr, messageId, "✅ *Día completo.* ¡Buen trabajo!");
+          }
+        }
+      } else if (data.startsWith("chkpick:")) {
+        const dailyLogId = parseInt(data.split(":")[1], 10);
+        const dailyLog = store.getDailyLogById(userId, dailyLogId);
+        if (!dailyLog || dailyLog.user_id !== userId) {
+          responseText = "No tienes permiso para modificar esta tarea";
+          showAlert = true;
+        } else {
+          let taskIds: number[] = [];
+          try {
+            taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
+          } catch (_) {}
+          const scheduledTasks = taskIds.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null && t.user_id === userId);
+          responseText = "Marca cuáles se completaron";
+          if (messageId && scheduledTasks.length > 0) {
+            const keyboard = this.buildPickerKeyboard(dailyLogId, scheduledTasks, new Set());
+            await replyBot.editMessageText(
+              chatStr,
+              messageId,
+              "🌙 *¿Cuáles tareas se completaron?*\nTócalas para marcar/desmarcar, luego *Confirmar*.",
+              keyboard
+            );
+          }
+        }
+      } else if (data.startsWith("chk:")) {
+        const parts = data.split(":");
+        const dailyLogId = parseInt(parts[1], 10);
+        const taskId = parseInt(parts[2], 10);
+
+        const dailyLog = store.getDailyLogById(userId, dailyLogId);
+        if (!dailyLog || dailyLog.user_id !== userId) {
+          responseText = "No tienes permiso para modificar esta tarea";
+          showAlert = true;
+        } else {
+          const currentKeyboard = (message.reply_markup || {}).inline_keyboard || [];
+          const checkedIds = new Set<number>();
+          const scheduledIdsInOrder: number[] = [];
+
+          for (const row of currentKeyboard) {
+            for (const btn of row) {
+              const cb = btn.callback_data || "";
+              if (cb.startsWith("chk:")) {
+                const tid = parseInt(cb.split(":")[2], 10);
+                if (!scheduledIdsInOrder.includes(tid)) scheduledIdsInOrder.push(tid);
+                if ((btn.text || "").startsWith("✅")) {
+                  checkedIds.add(tid);
+                }
+              }
+            }
+          }
+
+          if (checkedIds.has(taskId)) {
+            checkedIds.delete(taskId);
+          } else {
+            checkedIds.add(taskId);
+          }
+
+          const scheduledTasks = scheduledIdsInOrder.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null && t.user_id === userId);
+          responseText = "Marcado";
+          if (messageId) {
+            const keyboard = this.buildPickerKeyboard(dailyLogId, scheduledTasks, checkedIds);
+            await replyBot.editMessageKeyboard(chatStr, messageId, keyboard);
+          }
+        }
+      } else if (data.startsWith("chkconfirm:")) {
+        const dailyLogId = parseInt(data.split(":")[1], 10);
+        const dailyLog = store.getDailyLogById(userId, dailyLogId);
+        if (!dailyLog || dailyLog.user_id !== userId) {
+          responseText = "No tienes permiso para modificar esta tarea";
+          showAlert = true;
+        } else {
+          const currentKeyboard = (message.reply_markup || {}).inline_keyboard || [];
+          const checkedIds = new Set<number>();
+          const allIds: number[] = [];
+
+          for (const row of currentKeyboard) {
+            for (const btn of row) {
+              const cb = btn.callback_data || "";
+              if (cb.startsWith("chk:")) {
+                const tid = parseInt(cb.split(":")[2], 10);
+                if (!allIds.includes(tid)) allIds.push(tid);
+                if ((btn.text || "").startsWith("✅")) {
+                  checkedIds.add(tid);
+                }
+              }
+            }
+          }
+
+          const nowIso = new Date().toISOString();
+          const completedTitles: string[] = [];
+          const pendingTitles: string[] = [];
+
+          for (const tid of allIds) {
+            const t = store.getTask(userId, tid);
+            if (!t || t.user_id !== userId) continue;
+            if (checkedIds.has(tid)) {
+              store.updateTask(userId, t.id, {
+                status: TaskStatus.COMPLETED,
+                progress_percentage: 100,
+                completed_at: nowIso
+              });
+              completedTitles.push(t.title);
+            } else {
+              pendingTitles.push(t.title);
+            }
+          }
+
+          store.updateDailyLog(userId, dailyLogId, { checkin_resolved: true });
+          responseText = "Confirmado";
+
+          if (messageId) {
+            let summary = `✅ *Completadas:* ${completedTitles.length > 0 ? completedTitles.join(", ") : "ninguna"}\n`;
+            if (pendingTitles.length > 0) {
+              summary += `↩️ *Vuelven al backlog:* ${pendingTitles.join(", ")}`;
+            }
+            await replyBot.editMessageText(chatStr, messageId, summary);
+          }
+        }
+      } else if (data.startsWith("wxack:")) {
+        const dailyLogId = parseInt(data.split(":")[1], 10);
+        const dailyLog = store.getDailyLogById(userId, dailyLogId);
+        if (!dailyLog || dailyLog.user_id !== userId) {
+          responseText = "No tienes permiso para modificar esta tarea";
+          showAlert = true;
+        } else {
+          store.updateDailyLog(userId, dailyLogId, { weather_alert_acknowledged: true });
+          responseText = "✅ Confirmado, no se insiste más.";
+          if (messageId) {
+            await replyBot.editMessageText(chatStr, messageId, "✅ *Confirmado.* No se insiste más con esta alerta.");
+          }
         }
       }
-
-      store.updateDailyLog(userId, dailyLogId, { checkin_resolved: true });
-      responseText = "Confirmado";
-
-      if (messageId) {
-        let summary = `✅ *Completadas:* ${completedTitles.length > 0 ? completedTitles.join(", ") : "ninguna"}\n`;
-        if (pendingTitles.length > 0) {
-          summary += `↩️ *Vuelven al backlog:* ${pendingTitles.join(", ")}`;
+    } catch (err: any) {
+      console.error("[Telegram] Error processing callback query:", err);
+      responseText = "Error procesando solicitud";
+    } finally {
+      if (cbId && !cbAnswered) {
+        try {
+          await replyBot.answerCallbackQuery(cbId, responseText, showAlert);
+        } catch (e) {
+          console.error("[Telegram] Failed to answer callback query in finally block:", e);
         }
-        await replyBot.editMessageText(chatStr, messageId, summary);
       }
-    } else if (data.startsWith("wxack:")) {
-      const dailyLogId = parseInt(data.split(":")[1]);
-      store.updateDailyLog(userId, dailyLogId, { weather_alert_acknowledged: true });
-      responseText = "✅ Confirmado, no se insiste más.";
-      if (messageId) {
-        await replyBot.editMessageText(chatStr, messageId, "✅ *Confirmado.* No se insiste más con esta alerta.");
-      }
-    }
-
-    if (cbId) {
-      await replyBot.sendRequest("answerCallbackQuery", {
-        callback_query_id: cbId,
-        text: responseText
-      });
     }
 
     return { status: "ok", message: responseText };

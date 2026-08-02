@@ -5,19 +5,15 @@ import { getHolidayDatesForRange } from "./holidaysService.js";
 import { TelegramBotService } from "./telegramBot.js";
 import { calendarService } from "./calendarService.js";
 import { DayEvaluation, DayStatus, HourlyForecast, TaskStatus } from "./types.js";
+import { getLocalDateIso, getLocalHoursAndMinutes, getTargetTimeZone } from "./dateUtils.js";
 
-export function getLocalDateIso(d: Date = new Date()): string {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
+export { getLocalDateIso, getLocalHoursAndMinutes, getTargetTimeZone };
 
 export async function runMorningEvaluation(userId: number, targetDateIso?: string, mockScenario?: string): Promise<DayEvaluation> {
-  const todayIso = targetDateIso || getLocalDateIso();
-  console.log(`[Scheduler] Running Morning Evaluation for User #${userId} on ${todayIso}...`);
-
   const appSettings = store.getAppSettings(userId);
+  const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+  const todayIso = targetDateIso || getLocalDateIso(new Date(), userTz);
+  console.log(`[Scheduler] Running Morning Evaluation for User #${userId} on ${todayIso} (TZ: ${userTz})...`);
   const activeProject = store.getActiveProject(userId);
   const pendingTasks = store.getPendingTasks(userId, activeProject.id);
 
@@ -184,8 +180,10 @@ export async function runMorningEvaluation(userId: number, targetDateIso?: strin
 
 export async function processCheckinForUser(userId: number, nowDate?: Date, force: boolean = false): Promise<void> {
   const now = nowDate || new Date();
-  const todayIso = getLocalDateIso(now);
   const appSettings = store.getAppSettings(userId);
+  const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+  const todayIso = getLocalDateIso(now, userTz);
+  const localTime = getLocalHoursAndMinutes(now, userTz);
 
   const dailyLog = store.getDailyLogByDate(userId, todayIso);
   if (!dailyLog || dailyLog.status !== DayStatus.DAY_VIABLE) {
@@ -196,7 +194,7 @@ export async function processCheckinForUser(userId: number, nowDate?: Date, forc
     return;
   }
 
-  if (!force && now.getHours() < appSettings.checkin_hour) {
+  if (!force && localTime.hours < appSettings.checkin_hour) {
     return;
   }
 
@@ -250,8 +248,10 @@ export async function runCheckinTick(nowDate?: Date, force: boolean = false, tar
 
 export async function processWeatherAlertForUser(userId: number, nowDate?: Date): Promise<void> {
   const now = nowDate || new Date();
-  const todayIso = getLocalDateIso(now);
   const appSettings = store.getAppSettings(userId);
+  const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+  const todayIso = getLocalDateIso(now, userTz);
+  const localTime = getLocalHoursAndMinutes(now, userTz);
 
   const dailyLog = store.getDailyLogByDate(userId, todayIso);
   if (!dailyLog || dailyLog.status !== DayStatus.DAY_VIABLE || !dailyLog.window_start || !dailyLog.window_end) {
@@ -266,7 +266,7 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
   const [eH, eM] = dailyLog.window_end.split(":").map(Number);
   const windowStartH = sH + sM / 60.0;
   const windowEndH = eH + eM / 60.0;
-  const nowH = now.getHours() + now.getMinutes() / 60.0;
+  const nowH = localTime.totalHours;
 
   if (nowH < windowStartH || nowH > windowEndH) {
     return; // outside active work window
@@ -352,18 +352,21 @@ export async function runWeatherAlertTick(nowDate?: Date): Promise<void> {
 
 export async function runMorningEvalTick(nowDate?: Date): Promise<void> {
   const now = nowDate || new Date();
-  const todayIso = getLocalDateIso(now);
   const users = store.getAllUsers();
 
   for (const user of users) {
     try {
+      const appSettings = store.getAppSettings(user.id);
+      const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+      const todayIso = getLocalDateIso(now, userTz);
+      const localTime = getLocalHoursAndMinutes(now, userTz);
+
       const existingLog = store.getDailyLogByDate(user.id, todayIso);
       if (existingLog) continue; // already evaluated for this user
 
-      const appSettings = store.getAppSettings(user.id);
       const triggerHour = (appSettings.operational_start_hour - appSettings.morning_eval_lead_hours + 24) % 24;
 
-      if (now.getHours() < triggerHour) continue;
+      if (localTime.hours < triggerHour) continue;
 
       await runMorningEvaluation(user.id, todayIso);
     } catch (err) {

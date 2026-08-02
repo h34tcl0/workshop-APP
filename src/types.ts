@@ -44,6 +44,7 @@ export interface AppSettings {
   telegram_chat_id?: string | null;
   google_calendar_id?: string | null;
   google_calendar_enabled?: boolean;
+  timezone?: string | null;
 }
 
 export interface Project {

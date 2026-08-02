@@ -6,6 +6,8 @@ import { store } from "./db.js";
 export class GoogleCalendarService {
   private calendar: any = null;
   private calendarId: string;
+  public serviceAccountEmail: string | null = null;
+  private initError: string | null = null;
 
   constructor() {
     this.calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
@@ -13,32 +15,115 @@ export class GoogleCalendarService {
   }
 
   private init() {
-    const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || path.join(process.cwd(), "google-credentials.json");
-    if (!fs.existsSync(credPath)) {
-      return;
-    }
-
     try {
-      const rawData = fs.readFileSync(credPath, "utf8");
-      const credentials = JSON.parse(rawData);
+      let auth: any = null;
 
-      let auth: any;
-      if (credentials.type === "service_account") {
-        const jwt = google.auth.fromJSON(credentials) as any;
-        jwt.scopes = ["https://www.googleapis.com/auth/calendar"];
-        auth = jwt;
-      } else if (credentials.type === "authorized_user" || credentials.refresh_token) {
-        auth = google.auth.fromJSON(credentials);
-      } else {
-        auth = new google.auth.GoogleAuth({
-          keyFile: credPath,
-          scopes: ["https://www.googleapis.com/auth/calendar"]
-        });
+      // 1. Check direct JSON credentials in environment variable (GOOGLE_CREDENTIALS_JSON)
+      if (process.env.GOOGLE_CREDENTIALS_JSON && process.env.GOOGLE_CREDENTIALS_JSON.trim()) {
+        const rawJson = process.env.GOOGLE_CREDENTIALS_JSON.trim();
+        if (rawJson.startsWith("{") || rawJson.startsWith("[")) {
+          try {
+            const credentials = JSON.parse(rawJson);
+            if (credentials.client_email) {
+              this.serviceAccountEmail = credentials.client_email;
+            }
+            if (credentials.type === "service_account") {
+              const jwt = google.auth.fromJSON(credentials) as any;
+              jwt.scopes = ["https://www.googleapis.com/auth/calendar"];
+              auth = jwt;
+            } else {
+              auth = google.auth.fromJSON(credentials);
+            }
+            console.log("[GoogleCalendarService] Initialized successfully using GOOGLE_CREDENTIALS_JSON environment variable.");
+          } catch (jsonErr: any) {
+            console.warn("[GoogleCalendarService] GOOGLE_CREDENTIALS_JSON is not valid JSON:", jsonErr.message);
+          }
+        } else {
+          console.warn("[GoogleCalendarService] GOOGLE_CREDENTIALS_JSON environment variable does not contain valid JSON (skipping).");
+        }
       }
 
-      this.calendar = google.calendar({ version: "v3", auth });
-    } catch (err) {
-      console.warn("[MockCalendarService] Google Calendar Service not initialized due to credential parsing error:", err);
+      // 2. Check individual environment variables (GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY)
+      if (!auth && process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+        const clientEmail = process.env.GOOGLE_CLIENT_EMAIL.trim();
+        const privateKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n").trim();
+        this.serviceAccountEmail = clientEmail;
+        auth = new google.auth.JWT(
+          clientEmail,
+          undefined,
+          privateKey,
+          ["https://www.googleapis.com/auth/calendar"]
+        );
+        console.log(`[GoogleCalendarService] Initialized successfully using GOOGLE_CLIENT_EMAIL (${clientEmail}) & GOOGLE_PRIVATE_KEY.`);
+      }
+
+      // 3. Check credentials file path fallback list
+      if (!auth) {
+        const candidatePaths: string[] = [];
+
+        // a) GOOGLE_APPLICATION_CREDENTIALS
+        if (process.env.GOOGLE_APPLICATION_CREDENTIALS && process.env.GOOGLE_APPLICATION_CREDENTIALS.trim()) {
+          candidatePaths.push(process.env.GOOGLE_APPLICATION_CREDENTIALS.trim());
+        }
+        // GOOGLE_SERVICE_ACCOUNT_KEY_PATH (optional secondary env)
+        if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH && process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH.trim()) {
+          candidatePaths.push(process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH.trim());
+        }
+        // b) path.join(process.cwd(), "data", "google-credentials.json")
+        candidatePaths.push(path.join(process.cwd(), "data", "google-credentials.json"));
+        // c) path.join(process.cwd(), "google-credentials.json")
+        candidatePaths.push(path.join(process.cwd(), "google-credentials.json"));
+
+        // Deduplicate paths while preserving order
+        const uniquePaths = Array.from(new Set(candidatePaths));
+        let selectedPath: string | null = null;
+
+        for (const p of uniquePaths) {
+          if (fs.existsSync(p)) {
+            selectedPath = p;
+            break;
+          }
+        }
+
+        if (selectedPath) {
+          try {
+            const rawData = fs.readFileSync(selectedPath, "utf8");
+            const credentials = JSON.parse(rawData);
+            if (credentials.client_email) {
+              this.serviceAccountEmail = credentials.client_email;
+            }
+
+            if (credentials.type === "service_account") {
+              const jwt = google.auth.fromJSON(credentials) as any;
+              jwt.scopes = ["https://www.googleapis.com/auth/calendar"];
+              auth = jwt;
+            } else if (credentials.type === "authorized_user" || credentials.refresh_token) {
+              auth = google.auth.fromJSON(credentials);
+            } else {
+              auth = new google.auth.GoogleAuth({
+                keyFile: selectedPath,
+                scopes: ["https://www.googleapis.com/auth/calendar"]
+              });
+            }
+            console.log(`[GoogleCalendarService] Credenciales cargadas desde: ${selectedPath}`);
+          } catch (fileErr: any) {
+            this.initError = `Error leyendo/parseando el archivo de credenciales en '${selectedPath}': ${fileErr.message || fileErr}`;
+            console.warn(`[GoogleCalendarService] ${this.initError}`);
+          }
+        } else {
+          this.initError = `No se encontró ningún archivo de credenciales de Google Calendar. Rutas probadas: ${uniquePaths.join(", ")}`;
+          console.warn(`[GoogleCalendarService] ${this.initError}`);
+        }
+      }
+
+      if (auth) {
+        this.calendar = google.calendar({ version: "v3", auth });
+      } else {
+        this.calendar = null;
+      }
+    } catch (err: any) {
+      this.initError = `Credential parsing error: ${err.message || err}`;
+      console.warn("[GoogleCalendarService] Google Calendar Service not initialized due to credential error:", err);
       this.calendar = null;
     }
   }
@@ -53,18 +138,20 @@ export class GoogleCalendarService {
     const settings = store.getAppSettings(userId);
 
     if (!settings.google_calendar_enabled || !settings.google_calendar_id || !settings.google_calendar_id.trim()) {
-      console.log(`[GoogleCalendarService] User #${userId}: Google Calendar not connected for this user account`);
+      console.log(`[GoogleCalendarService] User #${userId}: Google Calendar not connected/enabled for this user account`);
       return false;
     }
 
     if (!this.calendar) {
-      console.log(`[GoogleCalendarService] User #${userId}: Google Calendar service credentials not initialized`);
+      const reason = this.initError || "Missing environment variables (GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY, GOOGLE_CREDENTIALS_JSON, or GOOGLE_APPLICATION_CREDENTIALS) or google-credentials.json file.";
+      console.log(`[GoogleCalendarService] User #${userId}: Google Calendar service credentials not initialized. Reason: ${reason}`);
       return false;
     }
 
+    const targetCalendarId = settings.google_calendar_id.trim();
+
     try {
       const timezone = (settings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
-      const targetCalendarId = settings.google_calendar_id.trim();
 
       const taskLines = scheduledTasks && scheduledTasks.length > 0
         ? scheduledTasks.map(t => `- ${t.title} (${t.estimated_hours}h)`).join("\n")
@@ -103,8 +190,15 @@ export class GoogleCalendarService {
 
       console.log(`[GoogleCalendarService] Event created successfully in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}.`);
       return true;
-    } catch (err) {
-      console.error(`[GoogleCalendarService] Error creating event in Google Calendar for User #${userId} on ${evalDate}:`, err);
+    } catch (err: any) {
+      const status = err?.code || err?.response?.status || err?.status;
+      const serviceEmailMsg = this.serviceAccountEmail ? `'${this.serviceAccountEmail}'` : "your Service Account email";
+
+      if (status === 404 || status === 403 || (err?.message && (err.message.includes("Not Found") || err.message.includes("forbidden") || err.message.includes("permission")))) {
+        console.error(`[GoogleCalendarService] ERROR: Please share your calendar '${targetCalendarId}' with ${serviceEmailMsg} and grant 'Make changes to events' permission.`);
+      } else {
+        console.error(`[GoogleCalendarService] Error creating event in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}:`, err);
+      }
       return false;
     }
   }

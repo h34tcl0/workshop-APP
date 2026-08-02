@@ -2,6 +2,26 @@
 let locationMap = null;
 let locationMarker = null;
 
+function updateTimezoneFromCoords(lat, lon) {
+    if (isNaN(lat) || isNaN(lon)) return;
+    fetch(`/api/timezone?lat=${lat}&lon=${lon}`)
+        .then(res => {
+            if (!res.ok) throw new Error("Network response was not ok");
+            return res.json();
+        })
+        .then(data => {
+            if (data.timezone) {
+                const tzInput = document.getElementById('input-timezone');
+                const tzBadge = document.getElementById('timezone-display');
+                const timeDisplay = document.getElementById('local-time-display');
+                if (tzInput) tzInput.value = data.timezone;
+                if (tzBadge) tzBadge.innerText = data.timezone;
+                if (timeDisplay) timeDisplay.innerText = data.formatted_display || `${data.time_str} (${data.timezone})`;
+            }
+        })
+        .catch(err => console.error("Error updating timezone from coords:", err));
+}
+
 function setLocationPin(lat, lon, recenter) {
     document.getElementById('input-latitude').value = lat.toFixed(4);
     document.getElementById('input-longitude').value = lon.toFixed(4);
@@ -11,7 +31,24 @@ function setLocationPin(lat, lon, recenter) {
     if (recenter && locationMap) {
         locationMap.setView([lat, lon], 12);
     }
+    updateTimezoneFromCoords(lat, lon);
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+    const latInp = document.getElementById('input-latitude');
+    const lonInp = document.getElementById('input-longitude');
+    if (latInp && lonInp) {
+        const handleInpChange = () => {
+            const lat = parseFloat(latInp.value);
+            const lon = parseFloat(lonInp.value);
+            if (!isNaN(lat) && !isNaN(lon)) {
+                updateTimezoneFromCoords(lat, lon);
+            }
+        };
+        latInp.addEventListener('change', handleInpChange);
+        lonInp.addEventListener('change', handleInpChange);
+    }
+});
 
 function toggleLocationMap() {
     const panel = document.getElementById('location-map-panel');
