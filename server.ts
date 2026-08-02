@@ -56,10 +56,13 @@ app.get('/health', (req, res) => {
 
 // PWA Direct Routes
 app.get('/manifest.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/manifest+json');
   res.sendFile(path.join(process.cwd(), 'static', 'manifest.json'));
 });
 app.get('/sw.js', (req, res) => {
   res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(process.cwd(), 'static', 'sw.js'));
 });
 

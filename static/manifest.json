@@ -1,16 +1,69 @@
 {
-  "name": "Workshop OS",
+  "id": "/",
+  "name": "Workshop OS — Taller al Aire Libre",
   "short_name": "Workshop OS",
-  "description": "Smart Weather-Aware Workshop Operating System",
+  "description": "Sistema operativo inteligente y sensible al clima para taller de carpintería y resina epóxica al aire libre.",
+  "lang": "es",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#020617",
   "theme_color": "#0f172a",
+  "categories": [
+    "productivity",
+    "utilities"
+  ],
   "icons": [
     {
       "src": "/static/icons/icon.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon.svg",
       "sizes": "any",
-      "type": "image/svg+xml"
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/static/icons/screenshot-narrow.svg",
+      "sizes": "1080x1920",
+      "type": "image/svg+xml",
+      "form_factor": "narrow",
+      "label": "Vista móvil de la agenda y clima operativo"
+    },
+    {
+      "src": "/static/icons/screenshot-wide.svg",
+      "sizes": "1920x1080",
+      "type": "image/svg+xml",
+      "form_factor": "wide",
+      "label": "Panel completo de planificación y backlog"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Ver Agenda",
+      "short_name": "Agenda",
+      "description": "Consultar la planificación diaria del taller",
+      "url": "/#agenda-container",
+      "icons": [
+        {
+          "src": "/static/icons/icon.svg",
+          "sizes": "192x192",
+          "type": "image/svg+xml"
+        }
+      ]
     }
   ]
 }
