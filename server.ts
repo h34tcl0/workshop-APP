@@ -65,6 +65,29 @@ app.get('/sw.js', (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.sendFile(path.join(process.cwd(), 'static', 'sw.js'));
 });
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+
+  const packageName = process.env.ANDROID_PACKAGE_NAME;
+  const sha256Fingerprint = process.env.ANDROID_SHA256_FINGERPRINT;
+
+  if (packageName && sha256Fingerprint) {
+    const fingerprintsArray = sha256Fingerprint.split(',').map(f => f.trim());
+    return res.json([
+      {
+        relation: ["delegate_permission/common.handle_all_urls"],
+        target: {
+          namespace: "android_app",
+          package_name: packageName,
+          sha256_cert_fingerprints: fingerprintsArray
+        }
+      }
+    ]);
+  }
+
+  res.sendFile(path.join(process.cwd(), 'static', '.well-known', 'assetlinks.json'));
+});
 
 // Authentication Middleware
 app.use(requireAuth);
