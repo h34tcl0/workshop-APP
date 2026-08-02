@@ -544,6 +544,16 @@ export class SQLiteStore {
       row = this.db.prepare("SELECT * FROM app_settings WHERE user_id = ?").get(userId) as any;
     }
 
+    let telegramChatId = row.telegram_chat_id ? String(row.telegram_chat_id).trim() : null;
+    if (!telegramChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
+      telegramChatId = process.env.TELEGRAM_CHAT_ID.trim();
+    }
+
+    let googleCalId = row.google_calendar_id ? String(row.google_calendar_id).trim() : null;
+    if (!googleCalId && userId === 1 && process.env.GOOGLE_CALENDAR_ID) {
+      googleCalId = process.env.GOOGLE_CALENDAR_ID.trim();
+    }
+
     return {
       operational_start_hour: Number(row.operational_start_hour),
       operational_end_hour: Number(row.operational_end_hour),
@@ -561,9 +571,9 @@ export class SQLiteStore {
       exclude_sundays: Boolean(row.exclude_sundays),
       exclude_holidays: Boolean(row.exclude_holidays),
       require_curing_before_cutoff: Boolean(row.require_curing_before_cutoff),
-      telegram_chat_id: row.telegram_chat_id ? String(row.telegram_chat_id) : null,
-      google_calendar_id: row.google_calendar_id ? String(row.google_calendar_id) : null,
-      google_calendar_enabled: Boolean(row.google_calendar_enabled)
+      telegram_chat_id: telegramChatId,
+      google_calendar_id: googleCalId,
+      google_calendar_enabled: Boolean(row.google_calendar_enabled || (userId === 1 && process.env.GOOGLE_CALENDAR_ID))
     };
   }
 
@@ -631,8 +641,18 @@ export class SQLiteStore {
       WHERE CAST(s.telegram_chat_id AS TEXT) = ?
     `).get(chatStr) as any;
 
-    if (!row) return undefined;
-    return { id: Number(row.id), email: String(row.email) };
+    if (row) {
+      return { id: Number(row.id), email: String(row.email) };
+    }
+
+    if (process.env.TELEGRAM_CHAT_ID && chatStr === process.env.TELEGRAM_CHAT_ID.trim()) {
+      const admin = this.db.prepare("SELECT id, email FROM users ORDER BY id ASC LIMIT 1").get() as any;
+      if (admin) {
+        return { id: Number(admin.id), email: String(admin.email) };
+      }
+    }
+
+    return undefined;
   }
 
   // --- PROJECTS ---

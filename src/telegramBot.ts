@@ -15,13 +15,50 @@ export class TelegramBotService {
     this.apiUrl = `https://api.telegram.org/bot${token}`;
   }
 
-  private async sendRequest(method: string, payload: any): Promise<boolean> {
-    if (!this.token || !this.chatId) {
-      const textPreview = (payload.text || "").substring(0, 60).replace(/\n/g, " ");
-      console.log(`[TelegramBotService] Token or ChatID not configured for target user. Skipping '${method}': ${textPreview}`);
+  public async sendTelegramMessage(chatId: string | number, text: string, options: any = {}): Promise<boolean> {
+    const targetChatId = chatId ? String(chatId).trim() : this.chatId;
+    if (!this.token || !targetChatId) {
+      console.log(`[Telegram] SKIPPED: No valid chatId provided for request '${options.method || 'sendMessage'}'`);
       return false;
     }
 
+    console.log(`[Telegram] Attempting to send message to chatId: ${targetChatId}...`);
+    try {
+      const payload = {
+        chat_id: targetChatId,
+        text,
+        parse_mode: options.parse_mode || "Markdown",
+        ...options
+      };
+      const response = await fetch(`${this.apiUrl}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (data && data.ok) {
+        console.log(`[Telegram] SUCCESS: Message sent to chatId ${targetChatId}`);
+        return true;
+      } else {
+        const errDetail = data?.description || JSON.stringify(data);
+        console.error(`[Telegram] ERROR sending to chatId ${targetChatId}: ${errDetail}`);
+        return false;
+      }
+    } catch (err) {
+      console.error(`[Telegram] ERROR sending to chatId ${targetChatId}:`, err);
+      return false;
+    }
+  }
+
+  public async sendRequest(method: string, payload: any): Promise<boolean> {
+    const targetChatId = payload.chat_id || this.chatId;
+    if (!this.token || !targetChatId) {
+      const textPreview = (payload.text || "").substring(0, 60).replace(/\n/g, " ");
+      console.log(`[Telegram] SKIPPED: No valid chatId provided for method '${method}': ${textPreview}`);
+      return false;
+    }
+
+    console.log(`[Telegram] Attempting to send message to chatId: ${targetChatId}...`);
     try {
       const response = await fetch(`${this.apiUrl}/${method}`, {
         method: "POST",
@@ -29,9 +66,16 @@ export class TelegramBotService {
         body: JSON.stringify(payload)
       });
       const data = await response.json();
-      return Boolean(data && data.ok);
+      if (data && data.ok) {
+        console.log(`[Telegram] SUCCESS: Message sent to chatId ${targetChatId}`);
+        return true;
+      } else {
+        const errDetail = data?.description || JSON.stringify(data);
+        console.error(`[Telegram] ERROR sending to chatId ${targetChatId}: ${errDetail}`);
+        return false;
+      }
     } catch (err) {
-      console.error(`[TelegramBotService] Failed request to Telegram (${method}):`, err);
+      console.error(`[Telegram] ERROR sending to chatId ${targetChatId}:`, err);
       return false;
     }
   }

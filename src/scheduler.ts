@@ -91,27 +91,36 @@ export async function runMorningEvaluation(userId: number, targetDateIso?: strin
   const savedLog = store.saveDailyLog(userId, logData);
 
   // Telegram notification handling
-  const telegramChatId = appSettings.telegram_chat_id;
-  if (telegramChatId && telegramChatId.trim()) {
+  let targetChatId = appSettings.telegram_chat_id ? appSettings.telegram_chat_id.trim() : "";
+  if (!targetChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
+    targetChatId = process.env.TELEGRAM_CHAT_ID.trim();
+  }
+
+  if (targetChatId) {
     const telegramBot = new TelegramBotService(
       process.env.TELEGRAM_BOT_TOKEN,
-      telegramChatId.trim()
+      targetChatId
     );
 
-    if (!savedLog.telegram_notified) {
+    const isForcedOrNew = !savedLog || !savedLog.telegram_notified || Boolean(mockScenario);
+    if (isForcedOrNew) {
       if ((evalResult.status === DayStatus.DAY_VIABLE && evalResult.scheduled_tasks && evalResult.scheduled_tasks.length > 0) || evalResult.status === DayStatus.DAY_BLOCKED) {
+        console.log(`[Telegram] Attempting to send morning evaluation to chatId: ${targetChatId} for User #${userId}...`);
         const tgSuccess = await telegramBot.sendMorningEvaluation(evalResult);
-        if (tgSuccess) {
+        if (tgSuccess && savedLog) {
           store.updateDailyLog(userId, savedLog.id, { telegram_notified: true });
         }
       } else {
-        store.updateDailyLog(userId, savedLog.id, { telegram_notified: true });
-        console.log(`[Scheduler] Day blocked or no tasks for User #${userId}. Telegram notification suppressed for ${todayIso}.`);
+        if (savedLog) {
+          store.updateDailyLog(userId, savedLog.id, { telegram_notified: true });
+        }
+        console.log(`[Scheduler] Day viable but no tasks for User #${userId}. Suppressing Telegram notification for ${todayIso}.`);
       }
+    } else {
+      console.log(`[Scheduler] Telegram notification already sent previously for User #${userId} on ${todayIso}.`);
     }
   } else {
-    console.log(`[Scheduler] User #${userId} does not have Telegram Chat ID configured. Skipping Telegram notification.`);
-    store.updateDailyLog(userId, savedLog.id, { telegram_notified: true });
+    console.log(`[Telegram] SKIPPED: No valid chatId provided for userId ${userId}`);
   }
 
   // Google Calendar Event Creation
@@ -168,12 +177,17 @@ export async function processCheckinForUser(userId: number, nowDate?: Date, forc
     return;
   }
 
-  if (!appSettings.telegram_chat_id || !appSettings.telegram_chat_id.trim()) {
-    console.log(`[Scheduler] User #${userId} does not have Telegram Chat ID configured. Skipping checkin prompt.`);
+  let targetChatId = appSettings.telegram_chat_id ? appSettings.telegram_chat_id.trim() : "";
+  if (!targetChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
+    targetChatId = process.env.TELEGRAM_CHAT_ID.trim();
+  }
+
+  if (!targetChatId) {
+    console.log(`[Telegram] SKIPPED: No valid chatId provided for userId ${userId}`);
     return;
   }
 
-  const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, appSettings.telegram_chat_id.trim());
+  const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, targetChatId);
   const sent = await telegramSvc.sendCheckinPrompt(dailyLog.id, scheduledTasks);
   if (sent) {
     store.updateDailyLog(userId, dailyLog.id, { checkin_sent: true });
@@ -221,12 +235,17 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
     return; // outside active work window
   }
 
-  if (!appSettings.telegram_chat_id || !appSettings.telegram_chat_id.trim()) {
-    console.log(`[Scheduler] User #${userId} does not have Telegram Chat ID configured. Skipping weather alert.`);
+  let targetChatId = appSettings.telegram_chat_id ? appSettings.telegram_chat_id.trim() : "";
+  if (!targetChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
+    targetChatId = process.env.TELEGRAM_CHAT_ID.trim();
+  }
+
+  if (!targetChatId) {
+    console.log(`[Telegram] SKIPPED: No valid chatId provided for userId ${userId}`);
     return;
   }
 
-  const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, appSettings.telegram_chat_id.trim());
+  const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, targetChatId);
 
   if (dailyLog.weather_alert_sent) {
     if (dailyLog.weather_alert_retry_count >= 6) {
