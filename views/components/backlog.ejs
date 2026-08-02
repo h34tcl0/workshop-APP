@@ -50,12 +50,13 @@
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                     <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Categoría</label>
-                    <select id="manual-category" name="category" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none min-h-[44px] sm:min-h-0">
-                        <option value="carpentry">Carpintería</option>
+                    <select id="manual-category" name="category" required class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer">
+                        <option value="carpentry" selected>Carpintería</option>
                         <option value="pva_glue">Encolado PVA</option>
                         <option value="varnish_paint">Barnizado / Pintura</option>
                         <option value="epoxy">Epoxi / Resina</option>
                     </select>
+                    <p class="text-[10px] text-ink3 mt-1 sm:hidden">Selecciona la categoría y pulsa "Agregar tarea" abajo.</p>
                 </div>
                 <div>
                     <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Horas activas</label>
@@ -126,12 +127,13 @@
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <div>
                             <label class="block text-[10px] font-semibold text-ink3 mb-1 uppercase tracking-wide">Categoría</label>
-                            <select name="category" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2 py-2.5 text-xs focus:outline-none min-h-[44px] sm:min-h-0">
+                            <select name="category" required class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2 py-2.5 text-xs focus:outline-none focus:border-chalk min-h-[44px] sm:min-h-0 cursor-pointer">
                                 <option value="carpentry" <%= task.category === 'carpentry' ? 'selected' : '' %>>Carpintería</option>
                                 <option value="pva_glue" <%= task.category === 'pva_glue' ? 'selected' : '' %>>Encolado PVA</option>
                                 <option value="varnish_paint" <%= task.category === 'varnish_paint' ? 'selected' : '' %>>Barnizado</option>
                                 <option value="epoxy" <%= task.category === 'epoxy' ? 'selected' : '' %>>Epoxi / Resina</option>
                             </select>
+                            <p class="text-[9px] text-ink3 mt-0.5 sm:hidden">Toca "Guardar cambios" para aplicar.</p>
                         </div>
                         <div>
                             <label class="block text-[10px] font-semibold text-ink3 mb-1 uppercase tracking-wide">Horas activas</label>

@@ -155,6 +155,14 @@ app.get('/logout', (req, res) => {
   res.redirect(303, '/login');
 });
 
+// Auth Status API Endpoint (for client session guard & back-button check)
+app.get('/api/auth/status', (req: AuthenticatedRequest, res) => {
+  if (req.user) {
+    return res.json({ authenticated: true, user: { id: req.user.id, email: req.user.email } });
+  }
+  return res.json({ authenticated: false });
+});
+
 // Password Change API endpoint
 app.post('/api/user/change-password', (req: AuthenticatedRequest, res) => {
   if (!req.user) {
@@ -584,35 +592,57 @@ app.post('/day-override/forced-task/:forced_id/delete', (req: AuthenticatedReque
 });
 
 // Settings & Evaluation routes
-app.post('/evaluation/force_run', async (req: AuthenticatedRequest, res) => {
+const handleEvaluationRequest = async (req: AuthenticatedRequest, res: any) => {
   const userId = req.user!.id;
-  const scenario = req.body.scenario;
+  const scenario = req.body.scenario || req.query.scenario;
   try {
-    await runMorningEvaluation(userId, undefined, scenario || undefined);
-  } catch (err) {
-    console.error('Error running morning evaluation:', err);
-  }
-  if (scenario) {
-    res.redirect(303, `/?scenario=${encodeURIComponent(scenario)}`);
-  } else {
-    res.redirect(303, '/');
-  }
-});
+    const evalRunResult = await runMorningEvaluation(userId, undefined, scenario || undefined);
+    
+    // Check if client requested JSON response (AJAX / fetch / API)
+    const isJsonRequested = req.xhr || 
+      (req.headers.accept && req.headers.accept.includes('application/json')) ||
+      (req.headers['content-type'] && req.headers['content-type'].includes('application/json')) ||
+      req.path.startsWith('/api/') ||
+      req.body.format === 'json';
 
-app.post('/evaluation/run', async (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.id;
-  const scenario = req.body.scenario;
-  try {
-    await runMorningEvaluation(userId, undefined, scenario || undefined);
-  } catch (err) {
-    console.error('Error running morning evaluation:', err);
-  }
-  if (scenario) {
-    res.redirect(303, `/?scenario=${encodeURIComponent(scenario)}`);
-  } else {
+    if (isJsonRequested) {
+      return res.json({
+        success: true,
+        status: evalRunResult.status,
+        reason: evalRunResult.reason,
+        telegramSent: evalRunResult.telegramSent,
+        telegramReason: evalRunResult.telegramReason,
+        calendarSynced: evalRunResult.calendarSynced,
+        calendarReason: evalRunResult.calendarReason,
+        evalResult: evalRunResult.evalResult
+      });
+    }
+
+    if (scenario) {
+      res.redirect(303, `/?scenario=${encodeURIComponent(String(scenario))}`);
+    } else {
+      res.redirect(303, '/');
+    }
+  } catch (err: any) {
+    console.error('Error running evaluation:', err);
+    if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json'))) {
+      return res.status(500).json({
+        success: false,
+        error: err.message || 'Error executing evaluation',
+        telegramSent: false,
+        telegramReason: '❌ Error en servidor durante evaluación',
+        calendarSynced: false,
+        calendarReason: '❌ Error en servidor durante evaluación'
+      });
+    }
     res.redirect(303, '/');
   }
-});
+};
+
+app.post('/evaluation/force_run', handleEvaluationRequest);
+app.post('/evaluation/run', handleEvaluationRequest);
+app.post('/evaluar', handleEvaluationRequest);
+app.post('/api/evaluate', handleEvaluationRequest);
 
 app.post('/evaluation/force_checkin', async (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;

@@ -69,7 +69,7 @@
         </div>
         <% } %>
 
-        <form action="/register" method="post" class="space-y-4">
+        <form id="register-form" action="/register" method="post" class="space-y-4">
             <div>
                 <label for="email" class="block text-xs font-semibold text-ink2 uppercase tracking-wider mb-1">Correo Electrónico</label>
                 <input type="email" id="email" name="email" required placeholder="tu@email.com" value="<%= locals.email || '' %>"
@@ -78,8 +78,20 @@
 
             <div>
                 <label for="password" class="block text-xs font-semibold text-ink2 uppercase tracking-wider mb-1">Contraseña</label>
-                <input type="password" id="password" name="password" required placeholder="Mínimo 6 caracteres"
-                    class="w-full bg-surface2 text-ink border border-hairline rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-brass transition-colors">
+                <div class="relative">
+                    <input type="password" id="password" name="password" required placeholder="Mínimo 6 caracteres"
+                        class="w-full bg-surface2 text-ink border border-hairline rounded-lg pl-3.5 pr-11 py-2.5 text-sm focus:outline-none focus:border-brass transition-colors">
+                    <button type="button" id="toggle-password-btn" aria-label="Mostrar u ocultar contraseña"
+                        class="absolute right-2 top-1/2 -translate-y-1/2 text-ink3 hover:text-ink transition-colors p-1.5 rounded-md focus:outline-none">
+                        <svg id="eye-icon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        <svg id="eye-off-icon" class="w-4 h-4 hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858-5.908a10.025 10.025 0 013.28-.563c4.478 0 8.268 2.943 9.542 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21M3 3l18 18" />
+                        </svg>
+                    </button>
+                </div>
             </div>
 
             <div>
@@ -88,9 +100,9 @@
                     class="w-full bg-surface2 text-ink border border-hairline rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-brass transition-colors">
             </div>
 
-            <button type="submit"
-                class="w-full bg-brass hover:bg-brassdim text-ink text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors shadow-lg">
-                Registrarse
+            <button type="submit" id="register-submit-btn" disabled
+                class="w-full bg-brass hover:bg-brassdim disabled:bg-surface2 disabled:text-ink3 disabled:opacity-50 disabled:cursor-not-allowed text-ink text-sm font-semibold py-2.5 px-4 rounded-lg transition-all shadow-lg flex items-center justify-center gap-2 min-h-[44px]">
+                <span id="btn-text">Registrarse</span>
             </button>
         </form>
 
@@ -101,6 +113,68 @@
         </div>
 
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const emailInput = document.getElementById('email');
+            const passwordInput = document.getElementById('password');
+            const confirmInput = document.getElementById('password_confirm');
+            const regBtn = document.getElementById('register-submit-btn');
+            const btnText = document.getElementById('btn-text');
+            const regForm = document.getElementById('register-form');
+            const togglePasswordBtn = document.getElementById('toggle-password-btn');
+            const eyeIcon = document.getElementById('eye-icon');
+            const eyeOffIcon = document.getElementById('eye-off-icon');
+
+            if (togglePasswordBtn && passwordInput) {
+                togglePasswordBtn.addEventListener('click', function () {
+                    const isPassword = passwordInput.type === 'password';
+                    passwordInput.type = isPassword ? 'text' : 'password';
+                    if (confirmInput) confirmInput.type = isPassword ? 'text' : 'password';
+                    if (eyeIcon && eyeOffIcon) {
+                        eyeIcon.classList.toggle('hidden', isPassword);
+                        eyeOffIcon.classList.toggle('hidden', !isPassword);
+                    }
+                });
+            }
+
+            function validateInputs() {
+                const e = emailInput ? emailInput.value.trim() : '';
+                const p = passwordInput ? passwordInput.value.trim() : '';
+                const c = confirmInput ? confirmInput.value.trim() : '';
+                if (regBtn) {
+                    if (e.length > 0 && p.length > 0 && c.length > 0) {
+                        regBtn.disabled = false;
+                    } else {
+                        regBtn.disabled = true;
+                    }
+                }
+            }
+
+            if (emailInput) emailInput.addEventListener('input', validateInputs);
+            if (passwordInput) passwordInput.addEventListener('input', validateInputs);
+            if (confirmInput) confirmInput.addEventListener('input', validateInputs);
+            validateInputs();
+
+            if (regForm) {
+                regForm.addEventListener('submit', function () {
+                    if (regBtn && !regBtn.disabled) {
+                        regBtn.disabled = true;
+                        regBtn.classList.add('opacity-75', 'cursor-not-allowed');
+                        if (btnText) {
+                            btnText.innerHTML = `
+                                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span>Cargando...</span>
+                            `;
+                        }
+                    }
+                });
+            }
+        });
+    </script>
 
 </body>
 </html>

@@ -90,6 +90,11 @@ export async function runMorningEvaluation(userId: number, targetDateIso?: strin
 
   const savedLog = store.saveDailyLog(userId, logData);
 
+  let telegramSent = false;
+  let telegramReason = "⚠️ Telegram no configurado / omitido";
+  let calendarSynced = false;
+  let calendarReason = "ℹ️ Google Calendar no conectado";
+
   // Telegram notification handling
   let targetChatId = appSettings.telegram_chat_id ? appSettings.telegram_chat_id.trim() : "";
   if (!targetChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
@@ -107,42 +112,74 @@ export async function runMorningEvaluation(userId: number, targetDateIso?: strin
       if ((evalResult.status === DayStatus.DAY_VIABLE && evalResult.scheduled_tasks && evalResult.scheduled_tasks.length > 0) || evalResult.status === DayStatus.DAY_BLOCKED) {
         console.log(`[Telegram] Attempting to send morning evaluation to chatId: ${targetChatId} for User #${userId}...`);
         const tgSuccess = await telegramBot.sendMorningEvaluation(evalResult);
-        if (tgSuccess && savedLog) {
-          store.updateDailyLog(userId, savedLog.id, { telegram_notified: true });
+        if (tgSuccess) {
+          if (savedLog) store.updateDailyLog(userId, savedLog.id, { telegram_notified: true });
+          telegramSent = true;
+          telegramReason = "✅ Mensaje enviado a Telegram";
+        } else {
+          telegramSent = false;
+          telegramReason = "❌ Error al enviar mensaje a Telegram";
         }
       } else {
         if (savedLog) {
           store.updateDailyLog(userId, savedLog.id, { telegram_notified: true });
         }
+        telegramSent = false;
+        telegramReason = "ℹ️ Día viable pero sin tareas asignadas (notificación omitida)";
         console.log(`[Scheduler] Day viable but no tasks for User #${userId}. Suppressing Telegram notification for ${todayIso}.`);
       }
     } else {
+      telegramSent = false;
+      telegramReason = "ℹ️ Notificación de Telegram ya enviada previamente hoy";
       console.log(`[Scheduler] Telegram notification already sent previously for User #${userId} on ${todayIso}.`);
     }
   } else {
+    telegramSent = false;
+    telegramReason = "⚠️ Telegram no configurado / omitido";
     console.log(`[Telegram] SKIPPED: No valid chatId provided for userId ${userId}`);
   }
 
   // Google Calendar Event Creation
   if (evalResult.status === DayStatus.DAY_VIABLE && evalResult.window && evalResult.window.start_time && evalResult.window.end_time) {
-    const tasksForCal = (evalResult.scheduled_tasks || []).map(t => ({
-      title: t.title,
-      estimated_hours: t.estimated_hours
-    }));
-    const calCreated = await calendarService.createWorkshopEvent(
-      userId,
-      todayIso,
-      evalResult.window.start_time,
-      evalResult.window.end_time,
-      tasksForCal
-    );
-    if (calCreated) {
-      store.updateDailyLog(userId, savedLog.id, { calendar_created: true });
+    if (appSettings.google_calendar_enabled && appSettings.google_calendar_id) {
+      const tasksForCal = (evalResult.scheduled_tasks || []).map(t => ({
+        title: t.title,
+        estimated_hours: t.estimated_hours
+      }));
+      const calCreated = await calendarService.createWorkshopEvent(
+        userId,
+        todayIso,
+        evalResult.window.start_time,
+        evalResult.window.end_time,
+        tasksForCal
+      );
+      if (calCreated) {
+        if (savedLog) store.updateDailyLog(userId, savedLog.id, { calendar_created: true });
+        calendarSynced = true;
+        calendarReason = "📅 Eventos agendados en Google Calendar";
+      } else {
+        calendarSynced = false;
+        calendarReason = "⚠️ Error al agendar eventos en Google Calendar";
+      }
+    } else {
+      calendarSynced = false;
+      calendarReason = "ℹ️ Google Calendar no configurado / deshabilitado";
     }
+  } else {
+    calendarSynced = false;
+    calendarReason = appSettings.google_calendar_enabled ? "ℹ️ Día no viable para agendar eventos" : "ℹ️ Google Calendar no conectado";
   }
 
   console.log(`[Scheduler] Morning Evaluation completed for User #${userId} on ${todayIso}: ${evalResult.status} - ${evalResult.reason}`);
-  return evalResult;
+  return {
+    evalResult,
+    status: evalResult.status,
+    reason: evalResult.reason,
+    telegramSent,
+    telegramReason,
+    calendarSynced,
+    calendarReason
+  };
 }
 
 export async function processCheckinForUser(userId: number, nowDate?: Date, force: boolean = false): Promise<void> {
