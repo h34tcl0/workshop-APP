@@ -207,6 +207,7 @@ export interface DailyLog {
   morning_climate_snapshot?: string | null;
   telegram_notified: boolean;
   calendar_created: boolean;
+  google_event_id?: string | null;
   checkin_sent: boolean;
   checkin_resolved: boolean;
   weather_alert_sent: boolean;

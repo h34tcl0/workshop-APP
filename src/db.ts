@@ -180,6 +180,7 @@ export async function initDatabase(): Promise<Database.Database> {
       morning_climate_snapshot TEXT,
       telegram_notified INTEGER NOT NULL DEFAULT 0,
       calendar_created INTEGER NOT NULL DEFAULT 0,
+      google_event_id TEXT,
       checkin_sent INTEGER NOT NULL DEFAULT 0,
       checkin_resolved INTEGER NOT NULL DEFAULT 0,
       weather_alert_sent INTEGER NOT NULL DEFAULT 0,
@@ -292,6 +293,11 @@ export async function initDatabase(): Promise<Database.Database> {
   }
   if (!currentAppSettingsCols.some(c => c.name === 'timezone')) {
     dbInstance.exec("ALTER TABLE app_settings ADD COLUMN timezone TEXT;");
+  }
+
+  const currentDailyLogCols = dbInstance.prepare("PRAGMA table_info(daily_logs)").all() as any[];
+  if (!currentDailyLogCols.some(c => c.name === 'google_event_id')) {
+    dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN google_event_id TEXT;");
   }
 
   // Special migration for day_overrides (recreate for per-user UNIQUE constraint)
@@ -1107,6 +1113,7 @@ export class SQLiteStore {
       morning_climate_snapshot: row.morning_climate_snapshot || null,
       telegram_notified: Boolean(row.telegram_notified),
       calendar_created: Boolean(row.calendar_created),
+      google_event_id: row.google_event_id ? String(row.google_event_id) : null,
       checkin_sent: Boolean(row.checkin_sent),
       checkin_resolved: Boolean(row.checkin_resolved),
       weather_alert_sent: Boolean(row.weather_alert_sent),
@@ -1135,6 +1142,7 @@ export class SQLiteStore {
       morning_climate_snapshot: row.morning_climate_snapshot || null,
       telegram_notified: Boolean(row.telegram_notified),
       calendar_created: Boolean(row.calendar_created),
+      google_event_id: row.google_event_id ? String(row.google_event_id) : null,
       checkin_sent: Boolean(row.checkin_sent),
       checkin_resolved: Boolean(row.checkin_resolved),
       weather_alert_sent: Boolean(row.weather_alert_sent),
@@ -1164,6 +1172,7 @@ export class SQLiteStore {
       morning_climate_snapshot: row.morning_climate_snapshot || null,
       telegram_notified: Boolean(row.telegram_notified),
       calendar_created: Boolean(row.calendar_created),
+      google_event_id: row.google_event_id ? String(row.google_event_id) : null,
       checkin_sent: Boolean(row.checkin_sent),
       checkin_resolved: Boolean(row.checkin_resolved),
       weather_alert_sent: Boolean(row.weather_alert_sent),
@@ -1187,10 +1196,10 @@ export class SQLiteStore {
       `INSERT INTO daily_logs (
         user_id, eval_date, status, block_reason, window_start, window_end, net_work_hours,
         tasks_summary, scheduled_task_ids, morning_climate_snapshot,
-        telegram_notified, calendar_created, checkin_sent, checkin_resolved,
+        telegram_notified, calendar_created, google_event_id, checkin_sent, checkin_resolved,
         weather_alert_sent, weather_alert_acknowledged, weather_alert_retry_count,
         weather_alert_last_sent_at, weather_alert_message, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
     ).run(
       userId,
       logData.eval_date,
@@ -1204,6 +1213,7 @@ export class SQLiteStore {
       logData.morning_climate_snapshot || null,
       logData.telegram_notified ? 1 : 0,
       logData.calendar_created ? 1 : 0,
+      logData.google_event_id || null,
       logData.checkin_sent ? 1 : 0,
       logData.checkin_resolved ? 1 : 0,
       logData.weather_alert_sent ? 1 : 0,
@@ -1235,6 +1245,7 @@ export class SQLiteStore {
         morning_climate_snapshot = ?,
         telegram_notified = ?,
         calendar_created = ?,
+        google_event_id = ?,
         checkin_sent = ?,
         checkin_resolved = ?,
         weather_alert_sent = ?,
@@ -1255,6 +1266,7 @@ export class SQLiteStore {
       updated.morning_climate_snapshot || null,
       updated.telegram_notified ? 1 : 0,
       updated.calendar_created ? 1 : 0,
+      updated.google_event_id || null,
       updated.checkin_sent ? 1 : 0,
       updated.checkin_resolved ? 1 : 0,
       updated.weather_alert_sent ? 1 : 0,
@@ -1288,6 +1300,7 @@ export class SQLiteStore {
         morning_climate_snapshot = ?,
         telegram_notified = ?,
         calendar_created = ?,
+        google_event_id = ?,
         checkin_sent = ?,
         checkin_resolved = ?,
         weather_alert_sent = ?,
@@ -1308,6 +1321,7 @@ export class SQLiteStore {
       updated.morning_climate_snapshot || null,
       updated.telegram_notified ? 1 : 0,
       updated.calendar_created ? 1 : 0,
+      updated.google_event_id || null,
       updated.checkin_sent ? 1 : 0,
       updated.checkin_resolved ? 1 : 0,
       updated.weather_alert_sent ? 1 : 0,

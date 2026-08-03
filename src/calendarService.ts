@@ -3,6 +3,13 @@ import fs from "fs";
 import path from "path";
 import { store } from "./db.js";
 
+export interface CalendarSyncResult {
+  success: boolean;
+  eventId?: string | null;
+  notFound?: boolean;
+  error?: string;
+}
+
 export class GoogleCalendarService {
   private calendar: any = null;
   private calendarId: string;
@@ -128,78 +135,160 @@ export class GoogleCalendarService {
     }
   }
 
+  private buildEventPayload(
+    evalDate: string,
+    startTime: string,
+    endTime: string,
+    scheduledTasks: Array<{ title: string; estimated_hours: number }>,
+    timezone: string
+  ) {
+    const taskLines = scheduledTasks && scheduledTasks.length > 0
+      ? scheduledTasks.map(t => `- ${t.title} (${t.estimated_hours}h)`).join("\n")
+      : "- Sin tareas especificadas";
+
+    const summary = `🔨 Taller Carpintería (${startTime} - ${endTime})`;
+    const description = `🔨 WORKSHOP OS - Bloque Macro de Trabajo\n\nTareas Agendadas:\n${taskLines}`;
+
+    const startFormatted = startTime.length === 5 ? `${startTime}:00` : startTime;
+    const endFormatted = endTime.length === 5 ? `${endTime}:00` : endTime;
+
+    return {
+      summary,
+      description,
+      start: {
+        dateTime: `${evalDate}T${startFormatted}`,
+        timeZone: timezone
+      },
+      end: {
+        dateTime: `${evalDate}T${endFormatted}`,
+        timeZone: timezone
+      },
+      reminders: {
+        useDefault: false,
+        overrides: [
+          { method: "popup", minutes: 60 },
+          { method: "popup", minutes: 30 }
+        ]
+      }
+    };
+  }
+
   async createWorkshopEvent(
     userId: number,
     evalDate: string,
     startTime: string,
     endTime: string,
     scheduledTasks: Array<{ title: string; estimated_hours: number }>
-  ): Promise<boolean> {
+  ): Promise<CalendarSyncResult> {
     const settings = store.getAppSettings(userId);
 
     if (!settings.google_calendar_enabled || !settings.google_calendar_id || !settings.google_calendar_id.trim()) {
-      console.log(`[GoogleCalendarService] User #${userId}: Google Calendar not connected/enabled for this user account`);
-      return false;
+      return { success: false, error: "Google Calendar not connected or disabled" };
     }
 
     if (!this.calendar) {
-      const reason = this.initError || "Missing environment variables (GOOGLE_CLIENT_EMAIL + GOOGLE_PRIVATE_KEY, GOOGLE_CREDENTIALS_JSON, or GOOGLE_APPLICATION_CREDENTIALS) or google-credentials.json file.";
-      console.log(`[GoogleCalendarService] User #${userId}: Google Calendar service credentials not initialized. Reason: ${reason}`);
-      return false;
+      const reason = this.initError || "Missing environment variables or credentials file.";
+      return { success: false, error: reason };
     }
 
     const targetCalendarId = settings.google_calendar_id.trim();
 
     try {
       const timezone = (settings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+      const eventPayload = this.buildEventPayload(evalDate, startTime, endTime, scheduledTasks, timezone);
 
-      const taskLines = scheduledTasks && scheduledTasks.length > 0
-        ? scheduledTasks.map(t => `- ${t.title} (${t.estimated_hours}h)`).join("\n")
-        : "- Sin tareas especificadas";
-
-      const summary = `🔨 Taller Carpintería (${startTime} - ${endTime})`;
-      const description = `🔨 WORKSHOP OS - Bloque Macro de Trabajo\n\nTareas Agendadas:\n${taskLines}`;
-
-      const startFormatted = startTime.length === 5 ? `${startTime}:00` : startTime;
-      const endFormatted = endTime.length === 5 ? `${endTime}:00` : endTime;
-
-      const event = {
-        summary,
-        description,
-        start: {
-          dateTime: `${evalDate}T${startFormatted}`,
-          timeZone: timezone
-        },
-        end: {
-          dateTime: `${evalDate}T${endFormatted}`,
-          timeZone: timezone
-        },
-        reminders: {
-          useDefault: false,
-          overrides: [
-            { method: "popup", minutes: 60 },
-            { method: "popup", minutes: 30 }
-          ]
-        }
-      };
-
-      await this.calendar.events.insert({
+      const res = await this.calendar.events.insert({
         calendarId: targetCalendarId,
-        requestBody: event
+        requestBody: eventPayload
       });
 
-      console.log(`[GoogleCalendarService] Event created successfully in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}.`);
-      return true;
+      const eventId = res.data?.id || null;
+      console.log(`[GoogleCalendarService] Event created (${eventId}) in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}.`);
+      return { success: true, eventId };
     } catch (err: any) {
       const status = err?.code || err?.response?.status || err?.status;
-      const serviceEmailMsg = this.serviceAccountEmail ? `'${this.serviceAccountEmail}'` : "your Service Account email";
+      console.error(`[GoogleCalendarService] Error creating event in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}:`, err);
+      return { success: false, error: err.message || String(err) };
+    }
+  }
 
-      if (status === 404 || status === 403 || (err?.message && (err.message.includes("Not Found") || err.message.includes("forbidden") || err.message.includes("permission")))) {
-        console.error(`[GoogleCalendarService] ERROR: Please share your calendar '${targetCalendarId}' with ${serviceEmailMsg} and grant 'Make changes to events' permission.`);
-      } else {
-        console.error(`[GoogleCalendarService] Error creating event in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}:`, err);
+  async updateWorkshopEvent(
+    userId: number,
+    eventId: string,
+    evalDate: string,
+    startTime: string,
+    endTime: string,
+    scheduledTasks: Array<{ title: string; estimated_hours: number }>
+  ): Promise<CalendarSyncResult> {
+    const settings = store.getAppSettings(userId);
+
+    if (!settings.google_calendar_enabled || !settings.google_calendar_id || !settings.google_calendar_id.trim()) {
+      return { success: false, error: "Google Calendar not connected or disabled" };
+    }
+
+    if (!this.calendar) {
+      return { success: false, error: "Google Calendar credentials not initialized" };
+    }
+
+    const targetCalendarId = settings.google_calendar_id.trim();
+
+    try {
+      const timezone = (settings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+      const eventPayload = this.buildEventPayload(evalDate, startTime, endTime, scheduledTasks, timezone);
+
+      await this.calendar.events.patch({
+        calendarId: targetCalendarId,
+        eventId: eventId,
+        requestBody: eventPayload
+      });
+
+      console.log(`[GoogleCalendarService] Event updated (${eventId}) in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}.`);
+      return { success: true, eventId };
+    } catch (err: any) {
+      const status = err?.code || err?.response?.status || err?.status;
+      const msg = err?.message || String(err);
+      if (status === 404 || status === 410 || msg.includes("Not Found") || msg.includes("notFound") || msg.includes("deleted")) {
+        console.warn(`[GoogleCalendarService] Event ${eventId} not found (404) on Google Calendar. Will trigger re-creation.`);
+        return { success: false, notFound: true, error: "Event not found on Google Calendar" };
       }
-      return false;
+      console.error(`[GoogleCalendarService] Error updating event ${eventId} in Google Calendar:`, err);
+      return { success: false, error: msg };
+    }
+  }
+
+  async deleteWorkshopEvent(
+    userId: number,
+    eventId: string
+  ): Promise<CalendarSyncResult> {
+    const settings = store.getAppSettings(userId);
+
+    if (!settings.google_calendar_enabled || !settings.google_calendar_id || !settings.google_calendar_id.trim()) {
+      return { success: false, error: "Google Calendar not connected or disabled" };
+    }
+
+    if (!this.calendar) {
+      return { success: false, error: "Google Calendar credentials not initialized" };
+    }
+
+    const targetCalendarId = settings.google_calendar_id.trim();
+
+    try {
+      await this.calendar.events.delete({
+        calendarId: targetCalendarId,
+        eventId: eventId
+      });
+
+      console.log(`[GoogleCalendarService] Event deleted (${eventId}) from Google Calendar (${targetCalendarId}) for User #${userId}.`);
+      return { success: true };
+    } catch (err: any) {
+      const status = err?.code || err?.response?.status || err?.status;
+      const msg = err?.message || String(err);
+      if (status === 404 || status === 410 || msg.includes("Not Found") || msg.includes("notFound") || msg.includes("deleted")) {
+        console.log(`[GoogleCalendarService] Event ${eventId} was already deleted on Google Calendar.`);
+        return { success: true, notFound: true };
+      }
+      console.error(`[GoogleCalendarService] Error deleting event ${eventId} from Google Calendar:`, err);
+      return { success: false, error: msg };
     }
   }
 }

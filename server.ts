@@ -723,7 +723,7 @@ app.post('/calendar/create', async (req: AuthenticatedRequest, res) => {
   }
   const tasks = taskIds.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null);
 
-  const success = await calendarService.createWorkshopEvent(
+  const calResult = await calendarService.createWorkshopEvent(
     userId,
     dateIso,
     start_time || '09:00',
@@ -731,10 +731,16 @@ app.post('/calendar/create', async (req: AuthenticatedRequest, res) => {
     tasks.map(t => ({ title: t.title, estimated_hours: t.estimated_hours }))
   );
 
-  if (success) {
-    return res.json({ status: 'success', message: 'Evento de Google Calendar creado con éxito.' });
+  if (calResult.success) {
+    if (dailyLog) {
+      store.updateDailyLog(userId, dailyLog.id, {
+        calendar_created: true,
+        google_event_id: calResult.eventId || null
+      });
+    }
+    return res.json({ status: 'success', message: 'Evento de Google Calendar creado con éxito.', eventId: calResult.eventId });
   } else {
-    return res.status(500).json({ status: 'error', message: 'Google Calendar not connected for this user account' });
+    return res.status(500).json({ status: 'error', message: calResult.error || 'Google Calendar not connected for this user account' });
   }
 });
 

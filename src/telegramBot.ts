@@ -80,6 +80,52 @@ export class TelegramBotService {
     }
   }
 
+  async sendWorkStartNotification(evalResult: DayEvaluation): Promise<boolean> {
+    const parts = evalResult.eval_date.split("-");
+    const dateStr = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : evalResult.eval_date;
+
+    if (evalResult.status !== DayStatus.DAY_VIABLE || !evalResult.window) {
+      return false;
+    }
+
+    const w = evalResult.window;
+    const startStr = w.start_time;
+    const endStr = w.end_time;
+
+    const [startH, startM] = startStr.split(":").map(Number);
+    const [endH, endM] = endStr.split(":").map(Number);
+
+    const setupEndH = (startH + 1) % 24;
+    const setupEndStr = `${String(setupEndH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
+
+    const teardownStartH = (endH - 1 + 24) % 24;
+    const teardownStartStr = `${String(teardownStartH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+
+    let taskListStr = "  • Sin tareas asignadas";
+    if (evalResult.scheduled_tasks && evalResult.scheduled_tasks.length > 0) {
+      taskListStr = evalResult.scheduled_tasks
+        .map(t => `  • *${t.title}* (${t.estimated_hours}h)`)
+        .join("\n");
+    }
+
+    const message =
+      `🚀 *¡INICIO DE JORNADA DE TRABAJO (${dateStr})!* 🚀\n\n` +
+      `🔔 Tu primer bloque de trabajo agendado está por comenzar.\n\n` +
+      `🕒 *Horario de Jornada:* ${startStr} - ${endStr} (${w.total_duration_hours.toFixed(1)}h total)\n\n` +
+      `📋 *Desglose del Bloque Macro:*\n` +
+      `  🔧 *01h Setup:* ${startStr} - ${setupEndStr}\n` +
+      `  🪵 *${w.net_work_hours.toFixed(1)}h Trabajo Neto:* ${setupEndStr} - ${teardownStartStr}\n` +
+      `  🧹 *01h Teardown:* ${teardownStartStr} - ${endStr}\n\n` +
+      `🎯 *Actividades del Bloque:*\n${taskListStr}\n\n` +
+      `⚠️ *Preparación:* Verifica tus herramientas y condiciones de seguridad antes de comenzar. ¡Éxito en la jornada!`;
+
+    return this.sendRequest("sendMessage", {
+      chat_id: this.chatId,
+      text: message,
+      parse_mode: "Markdown"
+    });
+  }
+
   async sendMorningEvaluation(evalResult: DayEvaluation): Promise<boolean> {
     const parts = evalResult.eval_date.split("-");
     const dateStr = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : evalResult.eval_date;
