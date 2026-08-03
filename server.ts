@@ -300,7 +300,7 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     }
 
     const completedHistory = store.getCompletedRecently(userId);
-    const favorites = store.getFavoriteTasks(userId);
+    const taskHistory = store.getTaskHistory(userId);
     const projectTemplates = store.getProjectTemplates(userId);
     const localTimeInfo = getWorkshopLocalTime(new Date(), appSettings.timezone);
 
@@ -315,7 +315,7 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
       app_settings: appSettings,
       local_time_info: localTimeInfo,
       completed_history: completedHistory,
-      favorites,
+      task_history: taskHistory,
       project_templates: projectTemplates
     });
   } catch (err) {
@@ -446,42 +446,16 @@ app.post('/tasks/import', (req: AuthenticatedRequest, res) => {
   });
 });
 
-// Favorite Task routes
-app.post('/tasks/:id/favorite', (req: AuthenticatedRequest, res) => {
+// Task history / suggestions endpoint
+app.get('/tasks/history', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  const task = store.getTask(userId, parseInt(req.params.id));
-  if (task) {
-    store.addFavoriteTask(userId, {
-      title: task.title,
-      category: task.category,
-      estimated_hours: task.estimated_hours,
-      curing_hours: task.curing_hours
-    });
-  }
-  res.redirect(303, '/');
+  const history = store.getTaskHistory(userId);
+  res.json(history);
 });
-
-app.post('/favorites/:id/use', (req: AuthenticatedRequest, res) => {
+app.get('/tasks/suggestions', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  const favId = parseInt(req.params.id);
-  const favs = store.getFavoriteTasks(userId);
-  const fav = favs.find(f => f.id === favId);
-  if (fav) {
-    store.addTask(userId, {
-      title: fav.title,
-      category: fav.category,
-      estimated_hours: fav.estimated_hours,
-      curing_hours: fav.curing_hours,
-      order: store.getTasks(userId).length + 1
-    });
-  }
-  res.redirect(303, '/');
-});
-
-app.post('/favorites/:id/delete', (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.id;
-  store.deleteFavoriteTask(userId, parseInt(req.params.id));
-  res.redirect(303, '/');
+  const history = store.getTaskHistory(userId);
+  res.json(history);
 });
 
 // Project Template routes

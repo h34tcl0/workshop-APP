@@ -1,6 +1,9 @@
 // ── Toast (notificación flotante, usada en varias partes de la página) ──
 function showToast(msg) {
-    const t = document.getElementById('toast'); t.innerText = msg; t.classList.remove('hidden');
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.innerText = msg;
+    t.classList.remove('hidden');
     setTimeout(() => t.classList.add('hidden'), 3000);
 }
 
@@ -11,16 +14,20 @@ function switchTab(tabName) {
     const btnJson = document.getElementById('tab-btn-json');
     const tabManual = document.getElementById('tab-manual');
     const tabJson = document.getElementById('tab-json');
+    if (!btnManual || !btnJson || !tabManual || !tabJson) return;
+
     if (tabName === 'manual') {
-        indicator.classList.remove('right');
+        if (indicator) indicator.classList.remove('right');
         btnManual.classList.replace('text-ink2', 'text-canvas');
         btnJson.classList.replace('text-canvas', 'text-ink2');
-        tabManual.classList.remove('hidden'); tabJson.classList.add('hidden');
+        tabManual.classList.remove('hidden');
+        tabJson.classList.add('hidden');
     } else {
-        indicator.classList.add('right');
+        if (indicator) indicator.classList.add('right');
         btnJson.classList.replace('text-ink2', 'text-canvas');
         btnManual.classList.replace('text-canvas', 'text-ink2');
-        tabJson.classList.remove('hidden'); tabManual.classList.add('hidden');
+        tabJson.classList.remove('hidden');
+        tabManual.classList.add('hidden');
     }
 }
 
@@ -31,59 +38,41 @@ function copyAiPrompt() {
 }
 
 function importJsonTasks() {
-    const jsonText = document.getElementById('json-import-input').value.trim();
+    const input = document.getElementById('json-import-input');
+    if (!input) return;
+    const jsonText = input.value.trim();
     if (!jsonText) return;
     fetch('/tasks/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: jsonText })
-        .then(res => res.json()).then(data => { if (data.status === 'success') { showToast(data.message); setTimeout(() => window.location.reload(), 800); } });
-}
-
-// ── Tareas favoritas ──
-function useFavoriteInForm(id, title, category, estimatedHours, curingHours) {
-    switchTab('manual');
-    document.getElementById('manual-title').value = title;
-    document.getElementById('manual-category').value = category;
-    document.getElementById('manual-estimated-hours').value = estimatedHours;
-    document.getElementById('manual-curing-hours').value = curingHours;
-    document.getElementById('manual-title').focus();
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast(data.message);
+                setTimeout(() => window.location.reload(), 800);
+            }
+        });
 }
 
 // ── Panel de edición inline de cada tarea ──
 function toggleEditTask(taskId) {
-    document.getElementById('edit-task-' + taskId).classList.toggle('hidden');
+    const el = document.getElementById('edit-task-' + taskId);
+    if (el) el.classList.toggle('hidden');
 }
 
 // ── Historial de últimos 7 días (colapsable) ──
 function toggleHistory() {
-    document.getElementById('history-panel').classList.toggle('hidden');
-    document.getElementById('history-chevron').classList.toggle('rotate-180');
+    const panel = document.getElementById('history-panel');
+    const chevron = document.getElementById('history-chevron');
+    if (panel) panel.classList.toggle('hidden');
+    if (chevron) chevron.classList.toggle('rotate-180');
 }
 
-// ── Mover tareas (subir/bajar) sin recargar la página: el backend igual
-// reordena en la BD, pero acá solo reordenamos el DOM localmente. ──
-document.querySelectorAll('form[action*="/move-up"], form[action*="/move-down"]').forEach(form => {
-    form.addEventListener('submit', function (e) {
-        e.preventDefault();
-        const card = form.closest('.task-card');
-        if (!card) { form.submit(); return; }
-        const isUp = form.action.includes('/move-up');
-        let sibling = isUp ? card.previousElementSibling : card.nextElementSibling;
-        while (sibling && !sibling.classList.contains('task-card')) {
-            sibling = isUp ? sibling.previousElementSibling : sibling.nextElementSibling;
-        }
-        if (!sibling) return; // ya está en el borde, no hay nada que mover
-
-        fetch(form.action, { method: 'POST' })
-            .then(res => {
-                if (!res.ok && res.status !== 0) throw new Error('move failed');
-                if (isUp) {
-                    card.parentNode.insertBefore(card, sibling);
-                } else {
-                    card.parentNode.insertBefore(sibling, card);
-                }
-            })
-            .catch(() => { form.submit(); }); // si falla el fetch, degrada al comportamiento clásico
-    });
-});
+// ── Plantillas de proyectos (colapsable) ──
+function toggleTemplates() {
+    const panel = document.getElementById('templates-panel');
+    const chevron = document.getElementById('templates-chevron');
+    if (panel) panel.classList.toggle('hidden');
+    if (chevron) chevron.classList.toggle('rotate-180');
+}
 
 // ── SortableJS: Drag & Drop del backlog ──
 function initSortable() {
@@ -94,13 +83,10 @@ function initSortable() {
         animation: 200,
         ghostClass: 'opacity-40',
         dragClass: 'shadow-2xl',
-        // Avoid accidental drags on touch: require 100ms hold before drag starts
         delay: 100,
         delayOnTouchOnly: true,
-        // Prevent dragging when interacting with form controls inside cards
         filter: 'button, input, select, textarea, a',
         preventOnFilter: false,
-
         onEnd: function (evt) {
             const items = list.querySelectorAll('.task-card[data-id]');
             const orderedIds = Array.from(items).map(el => parseInt(el.dataset.id, 10));
@@ -116,10 +102,7 @@ function initSortable() {
                         showToast('Orden guardado');
                     }
                 })
-                .catch(() => {
-                    // Non-critical: order persists visually even if the request fails.
-                    // Silent fail — no toast — to avoid alarming the user for a cosmetic issue.
-                });
+                .catch(() => {});
         }
     });
 }
@@ -134,23 +117,19 @@ function applyFocusModeState(isCollapsed, isInitial = false) {
 
     if (isCollapsed) {
         backlogCol.classList.add(...FOCUS_COLLAPSE_CLASSES);
-
         const collapseDone = () => {
             if (backlogCol.classList.contains('-translate-x-full')) {
                 backlogCol.style.display = 'none';
             }
         };
-
         if (isInitial) {
             collapseDone();
         } else {
             setTimeout(collapseDone, 300);
         }
-
         if (btnText) btnText.innerText = 'Mostrar Backlog';
     } else {
         backlogCol.style.display = '';
-
         if (isInitial) {
             backlogCol.classList.remove(...FOCUS_COLLAPSE_CLASSES);
         } else {
@@ -158,7 +137,6 @@ function applyFocusModeState(isCollapsed, isInitial = false) {
                 backlogCol.classList.remove(...FOCUS_COLLAPSE_CLASSES);
             });
         }
-
         if (btnText) btnText.innerText = 'Modo Enfoque';
     }
 }
@@ -173,34 +151,54 @@ function toggleFocusMode() {
     applyFocusModeState(newState);
 }
 
-// ── Plantillas de proyectos (colapsable) ──
-function toggleTemplates() {
-    const panel = document.getElementById('templates-panel');
-    const chevron = document.getElementById('templates-chevron');
-    if (panel) panel.classList.toggle('hidden');
-    if (chevron) chevron.classList.toggle('rotate-180');
-}
-
-// ── Autocompletado de Favoritas en #manual-title ──
-function initFavoritesAutocomplete() {
+// ── Autocompletado Inteligente de Tareas en #manual-title ──
+function initTaskAutocomplete() {
     const input = document.getElementById('manual-title');
     const dropdown = document.getElementById('autocomplete-dropdown');
-    const dataScript = document.getElementById('favorites-data');
-    if (!input || !dropdown || !dataScript) return;
+    const dataScript = document.getElementById('task-history-data');
+    if (!input || !dropdown) return;
 
-    let favorites = [];
+    let taskHistory = [];
     try {
-        favorites = JSON.parse(dataScript.textContent || '[]');
+        if (dataScript) {
+            taskHistory = JSON.parse(dataScript.textContent || '[]');
+        }
     } catch (_) {}
 
-    if (!Array.isArray(favorites) || favorites.length === 0) return;
+    const catLabels = {
+        'carpentry': 'Carpintería',
+        'pva_glue': 'Encolado PVA',
+        'varnish_paint': 'Barnizado',
+        'epoxy': 'Epoxi'
+    };
+
+    function updateDatalist(items) {
+        const datalist = document.getElementById('task-history-datalist');
+        if (datalist && Array.isArray(items)) {
+            datalist.innerHTML = items.map(i => `<option value="${i.title.replace(/"/g, '&quot;')}"></option>`).join('');
+        }
+    }
+
+    if (!taskHistory || taskHistory.length === 0) {
+        fetch('/tasks/history')
+            .then(res => res.json())
+            .then(data => {
+                if (Array.isArray(data)) {
+                    taskHistory = data;
+                    updateDatalist(taskHistory);
+                }
+            })
+            .catch(() => {});
+    } else {
+        updateDatalist(taskHistory);
+    }
 
     let activeIndex = -1;
 
     function getMatches(query) {
         const q = (query || '').trim().toLowerCase();
         if (!q) return [];
-        return favorites.filter(f => f.title.toLowerCase().includes(q));
+        return taskHistory.filter(item => item.title && item.title.toLowerCase().includes(q));
     }
 
     function renderDropdown(matches) {
@@ -211,35 +209,52 @@ function initFavoritesAutocomplete() {
             return;
         }
 
-        dropdown.innerHTML = matches.map((fav, idx) => `
-            <button type="button" data-index="${idx}" class="fav-autocomplete-item w-full text-left px-3.5 py-2.5 text-xs text-ink hover:bg-surface2 flex items-center justify-between gap-2 cursor-pointer transition-colors ${idx === activeIndex ? 'bg-surface2 font-semibold' : ''}">
+        dropdown.innerHTML = matches.map((item, idx) => `
+            <button type="button" data-index="${idx}" class="task-autocomplete-item w-full text-left px-3.5 py-2.5 text-xs text-ink hover:bg-surface2 flex items-center justify-between gap-2 cursor-pointer transition-colors ${idx === activeIndex ? 'bg-surface2 font-semibold' : ''}">
                 <span class="font-medium truncate flex items-center gap-1.5">
-                    <svg class="w-3.5 h-3.5 text-brass shrink-0"><use href="#i-star-filled"/></svg>
-                    ${fav.title}
+                    <svg class="w-3.5 h-3.5 text-brass shrink-0"><use href="#i-history"/></svg>
+                    ${item.title}
                 </span>
-                <span class="text-[10px] font-mono text-ink3 shrink-0">${fav.estimated_hours}h</span>
+                <span class="text-[10px] font-mono text-ink3 shrink-0">
+                    ${catLabels[item.category] || item.category || ''} • ${item.estimated_hours}h
+                </span>
             </button>
         `).join('');
 
         dropdown.classList.remove('hidden');
 
-        dropdown.querySelectorAll('.fav-autocomplete-item').forEach((btn, idx) => {
+        dropdown.querySelectorAll('.task-autocomplete-item').forEach((btn, idx) => {
             btn.addEventListener('mousedown', (e) => {
-                e.preventDefault(); // Evita que se dispare blur antes del click
-                selectFavorite(matches[idx]);
+                e.preventDefault();
+                selectTaskSuggestion(matches[idx]);
             });
         });
     }
 
-    function selectFavorite(fav) {
-        useFavoriteInForm(fav.id, fav.title, fav.category, fav.estimated_hours, fav.curing_hours);
+    function selectTaskSuggestion(item) {
+        input.value = item.title;
+        const catSelect = document.getElementById('manual-category');
+        const estInput = document.getElementById('manual-estimated-hours');
+        const curInput = document.getElementById('manual-curing-hours');
+
+        if (catSelect && item.category) catSelect.value = item.category;
+        if (estInput && item.estimated_hours !== undefined) estInput.value = item.estimated_hours;
+        if (curInput && item.curing_hours !== undefined) curInput.value = item.curing_hours;
+
         dropdown.classList.add('hidden');
         dropdown.innerHTML = '';
         activeIndex = -1;
     }
 
     input.addEventListener('input', function () {
-        const matches = getMatches(this.value);
+        const val = this.value;
+        const exactMatch = taskHistory.find(i => i.title.toLowerCase() === val.trim().toLowerCase());
+        if (exactMatch) {
+            selectTaskSuggestion(exactMatch);
+            return;
+        }
+
+        const matches = getMatches(val);
         activeIndex = -1;
         renderDropdown(matches);
     });
@@ -261,7 +276,7 @@ function initFavoritesAutocomplete() {
             if (activeIndex >= 0 && activeIndex < matches.length) {
                 e.preventDefault();
                 e.stopPropagation();
-                selectFavorite(matches[activeIndex]);
+                selectTaskSuggestion(matches[activeIndex]);
             }
         } else if (e.key === 'Escape') {
             dropdown.classList.add('hidden');
@@ -277,13 +292,40 @@ function initFavoritesAutocomplete() {
     });
 }
 
+// ── Event Handlers de Movimiento DOM (subir/bajar) ──
+function initMoveTaskForms() {
+    document.querySelectorAll('form[action*="/move-up"], form[action*="/move-down"]').forEach(form => {
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            const card = form.closest('.task-card');
+            if (!card) { form.submit(); return; }
+            const isUp = form.action.includes('/move-up');
+            let sibling = isUp ? card.previousElementSibling : card.nextElementSibling;
+            while (sibling && !sibling.classList.contains('task-card')) {
+                sibling = isUp ? sibling.previousElementSibling : sibling.nextElementSibling;
+            }
+            if (!sibling) return;
+
+            fetch(form.action, { method: 'POST' })
+                .then(res => {
+                    if (!res.ok && res.status !== 0) throw new Error('move failed');
+                    if (isUp) {
+                        card.parentNode.insertBefore(card, sibling);
+                    } else {
+                        card.parentNode.insertBefore(sibling, card);
+                    }
+                })
+                .catch(() => { form.submit(); });
+        });
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function () {
     const toggleBtn = document.getElementById('toggle-backlog-btn');
     if (toggleBtn) {
         toggleBtn.addEventListener('click', toggleFocusMode);
     }
 
-    // Restaurar estado guardado
     const savedState = localStorage.getItem('workshop_backlog_collapsed');
     if (savedState === 'true') {
         const backlogCol = document.getElementById('backlog-container');
@@ -296,6 +338,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    initMoveTaskForms();
     initSortable();
-    initFavoritesAutocomplete();
+    initTaskAutocomplete();
 });

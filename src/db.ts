@@ -936,7 +936,26 @@ export class SQLiteStore {
     return this.getRecentCompletedHistory(userId);
   }
 
-  // --- FAVORITES ---
+  // --- TASK HISTORY / AUTOCOMPLETE ---
+  getTaskHistory(userId: number): Array<{ title: string; category: TaskCategory; estimated_hours: number; curing_hours: number }> {
+    const rows = this.db.prepare(`
+      SELECT title, category, estimated_hours, curing_hours, MAX(id) as max_id
+      FROM tasks
+      WHERE user_id = ? AND title IS NOT NULL AND TRIM(title) != ''
+      GROUP BY LOWER(TRIM(title))
+      ORDER BY max_id DESC
+      LIMIT 50
+    `).all(userId) as any[];
+
+    return rows.map(row => ({
+      title: String(row.title),
+      category: row.category as TaskCategory,
+      estimated_hours: Number(row.estimated_hours),
+      curing_hours: Number(row.curing_hours)
+    }));
+  }
+
+  // --- FAVORITES (DEPRECATED / COMPAT) ---
   getFavoriteTasks(userId: number): FavoriteTask[] {
     const rows = this.db.prepare("SELECT * FROM favorites WHERE user_id = ? ORDER BY id ASC").all(userId) as any[];
     return rows.map(row => ({
