@@ -169,6 +169,9 @@ export interface WeatherSummary {
   label: string;
   min_temp: number;
   max_temp: number;
+  min_humidity: number;
+  max_humidity: number;
+  total_rain_mm: number;
 }
 
 export interface DayEvaluation {
@@ -178,6 +181,7 @@ export interface DayEvaluation {
   window?: TimeWindow | null;
   scheduled_tasks?: Task[];
   reason: string;
+  unassigned_reason?: string;
   timeline?: TimelineItem[];
   cutoff_reason?: string;
   bar_segments?: BarSegments | null;

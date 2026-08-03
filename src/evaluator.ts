@@ -113,6 +113,14 @@ export function extractWorkdayWeatherSummary(
   const minTemp = temps.length > 0 ? Math.round(Math.min(...temps) * 10) / 10 : 0.0;
   const maxTemp = temps.length > 0 ? Math.round(Math.max(...temps) * 10) / 10 : 0.0;
 
+  const humidities = workForecasts.map(f => Math.round(f.relative_humidity));
+  const minHumidity = humidities.length > 0 ? Math.min(...humidities) : 0;
+  const maxHumidity = humidities.length > 0 ? Math.max(...humidities) : 0;
+
+  const totalRainMm = Math.round(
+    workForecasts.reduce((acc, f) => acc + (f.precipitation_mm || 0), 0) * 10
+  ) / 10;
+
   const maxPop = Math.max(0, ...workForecasts.map(f => f.precipitation_probability));
   const maxPrecip = Math.max(0, ...workForecasts.map(f => f.precipitation_mm));
   const avgClouds = workForecasts.reduce((acc, f) => acc + f.cloud_cover_percent, 0) / Math.max(workForecasts.length, 1);
@@ -131,7 +139,15 @@ export function extractWorkdayWeatherSummary(
     label = "Parcial";
   }
 
-  return { condition, label, min_temp: minTemp, max_temp: maxTemp };
+  return {
+    condition,
+    label,
+    min_temp: minTemp,
+    max_temp: maxTemp,
+    min_humidity: minHumidity,
+    max_humidity: maxHumidity,
+    total_rain_mm: totalRainMm
+  };
 }
 
 export function sliceClimateSegments(
@@ -263,29 +279,35 @@ export function evaluateDayFeasibility(
   if (cfg.exclude_holidays && holidayDates && holidayDates.has(evalDateIso)) blockedLabels.push("feriado");
 
   if (blockedLabels.length > 0) {
+    const reasonMsg = `Día no laborable (${blockedLabels.join(" / ")}, desactivado en configuración).`;
     return {
       ...commonFields,
       status: DayStatus.DAY_BLOCKED,
-      reason: `Día no laborable (${blockedLabels.join(" / ")}, desactivado en configuración).`
+      reason: reasonMsg,
+      unassigned_reason: reasonMsg
     };
   }
 
   const pendingTasks = backlogTasks.filter(t => t.status !== TaskStatus.COMPLETED).sort((a, b) => a.order - b.order);
 
   if (pendingTasks.length === 0) {
+    const reasonMsg = "Sin agendamiento: No hay tareas pendientes compatibles en el backlog.";
     return {
       ...commonFields,
       status: DayStatus.DAY_BLOCKED,
-      reason: "No hay tareas pendientes en el backlog."
+      reason: reasonMsg,
+      unassigned_reason: reasonMsg
     };
   }
 
   const totalActivePending = pendingTasks.reduce((acc, t) => acc + t.estimated_hours, 0);
   if (totalActivePending < cfg.min_work_hours) {
+    const reasonMsg = `Sin agendamiento: La ventana de trabajo libre (${totalActivePending.toFixed(1)}h) es menor al tiempo mínimo requerido por las tareas en backlog (${cfg.min_work_hours.toFixed(1)}h).`;
     return {
       ...commonFields,
       status: DayStatus.DAY_BLOCKED,
-      reason: `Trabajo insuficiente (${totalActivePending.toFixed(1)}h < ${cfg.min_work_hours}h mínimas).`
+      reason: reasonMsg,
+      unassigned_reason: reasonMsg
     };
   }
 
@@ -417,7 +439,7 @@ export function evaluateDayFeasibility(
     console.log(`[EVALUATOR] Assigned ${bestScheduledTasks.length} task(s) to Date ${evalDateIso} (${maxWorkScheduled.toFixed(1)}h work):`, bestScheduledTasks.map(t => `#${t.order || t.id} ${t.title}`).join(", "));
   }
 
-  if (bestWindow) {
+  if (bestWindow && bestScheduledTasks.length > 0) {
     const timeline: TimelineItem[] = [];
     let currH = bestWindow.start_hour;
 
@@ -494,26 +516,42 @@ export function evaluateDayFeasibility(
     };
   }
 
-  if (hadWeatherViableButTooShort) {
-    return {
-      ...commonFields,
-      status: DayStatus.DAY_BLOCKED,
-      reason: `Existían ventanas climáticamente viables, pero ninguna alcanzó el mínimo de ${cfg.min_work_hours_unless_final.toFixed(1)}h de trabajo neto para abrir el taller.`
-    };
-  }
+  // Audit and construct explicit unassigned_reason when no tasks scheduled
+  let auditUnassignedReason = "";
 
-  if (firstWeatherConflictDetail) {
-    return {
-      ...commonFields,
-      status: DayStatus.DAY_BLOCKED,
-      reason: `Ninguna ventana entre ${startLimit}:00 y ${endLimit}:00 hrs quedó libre de interferencias meteorológicas. ${firstWeatherConflictDetail}`
-    };
+  if (weatherSummary.max_humidity > cfg.max_humidity_percent) {
+    auditUnassignedReason = `Sin agendamiento: La humedad promedio/máxima (${weatherSummary.max_humidity}%) excede el umbral límite configurado (${cfg.max_humidity_percent}%).`;
+  } else if (freeWindows.length > 0) {
+    const maxFreeH = Math.max(...freeWindows.map(w => w.duration_hours));
+    const minTaskHours = Math.min(...pendingTasks.map(t => t.estimated_hours));
+    const minNeededWithPrep = minTaskHours + cfg.setup_hours;
+    const requiredThreshold = Math.max(minNeededWithPrep, cfg.min_work_hours);
+
+    if (maxFreeH < requiredThreshold) {
+      auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre (${maxFreeH.toFixed(1)}h) es menor al tiempo mínimo requerido por las tareas en backlog (${requiredThreshold.toFixed(1)}h).`;
+    } else {
+      const hasCuringTasks = pendingTasks.some(t => t.requires_curing || t.curing_hours > 0 || t.category === TaskCategory.PVA_GLUE || t.category === TaskCategory.VARNISH_PAINT || t.category === TaskCategory.EPOXY);
+      if (hasCuringTasks) {
+        auditUnassignedReason = `Sin agendamiento: Bloqueado por tiempo de curado activo de la jornada anterior o requerido para las tareas.`;
+      } else {
+        auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre (${maxFreeH.toFixed(1)}h) es menor al tiempo mínimo requerido por las tareas en backlog (${requiredThreshold.toFixed(1)}h).`;
+      }
+    }
+  } else if (hadWeatherViableButTooShort) {
+    auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre es menor al tiempo mínimo de ${cfg.min_work_hours_unless_final.toFixed(1)}h de trabajo neto requerido por las tareas en backlog.`;
+  } else if (firstWeatherConflictDetail) {
+    auditUnassignedReason = `Sin agendamiento: ${firstWeatherConflictDetail}`;
+  } else if (weatherSummary.total_rain_mm > 0) {
+    auditUnassignedReason = `Sin agendamiento: Riesgo de lluvia detectado en la jornada (${weatherSummary.total_rain_mm} mm de precipitación acumulada).`;
+  } else {
+    auditUnassignedReason = `Sin agendamiento: No existe ventana climática viable disponible para las tareas en backlog.`;
   }
 
   return {
     ...commonFields,
     status: DayStatus.DAY_BLOCKED,
-    reason: `Sin ventana viable entre ${startLimit}:00 y ${endLimit}:00 hrs debido a restricciones climáticas.`
+    reason: auditUnassignedReason,
+    unassigned_reason: auditUnassignedReason
   };
 }
 
@@ -549,6 +587,7 @@ export function evaluateDayWithOverrides(
       date_str: dateStr,
       status: DayStatus.DAY_BLOCKED,
       reason: dayOverride.note || "Bloqueado manualmente desde el editor de día.",
+      unassigned_reason: dayOverride.note || "Bloqueado manualmente desde el editor de día.",
       weather_summary: extractWorkdayWeatherSummary(forecasts, startLimit, endLimit, settings.min_rain_precipitation_mm),
       climate_segments: climateSegments,
       free_windows: freeWindows,

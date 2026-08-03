@@ -49,8 +49,12 @@
 
             <!-- Rango de Horario y Temps -->
             <p class="text-xs text-ink3 mb-4">
-                Jornada <%= app_settings.operational_start_hour %>:00–<%= app_settings.operational_end_hour %>:00 ·
-                <span class="text-ink2 font-mono"><%= eval.weather_summary.min_temp %>°–<%= eval.weather_summary.max_temp %>°C</span>
+                Jornada <%= start_limit %>:00–<%= end_limit %>:00 ·
+                <span class="text-ink2 font-mono"><%= eval.weather_summary.min_temp %>° - <%= eval.weather_summary.max_temp %>°C</span> ·
+                <span class="text-ink2 font-mono">💧 <%= eval.weather_summary.min_humidity %>% - <%= eval.weather_summary.max_humidity %>%</span>
+                <% if (eval.weather_summary.total_rain_mm && eval.weather_summary.total_rain_mm > 0) { %>
+                    · <span class="text-rust font-mono font-semibold">🌧️ <%= eval.weather_summary.total_rain_mm %> mm</span>
+                <% } %>
             </p>
 
             <% if (eval.window) { %>
@@ -220,8 +224,11 @@
             </div>
             <p class="text-xs text-ink3 mb-4">
                 Jornada <%= start_limit %>:00–<%= end_limit %>:00 ·
-                <span class="text-ink2 font-mono"><%= eval.weather_summary.min_temp %>°–<%= eval.weather_summary.max_temp %>°C</span>
-                · sin tareas agendadas este día
+                <span class="text-ink2 font-mono"><%= eval.weather_summary.min_temp %>° - <%= eval.weather_summary.max_temp %>°C</span> ·
+                <span class="text-ink2 font-mono">💧 <%= eval.weather_summary.min_humidity %>% - <%= eval.weather_summary.max_humidity %>%</span>
+                <% if (eval.weather_summary.total_rain_mm && eval.weather_summary.total_rain_mm > 0) { %>
+                    · <span class="text-rust font-mono font-semibold">🌧️ <%= eval.weather_summary.total_rain_mm %> mm</span>
+                <% } %>
             </p>
 
             <% if (eval.climate_segments) { %>
@@ -266,6 +273,10 @@
             </div>
             <% } %>
 
+            <div class="mt-3 bg-brass/5 border border-brassdim/30 rounded-lg p-2.5 text-xs text-ink2">
+                <strong class="font-semibold text-brass">Motivo de no agendamiento — </strong><%= eval.unassigned_reason || eval.reason %>
+            </div>
+
             <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
             <div class="mt-3 pt-3 border-t border-hairline">
                 <p class="text-[11px] text-brass font-semibold uppercase tracking-wider mb-2">⚡ Forzadas</p>
@@ -298,7 +309,7 @@
                 </div>
             </div>
             <div class="bg-canvas/40 border border-hairline rounded-lg px-3.5 py-2.5 text-xs text-ink2">
-                <strong class="font-semibold text-ink2">Motivo — </strong><%= eval.reason %>
+                <strong class="font-semibold text-ink2">Motivo — </strong><%= eval.unassigned_reason || eval.reason %>
             </div>
 
             <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
@@ -336,7 +347,12 @@
                 </div>
             </div>
             <p class="text-xs text-ink3 mb-3">
-                <span class="text-ink2 font-mono"><%= eval.weather_summary.min_temp %>°–<%= eval.weather_summary.max_temp %>°C</span>
+                Jornada <%= start_limit %>:00–<%= end_limit %>:00 ·
+                <span class="text-ink2 font-mono"><%= eval.weather_summary.min_temp %>° - <%= eval.weather_summary.max_temp %>°C</span> ·
+                <span class="text-ink2 font-mono">💧 <%= eval.weather_summary.min_humidity %>% - <%= eval.weather_summary.max_humidity %>%</span>
+                <% if (eval.weather_summary.total_rain_mm && eval.weather_summary.total_rain_mm > 0) { %>
+                    · <span class="text-rust font-mono font-semibold">🌧️ <%= eval.weather_summary.total_rain_mm %> mm</span>
+                <% } %>
             </p>
 
             <% if (eval.climate_segments) { %>
@@ -370,7 +386,7 @@
             <% } %>
 
             <div class="bg-canvas/40 border border-rust/20 rounded-lg px-3.5 py-2.5 text-xs text-ink2">
-                <strong class="font-semibold text-rust">Motivo — </strong><%= eval.reason %>
+                <strong class="font-semibold text-rust">Motivo de no agendamiento — </strong><%= eval.unassigned_reason || eval.reason %>
             </div>
 
             <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
