@@ -25,11 +25,22 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div class="sm:col-span-2">
                     <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Proyecto Asignado</label>
-                    <select name="project_id" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer">
+                    <select name="project_id" id="task-project-select" onchange="handleProjectSelectChange(this)" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer">
                         <% (locals.all_projects || []).forEach(function(p) { %>
                             <option value="<%= p.id %>" <%= p.id === (locals.project ? locals.project.id : 0) ? 'selected' : '' %>><%= p.name %></option>
                         <% }); %>
+                        <option value="__new__" class="font-bold text-brass">➕ [ Agregar nuevo proyecto... ]</option>
                     </select>
+                    <div id="inline-new-project-container" class="hidden mt-2 p-2.5 bg-surface2 border border-brass/50 rounded-xl space-y-2">
+                        <p class="text-[11px] font-semibold text-brass flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5"><use href="#i-plus"/></svg> Crear Nuevo Proyecto
+                        </p>
+                        <div class="flex gap-2">
+                            <input type="text" id="inline-project-name-input" placeholder="Nombre del proyecto..." class="flex-1 bg-surface border border-hairline text-ink text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-brass">
+                            <button type="button" onclick="createInlineProject()" class="bg-brass hover:bg-brassdim text-canvas font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors shrink-0">Crear</button>
+                            <button type="button" onclick="cancelInlineProject()" class="bg-surface border border-hairline text-ink2 text-xs px-2.5 py-1.5 rounded-lg transition-colors shrink-0">Cancelar</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="relative">
@@ -181,67 +192,63 @@
         </div>
     </div>
 
-    <!-- PLANTILLAS DE PROYECTOS (TEMPLATES) -->
+    <!-- SECCIÓN PROYECTOS -->
     <div class="bg-surface border border-hairline rounded-2xl overflow-hidden shadow-panel">
-        <button type="button" onclick="toggleTemplates()" class="w-full flex items-center justify-between px-4 py-3 text-left">
+        <button type="button" onclick="toggleProjects()" class="w-full flex items-center justify-between px-4 py-3 text-left">
             <span class="flex items-center gap-2 text-sm font-semibold text-ink2">
                 <svg class="w-4 h-4 text-brass"><use href="#i-import"/></svg>
-                Plantillas de proyectos
+                Proyectos
                 <span class="text-[11px] font-mono text-ink3 bg-surface2 border border-hairline px-2 py-0.5 rounded-full">
-                    <%= typeof project_templates !== 'undefined' && project_templates ? project_templates.length : 0 %>
+                    <%= typeof all_projects !== 'undefined' && all_projects ? all_projects.length : 0 %>
                 </span>
             </span>
-            <svg id="templates-chevron" class="w-4 h-4 text-ink3 transition-transform"><use href="#i-chevron-down-sm"/></svg>
+            <svg id="projects-chevron" class="w-4 h-4 text-ink3 transition-transform"><use href="#i-chevron-down-sm"/></svg>
         </button>
-        <div id="templates-panel" class="hidden border-t border-hairline p-4 space-y-4">
-            <!-- Form Guardar plantilla actual -->
-            <form action="/project-templates/save" method="post" id="save-template-form" class="bg-surface2/60 border border-hairline rounded-xl p-3.5 space-y-3">
-                <p class="text-xs font-semibold text-ink2">Guardar backlog activo como plantilla</p>
+        <div id="projects-panel" class="hidden border-t border-hairline p-4 space-y-4">
+            <!-- Form Crear nuevo proyecto -->
+            <form action="/projects/add" method="post" id="add-project-form" class="bg-surface2/60 border border-hairline rounded-xl p-3.5 space-y-3">
+                <p class="text-xs font-semibold text-ink2">Crear nuevo proyecto</p>
                 <div class="flex flex-col sm:flex-row gap-2">
-                    <input type="text" name="name" required placeholder="Nombre de plantilla (ej. Estructura Pérgola)" class="flex-1 bg-surface border border-hairline text-ink text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
+                    <input type="text" name="name" required placeholder="Nombre (ej. Estructura Pérgola)" class="flex-1 bg-surface border border-hairline text-ink text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
                     <button type="submit" class="bg-brass hover:bg-brassdim text-canvas font-semibold text-xs px-4 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[44px] sm:min-h-0 flex items-center justify-center gap-1.5">
-                        <svg class="w-3.5 h-3.5"><use href="#i-plus"/></svg> Guardar
+                        <svg class="w-3.5 h-3.5"><use href="#i-plus"/></svg> Crear
                     </button>
                 </div>
             </form>
 
-            <!-- Lista de Plantillas -->
-            <% if (typeof project_templates !== 'undefined' && project_templates && project_templates.length > 0) { %>
+            <!-- Lista de Proyectos -->
+            <% if (typeof all_projects !== 'undefined' && all_projects && all_projects.length > 0) { %>
             <div class="space-y-2.5 max-h-72 overflow-y-auto">
-                <% project_templates.forEach(function(tpl) { 
-                    const totalActive = (tpl.items || []).reduce((sum, item) => sum + (item.estimated_hours || 0), 0);
-                    const totalCuring = (tpl.items || []).reduce((sum, item) => sum + (item.curing_hours || 0), 0);
+                <% all_projects.forEach(function(p) { 
+                    const isActive = p.id === (locals.project ? locals.project.id : 0);
                 %>
-                <div class="bg-surface border border-hairline rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div class="min-w-0">
-                        <h5 class="text-xs font-semibold text-ink truncate"><%= tpl.name %></h5>
-                        <div class="flex items-center gap-2 mt-1 text-[11px] font-mono text-ink3">
-                            <span><%= (tpl.items || []).length %> tareas</span>
-                            <span>•</span>
-                            <span class="text-ink2"><%= totalActive %>h activas</span>
-                            <% if (totalCuring > 0) { %>
-                            <span>•</span>
-                            <span class="text-chalk"><%= totalCuring %>h curado</span>
+                <div class="bg-surface border <%= isActive ? 'border-brass bg-brass/5' : 'border-hairline' %> rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-2">
+                            <h5 class="text-xs font-semibold text-ink truncate"><%= p.name %></h5>
+                            <% if (isActive) { %>
+                            <span class="text-[10px] font-mono font-bold text-brass bg-brass/10 border border-brass/30 px-2 py-0.5 rounded-full shrink-0">Activo</span>
                             <% } %>
                         </div>
+                        <% if (p.description) { %>
+                        <p class="text-[11px] text-ink3 truncate mt-0.5"><%= p.description %></p>
+                        <% } %>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
-                        <form action="/project-templates/<%= tpl.id %>/apply" method="post" class="inline-block">
-                            <button type="submit" class="bg-moss/10 hover:bg-moss/20 text-moss border border-moss/20 font-semibold px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1 min-h-[36px] sm:min-h-0">
-                                <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg> Aplicar
+                        <% if (!isActive) { %>
+                        <form action="/projects/active" method="post" class="inline-block">
+                            <input type="hidden" name="project_id" value="<%= p.id %>">
+                            <button type="submit" class="bg-brass/10 hover:bg-brass/20 text-brass border border-brass/20 font-semibold px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1 min-h-[36px] sm:min-h-0">
+                                <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg> Seleccionar
                             </button>
                         </form>
-                        <form action="/project-templates/<%= tpl.id %>/delete" method="post" class="inline-block">
-                            <button type="submit" aria-label="Eliminar plantilla" class="bg-rust/10 hover:bg-rust/20 text-rust border border-rust/20 font-semibold p-1.5 rounded-lg text-xs transition-colors min-h-[36px] min-w-[36px] sm:min-h-0 sm:min-w-0 flex items-center justify-center">
-                                <svg class="w-3.5 h-3.5"><use href="#i-close"/></svg>
-                            </button>
-                        </form>
+                        <% } %>
                     </div>
                 </div>
                 <% }); %>
             </div>
             <% } else { %>
-            <p class="text-xs text-ink3 italic text-center py-2">No hay plantillas guardadas aún.</p>
+            <p class="text-xs text-ink3 italic text-center py-2">No hay proyectos registrados aún.</p>
             <% } %>
         </div>
     </div>
