@@ -67,7 +67,7 @@ export class TelegramBotService {
 
         try {
           const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${TelegramBotService.lastUpdateId + 1}&timeout=5`;
-          const res = await fetch(url);
+          const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
           if (res.ok) {
             conflictCount = 0;
             const data = await res.json();
@@ -96,18 +96,22 @@ export class TelegramBotService {
             if (res.status === 409) {
               conflictCount++;
               delayMs = Math.min(30000, 5000 * Math.pow(2, Math.min(conflictCount - 1, 3)));
+              try {
+                await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=true`);
+              } catch (_) {}
               if (conflictCount === 1 || conflictCount % 10 === 0) {
-                console.warn(`[Telegram Polling HTTP 409 Conflict]: ${errText}. Retrying in ${delayMs / 1000}s...`);
-                try {
-                  await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=true`);
-                } catch (_) {}
+                console.log(`[Telegram Polling] Instance conflict detected (409). Backing off for ${delayMs / 1000}s...`);
               }
             } else {
-              console.error(`[Telegram Polling HTTP Error ${res.status}]: ${errText}`);
+              console.error(`[Telegram Polling HTTP ${res.status}]: ${errText}`);
             }
           }
-        } catch (err) {
-          console.error("[Telegram Polling Exception]:", err);
+        } catch (err: any) {
+          if (err?.name === "AbortError" || err?.name === "TimeoutError") {
+            // Normal timeout for long polling request
+          } else {
+            console.error("[Telegram Polling Exception]:", err);
+          }
         }
 
         if (TelegramBotService.pollingActive) {

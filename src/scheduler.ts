@@ -500,7 +500,9 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
 
       if (!riskText) return;
 
-      const sent = await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, riskText);
+      const locPrefix = `📍 *Taller (${appSettings.latitude.toFixed(2)}, ${appSettings.longitude.toFixed(2)}):* `;
+      const fullRiskText = `${locPrefix}${riskText}`;
+      const sent = await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, fullRiskText);
       if (sent) {
         const nowIso = new Date().toISOString();
         store.updateDailyLog(userId, dailyLog.id, {
@@ -508,11 +510,11 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
           intraday_alert_last_sent_at: nowIso,
           intraday_alert_burst_count: 1,
           weather_alert_sent: true,
-          weather_alert_message: riskText,
+          weather_alert_message: fullRiskText,
           weather_alert_last_sent_at: nowIso,
           weather_alert_retry_count: 1
         });
-        console.log(`[Scheduler] Intraday Weather alert triggered for User #${userId} on ${todayIso}: ${riskText}`);
+        console.log(`[Scheduler] Intraday Weather alert triggered for User #${userId} on ${todayIso}: ${fullRiskText}`);
       }
       return;
     }
@@ -523,9 +525,10 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
     const isRain = (riskFoundForecast.precipitation_probability != null && riskFoundForecast.precipitation_probability >= 30) ||
                    precipMm >= appSettings.min_rain_precipitation_mm;
 
+    const locPrefix = `📍 *Taller (${appSettings.latitude.toFixed(2)}, ${appSettings.longitude.toFixed(2)}):* `;
     const detailsText = isRain
-      ? `Se pronostica lluvia para las ${criticalTimeStr} hrs (Precipitación: ${precipMm.toFixed(1)} mm / Humedad: ${Math.round(humidityPct)}%).`
-      : `Se pronostica humedad crítica para las ${criticalTimeStr} hrs (${Math.round(humidityPct)}%, Máx permitido: ${appSettings.max_humidity_percent}%).`;
+      ? `${locPrefix}Se pronostica lluvia para las ${criticalTimeStr} hrs (Precipitación: ${precipMm.toFixed(1)} mm / Humedad: ${Math.round(humidityPct)}%).`
+      : `${locPrefix}Se pronostica humedad crítica para las ${criticalTimeStr} hrs (${Math.round(humidityPct)}%, Máx permitido: ${appSettings.max_humidity_percent}%).`;
 
     const sent = await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, detailsText);
     if (sent) {
