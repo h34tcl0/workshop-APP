@@ -375,20 +375,38 @@ app.post('/projects/:id/toggle', (req: AuthenticatedRequest, res) => {
   res.redirect(303, '/');
 });
 
+// Helper for parsing float numbers flexible with commas and strings
+function parseFlexibleFloat(val: any): number | undefined {
+  if (val === null || val === undefined || val === '') return undefined;
+  if (typeof val === 'number') return isNaN(val) ? undefined : val;
+  const str = String(val).replace(',', '.').trim();
+  const parsed = parseFloat(str);
+  return isNaN(parsed) ? undefined : parsed;
+}
+
 // POST /tasks/add
 app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.id;
-  const { title, description, category, estimated_hours, curing_hours, order, project_id } = req.body;
-  store.addTask(userId, {
-    project_id: project_id ? parseInt(project_id, 10) : undefined,
-    title,
-    description: description || '',
-    category: category || TaskCategory.CARPENTRY,
-    estimated_hours: parseFloat(estimated_hours) || 1.0,
-    curing_hours: parseFloat(curing_hours) || 0.0,
-    order: parseInt(order) || undefined
-  });
-  res.redirect(303, '/');
+  try {
+    const userId = req.user!.id;
+    const { title, description, category, estimated_hours, curing_hours, order, project_id } = req.body;
+    const parsedEst = parseFlexibleFloat(estimated_hours) ?? 1.0;
+    const parsedCur = parseFlexibleFloat(curing_hours) ?? 0.0;
+    const parsedOrd = order ? parseInt(String(order), 10) : undefined;
+
+    store.addTask(userId, {
+      project_id: project_id ? parseInt(String(project_id), 10) : undefined,
+      title: title ? String(title).trim() : 'Nueva Tarea',
+      description: description || '',
+      category: category || TaskCategory.CARPENTRY,
+      estimated_hours: parsedEst,
+      curing_hours: parsedCur,
+      order: parsedOrd && !isNaN(parsedOrd) ? parsedOrd : undefined
+    });
+    res.redirect(303, '/');
+  } catch (err) {
+    console.error('[Server Error] Error en POST /tasks/add:', err);
+    res.redirect(303, '/');
+  }
 });
 
 // POST /tasks/:id/activate-to-backlog - Activar tarea y su proyecto para el agendamiento activo
@@ -434,25 +452,48 @@ app.post('/tasks/:id/toggle-active', (req: AuthenticatedRequest, res) => {
 
 // POST /tasks/:id/update
 app.post('/tasks/:id/update', (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.id;
-  const id = parseInt(req.params.id, 10);
-  const { title, estimated_hours, curing_hours, category, project_id, is_active } = req.body;
-  const isActiveBool = is_active !== undefined ? (is_active === 'true' || is_active === true || is_active === 1 || is_active === '1') : undefined;
-  const updated = store.updateTask(userId, id, {
-    title: title ? String(title).trim() : undefined,
-    estimated_hours: estimated_hours !== undefined ? parseFloat(estimated_hours) : undefined,
-    curing_hours: curing_hours !== undefined ? parseFloat(curing_hours) : undefined,
-    category: category || undefined,
-    project_id: project_id ? parseInt(project_id, 10) : undefined,
-    is_active: isActiveBool
-  });
-  if (!updated) {
-    return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });
+  try {
+    const userId = req.user!.id;
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) {
+      if (req.xhr || req.headers.accept?.includes('application/json')) {
+        return res.status(400).json({ error: 'ID de tarea inválido' });
+      }
+      return res.redirect(303, '/');
+    }
+
+    const { title, estimated_hours, curing_hours, category, project_id, is_active } = req.body;
+    const parsedEst = parseFlexibleFloat(estimated_hours);
+    const parsedCur = parseFlexibleFloat(curing_hours);
+    const isActiveBool = is_active !== undefined ? (is_active === 'true' || is_active === true || is_active === 1 || is_active === '1') : undefined;
+
+    const updated = store.updateTask(userId, id, {
+      title: title ? String(title).trim() : undefined,
+      estimated_hours: parsedEst,
+      curing_hours: parsedCur !== undefined ? parsedCur : (curing_hours === '' || curing_hours === '0' || curing_hours === 0 ? 0 : undefined),
+      category: category || undefined,
+      project_id: project_id ? parseInt(String(project_id), 10) : undefined,
+      is_active: isActiveBool
+    });
+
+    if (!updated) {
+      if (req.xhr || req.headers.accept?.includes('application/json')) {
+        return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });
+      }
+      return res.redirect(303, '/');
+    }
+
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, task: updated });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error(`[Server Error] Error en POST /tasks/${req.params.id}/update:`, err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(500).json({ error: 'Error interno del servidor al actualizar la tarea', details: err?.message });
+    }
+    res.redirect(303, '/');
   }
-  if (req.xhr || req.headers.accept?.includes('application/json')) {
-    return res.json({ success: true, task: updated });
-  }
-  res.redirect(303, '/');
 });
 
 // POST /tasks/:id/update_status

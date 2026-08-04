@@ -154,6 +154,40 @@ async function handleTaskDelete(event, taskId, taskTitle) {
     return false;
 }
 
+async function handleTaskUpdate(event, taskId) {
+    if (event) event.preventDefault();
+    const form = document.getElementById(`task-edit-form-${taskId}`);
+    if (!form) return false;
+    
+    const formData = new FormData(form);
+    const bodyObj = {};
+    formData.forEach((value, key) => {
+        bodyObj[key] = value;
+    });
+
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(bodyObj)
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            showToast('Tarea actualizada correctamente');
+            setTimeout(() => window.location.reload(), 400);
+        } else {
+            showToast(data.error || 'Error al actualizar tarea');
+        }
+    } catch (err) {
+        console.error('Error updating task:', err);
+        showToast('Error al actualizar tarea');
+    }
+    return false;
+}
+
 function toggleTaskInlineEdit(taskId) {
     const form = document.getElementById(`task-edit-form-${taskId}`);
     if (form) form.classList.toggle('hidden');

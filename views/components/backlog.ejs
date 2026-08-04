@@ -323,8 +323,8 @@
                                     </div>
                                 </div>
 
-                                <!-- Inline Edit Form -->
-                                <form id="task-edit-form-<%= t.id %>" action="/tasks/<%= t.id %>/update" method="post" class="hidden border-t border-hairline pt-2.5 mt-2 space-y-2 bg-surface2/50 rounded-md p-2">
+                                 <!-- Inline Edit Form -->
+                                <form id="task-edit-form-<%= t.id %>" action="/tasks/<%= t.id %>/update" method="post" onsubmit="return handleTaskUpdate(event, '<%= t.id %>')" class="hidden border-t border-hairline pt-2.5 mt-2 space-y-2 bg-surface2/50 rounded-md p-2">
                                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                                         <div class="sm:col-span-2">
                                             <label class="block text-[10px] font-semibold text-ink3 uppercase">Título</label>

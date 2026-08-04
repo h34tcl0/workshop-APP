@@ -977,46 +977,82 @@ export class SQLiteStore {
   }
 
   updateTask(userId: number, id: number, data: Partial<Task>): Task | null {
-    const existing = this.getTask(userId, id);
-    if (!existing) return null;
+    try {
+      const existing = this.getTask(userId, id);
+      if (!existing) return null;
 
-    const updated = { ...existing, ...data };
-    const reqCurInt = computeRequiresCuring(updated.category, updated.curing_hours) ? 1 : 0;
-    const isActiveInt = updated.is_active !== undefined ? (updated.is_active ? 1 : 0) : 1;
+      const title = data.title !== undefined ? String(data.title).trim() : existing.title;
+      const description = data.description !== undefined ? String(data.description) : (existing.description || "");
+      const category = data.category !== undefined ? data.category : existing.category;
 
-    this.db.prepare(
-      `UPDATE tasks SET
-        title = ?,
-        description = ?,
-        category = ?,
-        estimated_hours = ?,
-        curing_hours = ?,
-        requires_curing = ?,
-        status = ?,
-        progress_percentage = ?,
-        order_num = ?,
-        completed_at = ?,
-        project_id = ?,
-        is_active = ?
-      WHERE id = ? AND user_id = ?;`
-    ).run(
-      updated.title,
-      updated.description || "",
-      updated.category,
-      updated.estimated_hours,
-      updated.curing_hours,
-      reqCurInt,
-      updated.status,
-      updated.progress_percentage,
-      updated.order,
-      updated.completed_at ? String(updated.completed_at) : null,
-      updated.project_id,
-      isActiveInt,
-      id,
-      userId
-    );
+      const estHours = data.estimated_hours !== undefined && !isNaN(Number(data.estimated_hours))
+        ? Number(data.estimated_hours)
+        : (existing.estimated_hours || 1.0);
 
-    return this.getTask(userId, id);
+      const curHours = data.curing_hours !== undefined && !isNaN(Number(data.curing_hours))
+        ? Number(data.curing_hours)
+        : (existing.curing_hours || 0.0);
+
+      const reqCurInt = computeRequiresCuring(category, curHours) ? 1 : 0;
+      const status = data.status !== undefined ? data.status : existing.status;
+
+      const progressPercentage = data.progress_percentage !== undefined && !isNaN(Number(data.progress_percentage))
+        ? Number(data.progress_percentage)
+        : (existing.progress_percentage || 0);
+
+      const orderNum = data.order !== undefined && !isNaN(Number(data.order))
+        ? Number(data.order)
+        : (existing.order || 1);
+
+      const completedAt = data.completed_at !== undefined
+        ? (data.completed_at ? String(data.completed_at) : null)
+        : (existing.completed_at ? String(existing.completed_at) : null);
+
+      const projectId = data.project_id !== undefined && !isNaN(Number(data.project_id))
+        ? Number(data.project_id)
+        : (existing.project_id || 1);
+
+      const isActiveInt = data.is_active !== undefined
+        ? (data.is_active ? 1 : 0)
+        : (existing.is_active !== false ? 1 : 0);
+
+      this.db.prepare(
+        `UPDATE tasks SET
+          title = ?,
+          description = ?,
+          category = ?,
+          estimated_hours = ?,
+          curing_hours = ?,
+          requires_curing = ?,
+          status = ?,
+          progress_percentage = ?,
+          order_num = ?,
+          completed_at = ?,
+          project_id = ?,
+          is_active = ?
+        WHERE id = ? AND user_id = ?;`
+      ).run(
+        title,
+        description,
+        category,
+        estHours,
+        curHours,
+        reqCurInt,
+        status,
+        progressPercentage,
+        orderNum,
+        completedAt,
+        projectId,
+        isActiveInt,
+        id,
+        userId
+      );
+
+      return this.getTask(userId, id);
+    } catch (err) {
+      console.error(`[DB Error] updateTask failed for task ${id}, user ${userId}:`, err);
+      return null;
+    }
   }
 
   updateTaskGlobal(id: number, data: Partial<Task>): Task | null {
