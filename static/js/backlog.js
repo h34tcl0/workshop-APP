@@ -70,8 +70,88 @@ function toggleHistory() {
 function toggleProjectAccordion(projectId) {
     const body = document.getElementById(`proj-body-${projectId}`);
     const chevron = document.getElementById(`proj-chevron-${projectId}`);
-    if (body) body.classList.toggle('hidden');
+    if (body) {
+        body.classList.toggle('hidden');
+        const isOpen = !body.classList.contains('hidden');
+        let openProjs = JSON.parse(sessionStorage.getItem('open_project_accordions') || '[]');
+        const strId = String(projectId);
+        if (isOpen) {
+            if (!openProjs.includes(strId)) openProjs.push(strId);
+        } else {
+            openProjs = openProjs.filter(id => id !== strId);
+        }
+        sessionStorage.setItem('open_project_accordions', JSON.stringify(openProjs));
+    }
     if (chevron) chevron.classList.toggle('rotate-180');
+}
+
+function restoreProjectAccordions() {
+    try {
+        const openProjs = JSON.parse(sessionStorage.getItem('open_project_accordions') || '[]');
+        openProjs.forEach(projectId => {
+            const body = document.getElementById(`proj-body-${projectId}`);
+            const chevron = document.getElementById(`proj-chevron-${projectId}`);
+            if (body) body.classList.remove('hidden');
+            if (chevron) chevron.classList.add('rotate-180');
+        });
+    } catch (e) {
+        console.error('Error restoring project accordions:', e);
+    }
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', restoreProjectAccordions);
+} else {
+    restoreProjectAccordions();
+}
+
+// ── Acciones Rápidas en Tareas de Proyecto ──
+async function activateTaskToBacklog(taskId, taskTitle) {
+    try {
+        const res = await fetch(`/tasks/${taskId}/activate-to-backlog`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || `Tarea '${taskTitle}' agregada al backlog activo`);
+            setTimeout(() => window.location.reload(), 400);
+        } else {
+            showToast(data.error || 'Error al agregar tarea al backlog activo');
+        }
+    } catch (err) {
+        console.error('Error in activateTaskToBacklog:', err);
+        showToast('Error de conexión');
+    }
+}
+
+async function handleTaskDelete(event, taskId, taskTitle) {
+    if (event) event.preventDefault();
+    if (!confirm(`¿Eliminar la tarea '${taskTitle}'?`)) return false;
+    try {
+        const res = await fetch(`/tasks/${taskId}/delete`, {
+            method: 'POST',
+            headers: {
+                'Accept': 'application/json'
+            }
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast(data.message || `Tarea '${taskTitle}' eliminada`);
+            const taskCard = document.getElementById(`task-card-${taskId}`);
+            if (taskCard) taskCard.remove();
+            setTimeout(() => window.location.reload(), 400);
+        } else {
+            showToast('Error al eliminar tarea');
+        }
+    } catch (err) {
+        console.error('Error deleting task:', err);
+        showToast('Error al eliminar tarea');
+    }
+    return false;
 }
 
 function toggleTaskInlineEdit(taskId) {

@@ -291,12 +291,32 @@
                                         </div>
                                     </div>
 
-                                    <div class="flex items-center gap-1 shrink-0">
-                                        <button type="button" onclick="toggleTaskInlineEdit('<%= t.id %>')" aria-label="Editar tarea" class="p-1 rounded bg-surface2 hover:bg-hairline text-ink2 text-xs font-semibold transition-colors flex items-center gap-1">
+                                    <div class="flex items-center gap-1.5 shrink-0">
+                                        <!-- 1. Agregar a tareas actuales (Mover al backlog activo) -->
+                                        <button type="button" 
+                                                onclick="activateTaskToBacklog('<%= t.id %>', '<%= t.title.replace(/'/g, "\\'") %>')" 
+                                                title="Agregar a tareas actuales / Mover al Backlog" 
+                                                aria-label="Agregar a tareas actuales" 
+                                                class="px-2 py-1 rounded-md bg-brass/10 hover:bg-brass/20 text-brass border border-brass/30 text-xs font-semibold transition-colors flex items-center gap-1 shadow-xs">
+                                            <svg class="w-3.5 h-3.5"><use href="#i-inbox"/></svg>
+                                            <span class="text-[10px] font-medium hidden sm:inline">Al Backlog</span>
+                                        </button>
+
+                                        <!-- 2. Editar -->
+                                        <button type="button" 
+                                                onclick="toggleTaskInlineEdit('<%= t.id %>')" 
+                                                title="Editar tarea" 
+                                                aria-label="Editar tarea" 
+                                                class="p-1.5 rounded-md bg-surface2 hover:bg-hairline text-ink2 border border-hairline text-xs font-semibold transition-colors flex items-center gap-1 shadow-xs">
                                             <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg>
                                         </button>
-                                        <form action="/tasks/<%= t.id %>/delete" method="post" class="inline-block">
-                                            <button type="submit" aria-label="Eliminar tarea" onclick="return confirm('¿Eliminar esta tarea?')" class="p-1 rounded bg-rust/10 hover:bg-rust/20 text-rust text-xs transition-colors flex items-center justify-center">
+
+                                        <!-- 3. Eliminar -->
+                                        <form action="/tasks/<%= t.id %>/delete" method="post" class="inline-block" onsubmit="return handleTaskDelete(event, '<%= t.id %>', '<%= t.title.replace(/'/g, "\\'") %>')">
+                                            <button type="submit" 
+                                                    title="Eliminar tarea" 
+                                                    aria-label="Eliminar tarea" 
+                                                    class="p-1.5 rounded-md bg-rust/10 hover:bg-rust/20 text-rust border border-rust/30 text-xs transition-colors flex items-center justify-center shadow-xs">
                                                 <svg class="w-3.5 h-3.5"><use href="#i-close"/></svg>
                                             </button>
                                         </form>

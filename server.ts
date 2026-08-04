@@ -391,6 +391,34 @@ app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
   res.redirect(303, '/');
 });
 
+// POST /tasks/:id/activate-to-backlog - Activar tarea y su proyecto para el agendamiento activo
+app.post('/tasks/:id/activate-to-backlog', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const id = parseInt(req.params.id, 10);
+  const task = store.getTask(userId, id);
+  if (!task) {
+    return res.status(404).json({ error: 'Tarea no encontrada' });
+  }
+
+  // 1. Activar tarea en base de datos
+  const updatedTask = store.toggleTaskActive(userId, id, true);
+  
+  // 2. Asegurar que el proyecto al que pertenece esté activo para ser agendable
+  if (task.project_id) {
+    store.toggleProjectActive(userId, task.project_id, true);
+  }
+
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ 
+      success: true, 
+      message: `Tarea '${task.title}' agregada al backlog activo`,
+      task: updatedTask
+    });
+  }
+
+  res.redirect(303, '/');
+});
+
 // POST /tasks/:id/toggle-active
 app.post('/tasks/:id/toggle-active', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
@@ -451,7 +479,13 @@ app.post('/tasks/:id/update_status', (req: AuthenticatedRequest, res) => {
 // POST /tasks/:id/delete
 app.post('/tasks/:id/delete', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  store.deleteTask(userId, parseInt(req.params.id));
+  const id = parseInt(req.params.id, 10);
+  const task = store.getTask(userId, id);
+  const title = task ? task.title : 'Tarea';
+  store.deleteTask(userId, id);
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ success: true, message: `Tarea '${title}' eliminada` });
+  }
   res.redirect(303, '/');
 });
 
