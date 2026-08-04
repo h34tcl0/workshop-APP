@@ -18,7 +18,7 @@
 
     <!-- TAB MANUAL -->
     <script type="application/json" id="task-history-data">
-        <%- JSON.stringify(task_history || []) %>
+        <%- JSON.stringify(task_history || []).replace(/</g, '\\u003c') %>
     </script>
     <div id="tab-manual" class="tab-content">
         <form action="/tasks/add" method="post" class="bg-surface border border-hairline rounded-2xl p-5 sm:p-6 space-y-4 shadow-panel">

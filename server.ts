@@ -100,19 +100,13 @@ app.get('/login', (req: AuthenticatedRequest, res) => {
 
 app.post('/login', (req, res) => {
   const { email, password } = req.body;
-  console.log(`[AUTH] Login attempt for: ${email}`);
 
   if (!email || !password) {
-    console.log(`[AUTH] User found: false`);
-    console.log(`[AUTH] Password match: false`);
     return res.status(400).render('login', { error: 'Por favor ingresa correo y contraseña', email });
   }
 
   const user = store.getUserByEmail(email);
-  console.log(`[AUTH] User found: ${!!user}`);
-
   const isValid = user ? verifyPassword(password, user.password_hash) : false;
-  console.log(`[AUTH] Password match: ${isValid}`);
 
   if (!user || !isValid) {
     return res.status(401).render('login', { error: 'Credenciales inválidas', email });
