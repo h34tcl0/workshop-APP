@@ -236,6 +236,15 @@
 
     <!-- MAIN GRID -->
     <main class="max-w-[1440px] mx-auto px-2.5 sm:px-6 py-4 sm:py-8 w-full max-w-full overflow-x-hidden">
+        <!-- MODE SWITCHER NAVIGATION BAR -->
+        <%- include('components/mode_switcher') %>
+
+        <!-- MODO PLANIFICACIÓN - SUBVISTA MATERIALES (OCULTA POR DEFECTO SI ESTÁ EN AGENDA) -->
+        <div id="materials-view-wrapper" class="hidden w-full max-w-5xl mx-auto mb-8">
+            <%- include('components/materials') %>
+        </div>
+
+        <!-- MODO PLANIFICACIÓN - AGENDA Y BACKLOG GRID -->
         <div id="main-layout-grid" class="flex flex-col lg:flex-row gap-6 lg:gap-8 w-full items-start min-w-0 max-w-full">
 
             <div id="backlog-container"
@@ -247,6 +256,44 @@
                 <%- include('components/agenda') %>
             </div>
 
+        </div>
+
+        <!-- MODO TALLER - VISTA EXCLUSIVA TALLER (OCULTA POR DEFECTO) -->
+        <div id="workshop-mode-view" class="hidden w-full space-y-8">
+            <!-- CALCULADORA DE OFFSETS -->
+            <%- include('components/workshop_calculator') %>
+
+            <!-- VISTA RÁPIDA DE TAREAS Y CONTROLES DEL TALLER -->
+            <div class="bg-surface border border-hairline rounded-3xl p-5 sm:p-7 shadow-panel max-w-2xl mx-auto space-y-4">
+                <div class="flex items-center justify-between border-b border-hairline pb-3">
+                    <h3 class="font-display text-lg font-bold text-ink flex items-center gap-2">
+                        📋 Tareas Pendientes del Proyecto Activo
+                    </h3>
+                    <span class="text-xs font-mono bg-surface2 border border-hairline text-brass px-2.5 py-1 rounded-full font-bold">
+                        <%= (locals.tasks || []).length %> Tareas
+                    </span>
+                </div>
+
+                <div class="space-y-2.5">
+                    <% if ((locals.tasks || []).length === 0) { %>
+                        <p class="text-xs text-ink3 py-4 text-center">¡No hay tareas pendientes en la cola del proyecto!</p>
+                    <% } else { %>
+                        <% (locals.tasks || []).forEach(t => { %>
+                            <div class="flex items-center justify-between p-3.5 bg-surface2 border border-hairline rounded-2xl gap-3">
+                                <div class="min-w-0">
+                                    <h4 class="font-bold text-sm text-ink truncate"><%= t.title %></h4>
+                                    <p class="text-xs text-ink3 mt-0.5"><%= t.estimated_hours %>h activas • <%= t.curing_hours %>h curado</p>
+                                </div>
+                                <form action="/tasks/<%= t.id %>/complete" method="post">
+                                    <button type="submit" class="bg-moss/20 hover:bg-moss text-moss hover:text-canvas border border-moss/40 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors min-h-[44px] flex items-center gap-1.5 shrink-0">
+                                        <svg class="w-4 h-4"><use href="#i-check"/></svg> Completar
+                                    </button>
+                                </form>
+                            </div>
+                        <% }); %>
+                    <% } %>
+                </div>
+            </div>
         </div>
     </main>
 

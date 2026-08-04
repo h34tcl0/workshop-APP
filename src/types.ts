@@ -240,3 +240,33 @@ export interface ProjectTemplate {
   created_at: string;
   items?: ProjectTemplateItem[];
 }
+
+export enum MaterialStatus {
+  TO_BUY = "to_buy",
+  IN_STOCK = "in_stock"
+}
+
+export interface Material {
+  id: number;
+  user_id: number;
+  project_id: number;
+  name: string;
+  quantity: number;
+  unit: string;
+  category: string;
+  status: MaterialStatus | string;
+  created_at: string;
+  updated_at: string;
+  project_name?: string;
+}
+
+export interface CalculatorOffset {
+  id: number;
+  user_id: number;
+  label: string;
+  offset_value: number;
+  unit: string;
+  description?: string;
+  order_num: number;
+  created_at: string;
+}

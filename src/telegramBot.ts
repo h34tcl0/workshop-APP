@@ -297,9 +297,35 @@ export class TelegramBotService {
     if (text.startsWith("/start") || text.startsWith("/help")) {
       await replyBot.sendRequest("sendMessage", {
         chat_id: chatStr,
-        text: `👋 *Hola (${user.email})*\nTu cuenta de Telegram está correctamente vinculada a Workshop OS.\nRecibirás tus planes de trabajo, alertas climáticas y check-ins nocturnos aquí.`,
+        text: `👋 *Hola (${user.email})*\nTu cuenta de Telegram está correctamente vinculada a Workshop OS.\n\n*Comandos disponibles:*\n• \`/materiales\` - Ver insumos pendientes por comprar (🔴)`,
         parse_mode: "Markdown"
       });
+    } else if (text.toLowerCase() === "/materiales" || text.toLowerCase() === "materiales" || text.toLowerCase().startsWith("/materiales")) {
+      const pendingByProject = store.getPendingMaterialsForActiveProjects(user.id);
+      if (pendingByProject.length === 0) {
+        await replyBot.sendRequest("sendMessage", {
+          chat_id: chatStr,
+          text: `📦 *MATERIALES POR COMPRAR* (🔴)\n\n✅ ¡Excelente! No tienes insumos pendientes por comprar en tus proyectos activos.`,
+          parse_mode: "Markdown"
+        });
+      } else {
+        let msgText = `📦 *RESUMEN DE MATERIALES POR COMPRAR* (🔴)\n\n`;
+        let totalItems = 0;
+        for (const projGroup of pendingByProject) {
+          msgText += `📁 *Proyecto: ${projGroup.project_name}*\n`;
+          for (const m of projGroup.materials) {
+            msgText += `  • *${m.quantity} ${m.unit}* - ${m.name} _[${m.category}]_\n`;
+            totalItems++;
+          }
+          msgText += `\n`;
+        }
+        msgText += `📌 *Total:* ${totalItems} insumos pendientes.`;
+        await replyBot.sendRequest("sendMessage", {
+          chat_id: chatStr,
+          text: msgText,
+          parse_mode: "Markdown"
+        });
+      }
     } else {
       await replyBot.sendRequest("sendMessage", {
         chat_id: chatStr,

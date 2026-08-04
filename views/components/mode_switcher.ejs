@@ -1,0 +1,123 @@
+<!-- BARRA PRINCIPAL DE CONMUTACIÓN DE MODOS -->
+<div class="w-full mb-6">
+    <!-- TOGGLE PRINCIPAL DE MODO -->
+    <div class="bg-surface border-2 border-hairline rounded-2xl p-1.5 flex shadow-panel max-w-xl mx-auto">
+        <button type="button" 
+                id="mode-btn-planning" 
+                onclick="switchWorkspaceMode('planning')" 
+                class="flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all min-h-[48px] bg-brass text-canvas shadow-md">
+            <svg class="w-4 h-4"><use href="#i-sidebar"/></svg>
+            <span>📋 Modo Planificación</span>
+        </button>
+        <button type="button" 
+                id="mode-btn-workshop" 
+                onclick="switchWorkspaceMode('workshop')" 
+                class="flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all min-h-[48px] text-ink2 hover:text-ink">
+            <span>🛠️ Modo Taller</span>
+        </button>
+    </div>
+
+    <!-- SUB-TABS DENTRO DEL MODO PLANIFICACIÓN -->
+    <div id="planning-subtabs-bar" class="flex items-center justify-center gap-2 mt-4">
+        <button type="button" 
+                id="plan-tab-btn-agenda" 
+                onclick="switchPlanningSubtab('agenda')" 
+                class="px-4 py-2 rounded-xl text-xs font-semibold bg-surface border border-brass text-brass shadow-sm transition-all flex items-center gap-1.5">
+            <span>📅 Agenda y Backlog</span>
+        </button>
+        <button type="button" 
+                id="plan-tab-btn-materials" 
+                onclick="switchPlanningSubtab('materials')" 
+                class="px-4 py-2 rounded-xl text-xs font-semibold bg-surface border border-hairline text-ink2 hover:text-ink transition-all flex items-center gap-1.5">
+            <span>📦 Módulo de Materiales</span>
+            <% if ((locals.materials || []).filter(m => m.status === 'to_buy').length > 0) { %>
+                <span class="w-2 h-2 rounded-full bg-rust"></span>
+            <% } %>
+        </button>
+    </div>
+</div>
+
+<script>
+function switchWorkspaceMode(mode) {
+    const planningBtn = document.getElementById('mode-btn-planning');
+    const workshopBtn = document.getElementById('mode-btn-workshop');
+    const planningSubtabs = document.getElementById('planning-subtabs-bar');
+    const planningContainer = document.getElementById('main-layout-grid');
+    const workshopContainer = document.getElementById('workshop-mode-view');
+
+    if (!planningBtn || !workshopBtn) return;
+
+    if (mode === 'workshop') {
+        planningBtn.classList.remove('bg-brass', 'text-canvas', 'shadow-md');
+        planningBtn.classList.add('text-ink2');
+        workshopBtn.classList.add('bg-brass', 'text-canvas', 'shadow-md');
+        workshopBtn.classList.remove('text-ink2');
+
+        if (planningSubtabs) planningSubtabs.classList.add('hidden');
+        if (planningContainer) planningContainer.classList.add('hidden');
+        if (workshopContainer) workshopContainer.classList.remove('hidden');
+
+        localStorage.setItem('agendapp_workspace_mode', 'workshop');
+    } else {
+        workshopBtn.classList.remove('bg-brass', 'text-canvas', 'shadow-md');
+        workshopBtn.classList.add('text-ink2');
+        planningBtn.classList.add('bg-brass', 'text-canvas', 'shadow-md');
+        planningBtn.classList.remove('text-ink2');
+
+        if (planningSubtabs) planningSubtabs.classList.remove('hidden');
+        if (planningContainer) planningContainer.classList.remove('hidden');
+        if (workshopContainer) workshopContainer.classList.add('hidden');
+
+        localStorage.setItem('agendapp_workspace_mode', 'planning');
+    }
+}
+
+function switchPlanningSubtab(subtab) {
+    const agendaBtn = document.getElementById('plan-tab-btn-agenda');
+    const materialsBtn = document.getElementById('plan-tab-btn-materials');
+    const backlogCol = document.getElementById('backlog-container');
+    const agendaCol = document.getElementById('agenda-container');
+    const materialsView = document.getElementById('materials-view-wrapper');
+
+    if (!agendaBtn || !materialsBtn) return;
+
+    if (subtab === 'materials') {
+        agendaBtn.classList.remove('border-brass', 'text-brass');
+        agendaBtn.classList.add('border-hairline', 'text-ink2');
+        materialsBtn.classList.add('border-brass', 'text-brass');
+        materialsBtn.classList.remove('border-hairline', 'text-ink2');
+
+        if (backlogCol) backlogCol.classList.add('hidden');
+        if (agendaCol) agendaCol.classList.add('hidden');
+        if (materialsView) materialsView.classList.remove('hidden');
+
+        localStorage.setItem('agendapp_planning_subtab', 'materials');
+    } else {
+        materialsBtn.classList.remove('border-brass', 'text-brass');
+        materialsBtn.classList.add('border-hairline', 'text-ink2');
+        agendaBtn.classList.add('border-brass', 'text-brass');
+        agendaBtn.classList.remove('border-hairline', 'text-ink2');
+
+        if (backlogCol) backlogCol.classList.remove('hidden');
+        if (agendaCol) agendaCol.classList.remove('hidden');
+        if (materialsView) materialsView.classList.add('hidden');
+
+        localStorage.setItem('agendapp_planning_subtab', 'agenda');
+    }
+}
+
+// Restore saved mode on page load
+document.addEventListener('DOMContentLoaded', () => {
+    const savedMode = localStorage.getItem('agendapp_workspace_mode');
+    const savedSubtab = localStorage.getItem('agendapp_planning_subtab');
+
+    if (savedMode === 'workshop') {
+        switchWorkspaceMode('workshop');
+    } else {
+        switchWorkspaceMode('planning');
+        if (savedSubtab === 'materials') {
+            switchPlanningSubtab('materials');
+        }
+    }
+});
+</script>

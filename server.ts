@@ -303,6 +303,9 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     const taskHistory = store.getTaskHistory(userId);
     const projectTemplates = store.getProjectTemplates(userId);
     const localTimeInfo = getWorkshopLocalTime(new Date(), appSettings.timezone);
+    const materials = store.getMaterials(userId, activeProject.id);
+    const calculatorOffsets = store.getCalculatorOffsets(userId);
+    const allProjects = store.getProjects(userId);
 
     res.render('index', {
       project: activeProject,
@@ -316,7 +319,10 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
       local_time_info: localTimeInfo,
       completed_history: completedHistory,
       task_history: taskHistory,
-      project_templates: projectTemplates
+      project_templates: projectTemplates,
+      materials,
+      calculator_offsets: calculatorOffsets,
+      all_projects: allProjects
     });
   } catch (err) {
     console.error('Error rendering dashboard:', err);
@@ -514,6 +520,223 @@ app.post('/project-templates/:id/delete', (req: AuthenticatedRequest, res) => {
     console.error('Error deleting project template:', err);
     if (req.headers.accept?.includes('application/json')) {
       return res.status(500).json({ status: 'error', message: 'Error eliminando la plantilla.' });
+    }
+    res.redirect(303, '/');
+  }
+});
+
+// ==========================================
+// MATERIALES (PLANNING MODE) ROUTES
+// ==========================================
+app.get('/api/materials', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const projectId = req.query.project_id ? parseInt(String(req.query.project_id), 10) : undefined;
+  const materials = store.getMaterials(userId, projectId);
+  res.json({ success: true, materials });
+});
+
+app.post('/materials/add', (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const { name, quantity, unit, category, status, project_id } = req.body;
+    if (!name || !String(name).trim()) {
+      if (req.xhr || req.headers.accept?.includes('application/json')) {
+        return res.status(400).json({ error: 'El nombre del material es obligatorio' });
+      }
+      return res.redirect(303, '/');
+    }
+    const mat = store.addMaterial(userId, {
+      name: String(name),
+      quantity: parseFloat(quantity) || 1.0,
+      unit: String(unit || 'unidades'),
+      category: String(category || 'General'),
+      status: String(status || 'to_buy'),
+      project_id: project_id ? parseInt(project_id, 10) : undefined
+    });
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, material: mat });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('Error adding material:', err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.redirect(303, '/');
+  }
+});
+
+app.post('/materials/:id/toggle', (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const id = parseInt(req.params.id, 10);
+    const updated = store.toggleMaterialStatus(userId, id);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, material: updated });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('Error toggling material:', err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.redirect(303, '/');
+  }
+});
+
+app.post('/materials/:id/update', (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const id = parseInt(req.params.id, 10);
+    const { name, quantity, unit, category, status, project_id } = req.body;
+    const updated = store.updateMaterial(userId, id, {
+      name: name ? String(name) : undefined,
+      quantity: quantity !== undefined ? parseFloat(quantity) : undefined,
+      unit: unit ? String(unit) : undefined,
+      category: category ? String(category) : undefined,
+      status: status ? String(status) : undefined,
+      project_id: project_id ? parseInt(project_id, 10) : undefined
+    });
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, material: updated });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('Error updating material:', err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.redirect(303, '/');
+  }
+});
+
+app.post('/materials/:id/delete', (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const id = parseInt(req.params.id, 10);
+    store.deleteMaterial(userId, id);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('Error deleting material:', err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.redirect(303, '/');
+  }
+});
+
+app.post('/materials/import', (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    let materialsList: any[] = [];
+    if (req.body.json_data) {
+      try {
+        const parsed = JSON.parse(req.body.json_data);
+        materialsList = Array.isArray(parsed) ? parsed : (parsed.materials || []);
+      } catch (e) {
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+          return res.status(400).json({ error: 'JSON inválido' });
+        }
+        return res.redirect(303, '/');
+      }
+    } else if (Array.isArray(req.body.materials)) {
+      materialsList = req.body.materials;
+    }
+
+    const projectId = req.body.project_id ? parseInt(req.body.project_id, 10) : undefined;
+    const imported = store.importMaterialsFromJson(userId, materialsList, projectId);
+
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, imported_count: imported.length, materials: imported });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('Error importing materials:', err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.redirect(303, '/');
+  }
+});
+
+// ==========================================
+// CALCULATOR OFFSETS (WORKSHOP MODE) ROUTES
+// ==========================================
+app.get('/api/calculator/offsets', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const offsets = store.getCalculatorOffsets(userId);
+  res.json({ success: true, offsets });
+});
+
+app.post('/calculator/offsets/add', (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const { label, offset_value, unit, description } = req.body;
+    if (!label || offset_value === undefined) {
+      if (req.xhr || req.headers.accept?.includes('application/json')) {
+        return res.status(400).json({ error: 'La etiqueta y el valor de offset son obligatorios' });
+      }
+      return res.redirect(303, '/');
+    }
+    const newOffset = store.addCalculatorOffset(userId, {
+      label: String(label),
+      offset_value: parseFloat(offset_value) || 0,
+      unit: String(unit || 'mm'),
+      description: description ? String(description) : undefined
+    });
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, offset: newOffset });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('Error adding calculator offset:', err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.redirect(303, '/');
+  }
+});
+
+app.post('/calculator/offsets/:id/update', (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const id = parseInt(req.params.id, 10);
+    const { label, offset_value, unit, description } = req.body;
+    const updated = store.updateCalculatorOffset(userId, id, {
+      label: label ? String(label) : undefined,
+      offset_value: offset_value !== undefined ? parseFloat(offset_value) : undefined,
+      unit: unit ? String(unit) : undefined,
+      description: description !== undefined ? String(description) : undefined
+    });
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, offset: updated });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('Error updating calculator offset:', err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(500).json({ error: err.message });
+    }
+    res.redirect(303, '/');
+  }
+});
+
+app.post('/calculator/offsets/:id/delete', (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const id = parseInt(req.params.id, 10);
+    store.deleteCalculatorOffset(userId, id);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('Error deleting calculator offset:', err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(500).json({ error: err.message });
     }
     res.redirect(303, '/');
   }

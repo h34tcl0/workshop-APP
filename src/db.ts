@@ -14,7 +14,10 @@ import {
   DailyLog,
   DayStatus,
   ProjectTemplate,
-  ProjectTemplateItem
+  ProjectTemplateItem,
+  MaterialStatus,
+  Material,
+  CalculatorOffset
 } from "./types.js";
 import { hashPassword, verifyPassword } from "./auth.js";
 import { getTimezoneByCoords } from "./dateUtils.js";
@@ -219,11 +222,38 @@ export async function initDatabase(): Promise<Database.Database> {
       FOREIGN KEY (template_id) REFERENCES project_templates(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS materials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      project_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      quantity REAL NOT NULL DEFAULT 1.0,
+      unit TEXT NOT NULL DEFAULT 'unidades',
+      category TEXT NOT NULL DEFAULT 'General',
+      status TEXT NOT NULL DEFAULT 'to_buy',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS calculator_offsets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      label TEXT NOT NULL,
+      offset_value REAL NOT NULL,
+      unit TEXT NOT NULL DEFAULT 'mm',
+      description TEXT,
+      order_num INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
   `);
 
   // Migration logic for existing tables missing user_id
   const tablesToMigrate = [
-    'projects', 'tasks', 'favorites', 'forced_tasks', 'project_templates', 'project_template_items'
+    'projects', 'tasks', 'favorites', 'forced_tasks', 'project_templates', 'project_template_items', 'materials', 'calculator_offsets'
   ];
 
   for (const table of tablesToMigrate) {
@@ -538,6 +568,43 @@ Standard API access is restricted until password is updated.
         reqCur,
         t.order_num
       );
+    });
+  }
+
+  // Check calculator_offsets for admin user
+  const offsetsRow = db.prepare("SELECT COUNT(*) as count FROM calculator_offsets WHERE user_id = ?").get(adminUserId) as any;
+  if (!offsetsRow || offsetsRow.count === 0) {
+    const defaultOffsets = [
+      { label: "-185 Riel", offset_value: -185, unit: "mm", description: "Descuento guía/riel telescópico cajón", order_num: 1 },
+      { label: "+3 Disco", offset_value: 3, unit: "mm", description: "Espesor hoja de sierra de banco", order_num: 2 },
+      { label: "-2 Canto", offset_value: -2, unit: "mm", description: "Descuento tapacanto PVC", order_num: 3 },
+      { label: "-15 Fondo", offset_value: -15, unit: "mm", description: "Holgura trasera fondo cajón", order_num: 4 }
+    ];
+    const insertOffset = db.prepare(`
+      INSERT INTO calculator_offsets (user_id, label, offset_value, unit, description, order_num, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `);
+    defaultOffsets.forEach(o => {
+      insertOffset.run(adminUserId, o.label, o.offset_value, o.unit, o.description, o.order_num);
+    });
+  }
+
+  // Check materials for admin user
+  const materialsRow = db.prepare("SELECT COUNT(*) as count FROM materials WHERE user_id = ?").get(adminUserId) as any;
+  if (!materialsRow || materialsRow.count === 0) {
+    const defaultMaterials = [
+      { name: "Listones de Roble 2x4x3.2m", quantity: 6, unit: "piezas", category: "Madera", status: MaterialStatus.TO_BUY },
+      { name: "Cola Fría Titebond III 500ml", quantity: 1, unit: "botella", category: "Adhesivos/Barniz", status: MaterialStatus.IN_STOCK },
+      { name: "Tornillos T2 Cincados 2 pulgadas", quantity: 100, unit: "unidades", category: "Tornillería", status: MaterialStatus.TO_BUY },
+      { name: "Resina Epoxi Cristal (Kit 1kg)", quantity: 2, unit: "kits", category: "Adhesivos/Barniz", status: MaterialStatus.TO_BUY },
+      { name: "Guías Telescópicas 45cm", quantity: 4, unit: "pares", category: "Herrajes", status: MaterialStatus.IN_STOCK }
+    ];
+    const insertMaterial = db.prepare(`
+      INSERT INTO materials (user_id, project_id, name, quantity, unit, category, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `);
+    defaultMaterials.forEach(m => {
+      insertMaterial.run(adminUserId, adminProjId, m.name, m.quantity, m.unit, m.category, m.status);
     });
   }
 }
@@ -1576,6 +1643,267 @@ export class SQLiteStore {
     ).run(passwordHash, userId);
     return res.changes > 0;
   }
+
+  // --- MATERIALS MANAGEMENT ---
+  private rowToMaterial(row: any): Material {
+    return {
+      id: Number(row.id),
+      user_id: Number(row.user_id),
+      project_id: Number(row.project_id),
+      name: String(row.name),
+      quantity: Number(row.quantity),
+      unit: String(row.unit || "unidades"),
+      category: String(row.category || "General"),
+      status: String(row.status || MaterialStatus.TO_BUY),
+      created_at: String(row.created_at || ""),
+      updated_at: String(row.updated_at || ""),
+      project_name: row.project_name ? String(row.project_name) : undefined
+    };
+  }
+
+  getMaterials(userId: number, projectId?: number): Material[] {
+    let sql = `
+      SELECT m.*, p.name as project_name
+      FROM materials m
+      JOIN projects p ON p.id = m.project_id
+      WHERE m.user_id = ?
+    `;
+    const params: any[] = [userId];
+    if (projectId) {
+      sql += ` AND m.project_id = ?`;
+      params.push(projectId);
+    }
+    sql += ` ORDER BY m.status DESC, m.category ASC, m.id ASC`;
+
+    const rows = this.db.prepare(sql).all(...params) as any[];
+    return rows.map(r => this.rowToMaterial(r));
+  }
+
+  getMaterial(userId: number, id: number): Material | null {
+    const row = this.db.prepare(`
+      SELECT m.*, p.name as project_name
+      FROM materials m
+      JOIN projects p ON p.id = m.project_id
+      WHERE m.id = ? AND m.user_id = ?
+    `).get(id, userId) as any;
+    if (!row) return null;
+    return this.rowToMaterial(row);
+  }
+
+  addMaterial(userId: number, data: {
+    project_id?: number;
+    name: string;
+    quantity?: number;
+    unit?: string;
+    category?: string;
+    status?: string;
+  }): Material {
+    const pId = data.project_id || this.getActiveProject(userId).id;
+    const nowIso = new Date().toISOString();
+    const statusVal = data.status === MaterialStatus.IN_STOCK ? MaterialStatus.IN_STOCK : MaterialStatus.TO_BUY;
+
+    const info = this.db.prepare(`
+      INSERT INTO materials (user_id, project_id, name, quantity, unit, category, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      userId,
+      pId,
+      data.name.trim(),
+      data.quantity !== undefined ? Number(data.quantity) : 1.0,
+      (data.unit || "unidades").trim(),
+      (data.category || "General").trim(),
+      statusVal,
+      nowIso,
+      nowIso
+    );
+
+    return this.getMaterial(userId, Number(info.lastInsertRowid))!;
+  }
+
+  updateMaterial(userId: number, id: number, data: Partial<Material>): Material | null {
+    const existing = this.getMaterial(userId, id);
+    if (!existing) return null;
+
+    const updated = { ...existing, ...data };
+    const nowIso = new Date().toISOString();
+
+    this.db.prepare(`
+      UPDATE materials SET
+        project_id = ?,
+        name = ?,
+        quantity = ?,
+        unit = ?,
+        category = ?,
+        status = ?,
+        updated_at = ?
+      WHERE id = ? AND user_id = ?
+    `).run(
+      updated.project_id,
+      updated.name.trim(),
+      updated.quantity,
+      updated.unit.trim(),
+      updated.category.trim(),
+      updated.status,
+      nowIso,
+      id,
+      userId
+    );
+
+    return this.getMaterial(userId, id);
+  }
+
+  toggleMaterialStatus(userId: number, id: number): Material | null {
+    const mat = this.getMaterial(userId, id);
+    if (!mat) return null;
+    const newStatus = mat.status === MaterialStatus.TO_BUY ? MaterialStatus.IN_STOCK : MaterialStatus.TO_BUY;
+    return this.updateMaterial(userId, id, { status: newStatus });
+  }
+
+  deleteMaterial(userId: number, id: number): boolean {
+    const res = this.db.prepare("DELETE FROM materials WHERE id = ? AND user_id = ?").run(id, userId);
+    return res.changes > 0;
+  }
+
+  importMaterialsFromJson(userId: number, materialsList: any[], projectId?: number): Material[] {
+    const targetProjId = projectId || this.getActiveProject(userId).id;
+    const imported: Material[] = [];
+
+    for (const item of materialsList) {
+      if (!item || !item.name) continue;
+      const mat = this.addMaterial(userId, {
+        project_id: targetProjId,
+        name: String(item.name),
+        quantity: item.quantity !== undefined ? parseFloat(item.quantity) : 1.0,
+        unit: item.unit ? String(item.unit) : "unidades",
+        category: item.category ? String(item.category) : "General",
+        status: item.status === MaterialStatus.IN_STOCK || item.status === "in_stock" || item.status === "🟢 En Taller" ? MaterialStatus.IN_STOCK : MaterialStatus.TO_BUY
+      });
+      imported.push(mat);
+    }
+
+    return imported;
+  }
+
+  getPendingMaterialsForActiveProjects(userId: number): { project_name: string; materials: Material[] }[] {
+    const activeProjects = this.getProjects(userId).filter(p => p.is_active);
+    const result: { project_name: string; materials: Material[] }[] = [];
+
+    for (const p of activeProjects) {
+      const rows = this.db.prepare(`
+        SELECT * FROM materials
+        WHERE user_id = ? AND project_id = ? AND status = 'to_buy'
+        ORDER BY category ASC, name ASC
+      `).all(userId, p.id) as any[];
+
+      const items = rows.map(r => this.rowToMaterial({ ...r, project_name: p.name }));
+      if (items.length > 0) {
+        result.push({ project_name: p.name, materials: items });
+      }
+    }
+
+    return result;
+  }
+
+  // --- CALCULATOR OFFSETS MANAGEMENT ---
+  private rowToCalculatorOffset(row: any): CalculatorOffset {
+    return {
+      id: Number(row.id),
+      user_id: Number(row.user_id),
+      label: String(row.label),
+      offset_value: Number(row.offset_value),
+      unit: String(row.unit || "mm"),
+      description: row.description || "",
+      order_num: Number(row.order_num || 1),
+      created_at: String(row.created_at || "")
+    };
+  }
+
+  getCalculatorOffsets(userId: number): CalculatorOffset[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM calculator_offsets WHERE user_id = ? ORDER BY order_num ASC, id ASC"
+    ).all(userId) as any[];
+
+    if (rows.length === 0) {
+      // Seed default offsets if empty
+      const defaultOffsets = [
+        { label: "-185 Riel", offset_value: -185, unit: "mm", description: "Descuento guía/riel telescópico cajón", order_num: 1 },
+        { label: "+3 Disco", offset_value: 3, unit: "mm", description: "Espesor hoja de sierra de banco", order_num: 2 },
+        { label: "-2 Canto", offset_value: -2, unit: "mm", description: "Descuento tapacanto PVC", order_num: 3 },
+        { label: "-15 Fondo", offset_value: -15, unit: "mm", description: "Holgura trasera fondo cajón", order_num: 4 }
+      ];
+      const insertStmt = this.db.prepare(`
+        INSERT INTO calculator_offsets (user_id, label, offset_value, unit, description, order_num, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      `);
+      defaultOffsets.forEach(o => {
+        insertStmt.run(userId, o.label, o.offset_value, o.unit, o.description, o.order_num);
+      });
+      return this.getCalculatorOffsets(userId);
+    }
+
+    return rows.map(r => this.rowToCalculatorOffset(r));
+  }
+
+  getCalculatorOffset(userId: number, id: number): CalculatorOffset | null {
+    const row = this.db.prepare("SELECT * FROM calculator_offsets WHERE id = ? AND user_id = ?").get(id, userId) as any;
+    if (!row) return null;
+    return this.rowToCalculatorOffset(row);
+  }
+
+  addCalculatorOffset(userId: number, data: {
+    label: string;
+    offset_value: number;
+    unit?: string;
+    description?: string;
+  }): CalculatorOffset {
+    const offsets = this.getCalculatorOffsets(userId);
+    const maxOrder = offsets.reduce((max, o) => Math.max(max, o.order_num), 0);
+
+    const info = this.db.prepare(`
+      INSERT INTO calculator_offsets (user_id, label, offset_value, unit, description, order_num, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(
+      userId,
+      data.label.trim(),
+      Number(data.offset_value),
+      (data.unit || "mm").trim(),
+      (data.description || "").trim(),
+      maxOrder + 1
+    );
+
+    return this.getCalculatorOffset(userId, Number(info.lastInsertRowid))!;
+  }
+
+  updateCalculatorOffset(userId: number, id: number, data: Partial<CalculatorOffset>): CalculatorOffset | null {
+    const existing = this.getCalculatorOffset(userId, id);
+    if (!existing) return null;
+
+    const updated = { ...existing, ...data };
+
+    this.db.prepare(`
+      UPDATE calculator_offsets SET
+        label = ?,
+        offset_value = ?,
+        unit = ?,
+        description = ?
+      WHERE id = ? AND user_id = ?
+    `).run(
+      updated.label.trim(),
+      updated.offset_value,
+      updated.unit.trim(),
+      updated.description || "",
+      id,
+      userId
+    );
+
+    return this.getCalculatorOffset(userId, id);
+  }
+
+  deleteCalculatorOffset(userId: number, id: number): boolean {
+    const res = this.db.prepare("DELETE FROM calculator_offsets WHERE id = ? AND user_id = ?").run(id, userId);
+    return res.changes > 0;
+  }
+
 }
 
 export const store = new SQLiteStore();
