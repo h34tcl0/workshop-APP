@@ -33,48 +33,75 @@ export class TelegramBotService {
     TelegramBotService.pollingActive = true;
     console.log("[Telegram Polling] Starting background long polling for Telegram updates...");
 
-    const poll = async () => {
-      if (!TelegramBotService.pollingActive) return;
-
+    (async () => {
+      // 1. Limpieza de Webhook previo (Evita conflicto HTTP 409)
       try {
-        const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${TelegramBotService.lastUpdateId + 1}&timeout=5`;
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.ok && Array.isArray(data.result)) {
-            for (const update of data.result) {
-              TelegramBotService.lastUpdateId = Math.max(TelegramBotService.lastUpdateId, update.update_id);
-              const botSvc = new TelegramBotService(token);
-              try {
-                if (update.callback_query) {
-                  await botSvc.processCallbackQuery(update.callback_query);
-                } else if (update.message) {
-                  await botSvc.handleIncomingMessage(update.message);
-                }
-              } catch (innerErr) {
-                console.error("[Telegram Polling] Error processing individual update:", innerErr);
-              }
-            }
-          }
-        } else {
-          const errText = await res.text();
-          if (res.status === 404 || res.status === 401) {
-            console.warn(`[Telegram Polling] Invalid or missing Telegram Bot Token (HTTP ${res.status}). Polling paused.`);
-            TelegramBotService.pollingActive = false;
-            return;
-          }
-          console.error(`[Telegram Polling HTTP Error ${res.status}]: ${errText}`);
+        const delRes = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=true`);
+        const delData = await delRes.json();
+        if (delData && delData.ok) {
+          console.log("[Telegram Polling] Webhook previo eliminado exitosamente.");
         }
       } catch (err) {
-        console.error("[Telegram Polling Exception]:", err);
+        console.error("[Telegram Polling] Error limpiando webhook:", err);
       }
 
-      if (TelegramBotService.pollingActive) {
-        TelegramBotService.pollingTimeout = setTimeout(poll, 3000);
+      // 2. Validación de Token con getMe
+      try {
+        const getMeRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+        const getMeData = await getMeRes.json();
+        if (getMeData && getMeData.ok && getMeData.result) {
+          console.log(`[Telegram Bot] Conectado exitosamente como @${getMeData.result.username}`);
+        } else {
+          console.warn(`[Telegram Bot] Error de validación de Token: ${JSON.stringify(getMeData)}`);
+        }
+      } catch (err) {
+        console.error("[Telegram Bot] Error comprobando token con getMe:", err);
       }
-    };
 
-    poll();
+      // 3. Bucle Long Polling
+      const poll = async () => {
+        if (!TelegramBotService.pollingActive) return;
+
+        try {
+          const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${TelegramBotService.lastUpdateId + 1}&timeout=5`;
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.ok && Array.isArray(data.result)) {
+              for (const update of data.result) {
+                TelegramBotService.lastUpdateId = Math.max(TelegramBotService.lastUpdateId, update.update_id);
+                const botSvc = new TelegramBotService(token);
+                try {
+                  if (update.callback_query) {
+                    await botSvc.processCallbackQuery(update.callback_query);
+                  } else if (update.message) {
+                    await botSvc.handleIncomingMessage(update.message);
+                  }
+                } catch (innerErr) {
+                  console.error("[Telegram Polling] Error processing individual update:", innerErr);
+                }
+              }
+            }
+          } else {
+            const errText = await res.text();
+            if (res.status === 404 || res.status === 401) {
+              console.warn(`[Telegram Polling] Invalid or missing Telegram Bot Token (HTTP ${res.status}). Polling paused.`);
+              TelegramBotService.pollingActive = false;
+              return;
+            }
+            console.error(`[Telegram Polling HTTP Error ${res.status}]: ${errText}`);
+          }
+        } catch (err) {
+          console.error("[Telegram Polling Exception]:", err);
+        }
+
+        if (TelegramBotService.pollingActive) {
+          TelegramBotService.pollingTimeout = setTimeout(poll, 3000);
+        }
+      };
+
+      poll();
+    })();
   }
 
   public static stopPolling(): void {
@@ -355,13 +382,33 @@ export class TelegramBotService {
     }
 
     const chatStr = String(rawChatId).trim();
+    const text: string = (msg.text || "").trim();
+    const cleanText = text.toLowerCase().trim();
+    const replyBot = new TelegramBotService(this.token, chatStr);
     const user = store.getUserByTelegramChatId(chatStr);
 
-    if (!user) {
-      const replyBot = new TelegramBotService(this.token, chatStr);
+    // Permitir /start y /help ANTES de verificar usuario para mostrar Chat ID si no está vinculado
+    if (cleanText.startsWith("/start") || cleanText.startsWith("/help")) {
+      let startMsg = `👋 *¡Hola!*\nTu Chat ID de Telegram es: \`${chatStr}\`\n\n`;
+      if (user) {
+        startMsg += `✅ Tu cuenta está correctamente vinculada a AGENDAPP con el correo *${user.email}*.\n\n*Comandos disponibles:*\n• \`/materiales\` - Ver insumos pendientes por comprar (🔴)`;
+      } else {
+        startMsg += `⚠️ *Aviso:* Este Chat ID no está vinculado a ninguna cuenta en AGENDAPP.\nAsegúrate de copiar el número \`${chatStr}\` y registrarlo en la Configuración de AGENDAPP.`;
+      }
+
       await replyBot.sendRequest("sendMessage", {
         chat_id: chatStr,
-        text: "⚠️ Este chat de Telegram no está vinculado a ninguna cuenta en AGENDAPP."
+        text: startMsg,
+        parse_mode: "Markdown"
+      });
+      return { status: "ok", message: "Responded to /start" };
+    }
+
+    if (!user) {
+      await replyBot.sendRequest("sendMessage", {
+        chat_id: chatStr,
+        text: `⚠️ Este chat de Telegram no está vinculado a ninguna cuenta en AGENDAPP.\n\nTu Chat ID es: \`${chatStr}\`.\nCopiar e ingresar este ID en la sección de Ajustes en la aplicación web.`,
+        parse_mode: "Markdown"
       });
       return {
         status: "unauthorized",
@@ -369,17 +416,7 @@ export class TelegramBotService {
       };
     }
 
-    const text: string = (msg.text || "").trim();
-    const cleanText = text.toLowerCase().trim();
-    const replyBot = new TelegramBotService(this.token, chatStr);
-
-    if (cleanText.startsWith("/start") || cleanText.startsWith("/help")) {
-      await replyBot.sendRequest("sendMessage", {
-        chat_id: chatStr,
-        text: `👋 *Hola (${user.email})*\nTu cuenta de Telegram está correctamente vinculada a AGENDAPP (Workshop OS).\n\n*Comandos disponibles:*\n• \`/materiales\` - Ver insumos pendientes por comprar (🔴)`,
-        parse_mode: "Markdown"
-      });
-    } else if (cleanText === "/materiales" || cleanText === "materiales" || cleanText.startsWith("/materiales")) {
+    if (cleanText === "/materiales" || cleanText === "materiales" || cleanText.startsWith("/materiales")) {
       const pendingByProject = store.getPendingMaterialsGroupedByProject(user.id);
       if (pendingByProject.length === 0) {
         await replyBot.sendRequest("sendMessage", {
@@ -747,4 +784,3 @@ export class TelegramBotService {
     return { status: "ok", message: responseText };
   }
 }
-
