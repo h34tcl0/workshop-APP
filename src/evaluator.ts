@@ -386,16 +386,14 @@ export function evaluateDayFeasibility(
             }
             break;
           }
-
-          const isPostWorkPassiveCuring = h >= Math.floor(actualTeardownEnd) || h >= cfg.operational_end_hour;
-          if (!isPostWorkPassiveCuring && h >= startHour + cfg.setup_hours && wf.relative_humidity > cfg.max_humidity_percent) {
+          if (h >= startHour + cfg.setup_hours && wf.relative_humidity > cfg.max_humidity_percent) {
             hasWeatherConflict = true;
             if (!firstWeatherConflictDetail) {
               firstWeatherConflictDetail = `Exceso de humedad detectado a las ${String(h).padStart(2, "0")}:00 hrs (${wf.relative_humidity}%, Máx permitido: ${cfg.max_humidity_percent}%).`;
             }
             break;
           }
-          // Specific epoxy category weather threshold rules (temp >= 15°C, humidity <= 75%)
+          // Requirement 5: Specific epoxy category weather threshold rules (temp >= 15°C, humidity <= 75%)
           if (hasEpoxyTask) {
             if (wf.temperature_c < 15.0) {
               hasWeatherConflict = true;
@@ -404,7 +402,7 @@ export function evaluateDayFeasibility(
               }
               break;
             }
-            if (!isPostWorkPassiveCuring && wf.relative_humidity > 75.0) {
+            if (wf.relative_humidity > 75.0) {
               hasWeatherConflict = true;
               if (!firstWeatherConflictDetail) {
                 firstWeatherConflictDetail = `Humedad relativa excesiva para Epoxi a las ${String(h).padStart(2, "0")}:00 hrs (${wf.relative_humidity}%, Máximo permitido para epoxi: 75%).`;
@@ -521,10 +519,8 @@ export function evaluateDayFeasibility(
   // Audit and construct explicit unassigned_reason when no tasks scheduled
   let auditUnassignedReason = "";
 
-  if (firstWeatherConflictDetail) {
-    auditUnassignedReason = `Sin agendamiento: ${firstWeatherConflictDetail}`;
-  } else if (weatherSummary.max_humidity > cfg.max_humidity_percent) {
-    auditUnassignedReason = `Sin agendamiento: La humedad máxima en horario laboral (${weatherSummary.max_humidity}%) excede el umbral límite configurado (${cfg.max_humidity_percent}%).`;
+  if (weatherSummary.max_humidity > cfg.max_humidity_percent) {
+    auditUnassignedReason = `Sin agendamiento: La humedad promedio/máxima (${weatherSummary.max_humidity}%) excede el umbral límite configurado (${cfg.max_humidity_percent}%).`;
   } else if (freeWindows.length > 0) {
     const maxFreeH = Math.max(...freeWindows.map(w => w.duration_hours));
     const minTaskHours = Math.min(...pendingTasks.map(t => t.estimated_hours));
@@ -543,6 +539,8 @@ export function evaluateDayFeasibility(
     }
   } else if (hadWeatherViableButTooShort) {
     auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre es menor al tiempo mínimo de ${cfg.min_work_hours_unless_final.toFixed(1)}h de trabajo neto requerido por las tareas en backlog.`;
+  } else if (firstWeatherConflictDetail) {
+    auditUnassignedReason = `Sin agendamiento: ${firstWeatherConflictDetail}`;
   } else if (weatherSummary.total_rain_mm > 0) {
     auditUnassignedReason = `Sin agendamiento: Riesgo de lluvia detectado en la jornada (${weatherSummary.total_rain_mm} mm de precipitación acumulada).`;
   } else {
