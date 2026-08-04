@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { DayEvaluation, DayStatus, Task, TaskStatus, DailyLog } from "./types.js";
 import { store } from "./db.js";
 import { getLocalDateIso } from "./dateUtils.js";
@@ -8,7 +9,19 @@ import { getLocalDateIso } from "./dateUtils.js";
 // para que sobreviva a reinicios del proceso/contenedor. Sin esto, cada restart
 // hace que Telegram reenvíe hasta 24h de updates ya procesados, causando
 // respuestas duplicadas o contradictorias (bug detectado en producción, ago 2026).
+//
+// El offset queda atado a una huella del token del bot (hash, no el token en claro)
+// porque los update_id NO son comparables entre bots distintos: cada bot tiene su
+// propia numeración en los servidores de Telegram. Si se cambia de token (ej. al
+// rotar producción/desarrollo) y se reusa un offset viejo de otro bot, Math.max()
+// puede quedar "pegado" en un valor imposible de alcanzar por el bot nuevo, y
+// Telegram termina reenviando la misma cola pendiente en loop infinito (bug
+// detectado en producción, ago 2026, al rotar de @workshop_os_bot a un bot nuevo).
 const TELEGRAM_STATE_FILE = path.join(process.env.DATA_DIR || "./data", "telegram_offset.json");
+
+function tokenFingerprint(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex").slice(0, 16);
+}
 
 // Ventana de deduplicación en memoria: red de seguridad adicional por si dos
 // instancias llegaran a procesar el mismo update_id casi en simultáneo.
@@ -24,12 +37,15 @@ export class TelegramBotService {
   private static lastUpdateId: number = 0;
   private static recentlyProcessedIds: number[] = [];
 
-  private static loadPersistedOffset(): number {
+  private static loadPersistedOffset(token: string): number {
     try {
       const raw = fs.readFileSync(TELEGRAM_STATE_FILE, "utf-8");
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed.lastUpdateId === "number") {
+      if (parsed && typeof parsed.lastUpdateId === "number" && parsed.tokenFingerprint === tokenFingerprint(token)) {
         return parsed.lastUpdateId;
+      }
+      if (parsed && parsed.tokenFingerprint && parsed.tokenFingerprint !== tokenFingerprint(token)) {
+        console.warn("[Telegram Polling] El token cambió respecto al offset persistido. Se descarta el offset viejo y se arranca desde 0 para evitar contaminación cruzada entre bots.");
       }
     } catch (_) {
       // No existe todavía o está corrupto: arrancamos desde 0 (comportamiento anterior).
@@ -37,11 +53,11 @@ export class TelegramBotService {
     return 0;
   }
 
-  private static persistOffset(updateId: number): void {
+  private static persistOffset(token: string, updateId: number): void {
     try {
       const dir = path.dirname(TELEGRAM_STATE_FILE);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(TELEGRAM_STATE_FILE, JSON.stringify({ lastUpdateId: updateId }), "utf-8");
+      fs.writeFileSync(TELEGRAM_STATE_FILE, JSON.stringify({ lastUpdateId: updateId, tokenFingerprint: tokenFingerprint(token) }), "utf-8");
     } catch (err) {
       console.error("[Telegram Polling] No se pudo persistir el offset:", err);
     }
@@ -76,7 +92,7 @@ export class TelegramBotService {
     }
 
     TelegramBotService.pollingActive = true;
-    TelegramBotService.lastUpdateId = TelegramBotService.loadPersistedOffset();
+    TelegramBotService.lastUpdateId = TelegramBotService.loadPersistedOffset(token);
     console.log(`[Telegram Polling] Starting background long polling for Telegram updates... (offset persistido: ${TelegramBotService.lastUpdateId})`);
 
     (async () => {
@@ -120,7 +136,7 @@ export class TelegramBotService {
             if (data.ok && Array.isArray(data.result)) {
               for (const update of data.result) {
                 TelegramBotService.lastUpdateId = Math.max(TelegramBotService.lastUpdateId, update.update_id);
-                TelegramBotService.persistOffset(TelegramBotService.lastUpdateId);
+                TelegramBotService.persistOffset(token, TelegramBotService.lastUpdateId);
 
                 if (TelegramBotService.alreadyProcessed(update.update_id)) {
                   console.warn(`[Telegram Polling] update_id ${update.update_id} ya fue procesado recientemente, se omite (posible duplicado).`);
