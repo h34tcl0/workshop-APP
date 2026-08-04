@@ -206,9 +206,9 @@ export class GoogleCalendarService {
       console.log(`[GoogleCalendarService] Event created (${eventId}) in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}.`);
       return { success: true, eventId };
     } catch (err: any) {
-      const status = err?.code || err?.response?.status || err?.status;
-      console.error(`[GoogleCalendarService] Error creating event in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}:`, err);
-      return { success: false, error: err.message || String(err) };
+      const errorMsg = err?.response?.data?.error_description || err?.response?.data?.error?.message || err?.message || String(err);
+      console.warn(`[GoogleCalendarService] Could not create event for User #${userId} (${targetCalendarId}) on ${evalDate}: ${errorMsg}`);
+      return { success: false, error: errorMsg };
     }
   }
 
@@ -246,13 +246,13 @@ export class GoogleCalendarService {
       return { success: true, eventId };
     } catch (err: any) {
       const status = err?.code || err?.response?.status || err?.status;
-      const msg = err?.message || String(err);
-      if (status === 404 || status === 410 || msg.includes("Not Found") || msg.includes("notFound") || msg.includes("deleted")) {
+      const errorMsg = err?.response?.data?.error_description || err?.response?.data?.error?.message || err?.message || String(err);
+      if (status === 404 || status === 410 || errorMsg.includes("Not Found") || errorMsg.includes("notFound") || errorMsg.includes("deleted")) {
         console.warn(`[GoogleCalendarService] Event ${eventId} not found (404) on Google Calendar. Will trigger re-creation.`);
         return { success: false, notFound: true, error: "Event not found on Google Calendar" };
       }
-      console.error(`[GoogleCalendarService] Error updating event ${eventId} in Google Calendar:`, err);
-      return { success: false, error: msg };
+      console.warn(`[GoogleCalendarService] Could not update event ${eventId} in Google Calendar: ${errorMsg}`);
+      return { success: false, error: errorMsg };
     }
   }
 
@@ -282,13 +282,13 @@ export class GoogleCalendarService {
       return { success: true };
     } catch (err: any) {
       const status = err?.code || err?.response?.status || err?.status;
-      const msg = err?.message || String(err);
-      if (status === 404 || status === 410 || msg.includes("Not Found") || msg.includes("notFound") || msg.includes("deleted")) {
+      const errorMsg = err?.response?.data?.error_description || err?.response?.data?.error?.message || err?.message || String(err);
+      if (status === 404 || status === 410 || errorMsg.includes("Not Found") || errorMsg.includes("notFound") || errorMsg.includes("deleted")) {
         console.log(`[GoogleCalendarService] Event ${eventId} was already deleted on Google Calendar.`);
         return { success: true, notFound: true };
       }
-      console.error(`[GoogleCalendarService] Error deleting event ${eventId} from Google Calendar:`, err);
-      return { success: false, error: msg };
+      console.warn(`[GoogleCalendarService] Could not delete event ${eventId} from Google Calendar: ${errorMsg}`);
+      return { success: false, error: errorMsg };
     }
   }
 }

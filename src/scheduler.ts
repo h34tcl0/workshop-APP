@@ -598,6 +598,9 @@ export function startDaemon(): void {
 
   stopDaemon();
 
+  // Initialize Telegram background polling if bot token is present
+  TelegramBotService.startPolling();
+
   // Initial execution of tiers on startup
   runMorningEvalTick().catch(err => console.error("[Daemon Tier 1 Error]:", err));
   runWorkStartTick().catch(err => console.error("[Daemon Tier 2 Error]:", err));
@@ -628,6 +631,7 @@ export function startDaemon(): void {
 }
 
 export function stopDaemon(): void {
+  TelegramBotService.stopPolling();
   if (daemonIntervals.length > 0) {
     console.log("[Daemon] Stopping background scheduler daemon...");
     daemonIntervals.forEach(clearInterval);

@@ -1,10 +1,15 @@
 import { DayEvaluation, DayStatus, Task, TaskStatus, DailyLog } from "./types.js";
 import { store } from "./db.js";
+import { getLocalDateIso } from "./dateUtils.js";
 
 export class TelegramBotService {
   private token: string;
   private chatId: string;
   private apiUrl: string;
+
+  private static pollingActive: boolean = false;
+  private static pollingTimeout: NodeJS.Timeout | null = null;
+  private static lastUpdateId: number = 0;
 
   constructor(
     token: string = process.env.TELEGRAM_BOT_TOKEN || "",
@@ -15,14 +20,79 @@ export class TelegramBotService {
     this.apiUrl = `https://api.telegram.org/bot${token}`;
   }
 
+  public static startPolling(token: string = process.env.TELEGRAM_BOT_TOKEN || ""): void {
+    if (!token) {
+      console.log("[Telegram Polling] SKIPPED: No TELEGRAM_BOT_TOKEN configured.");
+      return;
+    }
+    if (TelegramBotService.pollingActive) {
+      console.log("[Telegram Polling] Polling is already active.");
+      return;
+    }
+
+    TelegramBotService.pollingActive = true;
+    console.log("[Telegram Polling] Starting background long polling for Telegram updates...");
+
+    const poll = async () => {
+      if (!TelegramBotService.pollingActive) return;
+
+      try {
+        const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${TelegramBotService.lastUpdateId + 1}&timeout=5`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && Array.isArray(data.result)) {
+            for (const update of data.result) {
+              TelegramBotService.lastUpdateId = Math.max(TelegramBotService.lastUpdateId, update.update_id);
+              const botSvc = new TelegramBotService(token);
+              try {
+                if (update.callback_query) {
+                  await botSvc.processCallbackQuery(update.callback_query);
+                } else if (update.message) {
+                  await botSvc.handleIncomingMessage(update.message);
+                }
+              } catch (innerErr) {
+                console.error("[Telegram Polling] Error processing individual update:", innerErr);
+              }
+            }
+          }
+        } else {
+          const errText = await res.text();
+          if (res.status === 404 || res.status === 401) {
+            console.warn(`[Telegram Polling] Invalid or missing Telegram Bot Token (HTTP ${res.status}). Polling paused.`);
+            TelegramBotService.pollingActive = false;
+            return;
+          }
+          console.error(`[Telegram Polling HTTP Error ${res.status}]: ${errText}`);
+        }
+      } catch (err) {
+        console.error("[Telegram Polling Exception]:", err);
+      }
+
+      if (TelegramBotService.pollingActive) {
+        TelegramBotService.pollingTimeout = setTimeout(poll, 3000);
+      }
+    };
+
+    poll();
+  }
+
+  public static stopPolling(): void {
+    TelegramBotService.pollingActive = false;
+    if (TelegramBotService.pollingTimeout) {
+      clearTimeout(TelegramBotService.pollingTimeout);
+      TelegramBotService.pollingTimeout = null;
+    }
+    console.log("[Telegram Polling] Stopped.");
+  }
+
   public async sendTelegramMessage(chatId: string | number, text: string, options: any = {}): Promise<boolean> {
     const targetChatId = chatId ? String(chatId).trim() : this.chatId;
     if (!this.token || !targetChatId) {
-      console.log(`[Telegram] SKIPPED: No valid chatId provided for request '${options.method || 'sendMessage'}'`);
+      console.log(`[Telegram] SKIPPED: Missing token or chatId for '${options.method || 'sendMessage'}'`);
       return false;
     }
 
-    console.log(`[Telegram] Attempting to send message to chatId: ${targetChatId}...`);
     try {
       const payload = {
         chat_id: targetChatId,
@@ -37,28 +107,33 @@ export class TelegramBotService {
       });
       const data = await response.json();
       if (data && data.ok) {
-        console.log(`[Telegram] SUCCESS: Message sent to chatId ${targetChatId}`);
         return true;
       } else {
         const errDetail = data?.description || JSON.stringify(data);
-        console.error(`[Telegram] ERROR sending to chatId ${targetChatId}: ${errDetail}`);
+        console.error(`[Telegram API Error] sendMessage to chatId ${targetChatId} failed: ${errDetail}`);
         return false;
       }
     } catch (err) {
-      console.error(`[Telegram] ERROR sending to chatId ${targetChatId}:`, err);
+      console.error(`[Telegram HTTP Fetch Error] sendMessage to chatId ${targetChatId}:`, err);
       return false;
     }
   }
 
   public async sendRequest(method: string, payload: any): Promise<boolean> {
     const targetChatId = payload.chat_id || this.chatId;
-    if (!this.token || !targetChatId) {
+    const methodsWithoutChatId = ["answerCallbackQuery", "getUpdates", "setWebhook", "deleteWebhook", "getMe"];
+
+    if (!this.token) {
+      console.log(`[Telegram] SKIPPED: No TELEGRAM_BOT_TOKEN provided for method '${method}'`);
+      return false;
+    }
+
+    if (!methodsWithoutChatId.includes(method) && !targetChatId) {
       const textPreview = (payload.text || "").substring(0, 60).replace(/\n/g, " ");
       console.log(`[Telegram] SKIPPED: No valid chatId provided for method '${method}': ${textPreview}`);
       return false;
     }
 
-    console.log(`[Telegram] Attempting to send message to chatId: ${targetChatId}...`);
     try {
       const response = await fetch(`${this.apiUrl}/${method}`, {
         method: "POST",
@@ -67,15 +142,14 @@ export class TelegramBotService {
       });
       const data = await response.json();
       if (data && data.ok) {
-        console.log(`[Telegram] SUCCESS: Message sent to chatId ${targetChatId}`);
         return true;
       } else {
         const errDetail = data?.description || JSON.stringify(data);
-        console.error(`[Telegram] ERROR sending to chatId ${targetChatId}: ${errDetail}`);
+        console.error(`[Telegram API Error] Method '${method}' failed: ${errDetail}`);
         return false;
       }
     } catch (err) {
-      console.error(`[Telegram] ERROR sending to chatId ${targetChatId}:`, err);
+      console.error(`[Telegram HTTP Fetch Error] Method '${method}' failed:`, err);
       return false;
     }
   }
@@ -185,7 +259,11 @@ export class TelegramBotService {
       : `🌧️ *CAMBIO CLIMÁTICO IMPREVISTO:* ${alertText}`;
     const msg3 = "🛠️ *ACCIÓN REQUERIDA:* Cubre la madera expuesta, suspende aplicados de encolado/barniz y resguarda el taller.";
 
-    const inlineKeyboard = [[{ text: "✅ ACEPTAR Y ENTENDIDO", callback_data: `ack_intraday_alert:${dailyLogId}` }]];
+    const inlineKeyboard = [
+      [
+        { text: "🔕 Silenciar Alarma / Enterado", callback_data: `ack_alarm:${dailyLogId}` }
+      ]
+    ];
 
     const res1 = await this.sendRequest("sendMessage", {
       chat_id: this.chatId,
@@ -283,29 +361,30 @@ export class TelegramBotService {
       const replyBot = new TelegramBotService(this.token, chatStr);
       await replyBot.sendRequest("sendMessage", {
         chat_id: chatStr,
-        text: "Your Telegram account is not linked to any Workshop OS account. Please set your Telegram Chat ID in Workshop OS settings."
+        text: "⚠️ Este chat de Telegram no está vinculado a ninguna cuenta en AGENDAPP."
       });
       return {
         status: "unauthorized",
-        message: "Your Telegram account is not linked to any Workshop OS account. Please set your Telegram Chat ID in Workshop OS settings."
+        message: "⚠️ Este chat de Telegram no está vinculado a ninguna cuenta en AGENDAPP."
       };
     }
 
     const text: string = (msg.text || "").trim();
+    const cleanText = text.toLowerCase().trim();
     const replyBot = new TelegramBotService(this.token, chatStr);
 
-    if (text.startsWith("/start") || text.startsWith("/help")) {
+    if (cleanText.startsWith("/start") || cleanText.startsWith("/help")) {
       await replyBot.sendRequest("sendMessage", {
         chat_id: chatStr,
-        text: `👋 *Hola (${user.email})*\nTu cuenta de Telegram está correctamente vinculada a Workshop OS.\n\n*Comandos disponibles:*\n• \`/materiales\` - Ver insumos pendientes por comprar (🔴)`,
+        text: `👋 *Hola (${user.email})*\nTu cuenta de Telegram está correctamente vinculada a AGENDAPP (Workshop OS).\n\n*Comandos disponibles:*\n• \`/materiales\` - Ver insumos pendientes por comprar (🔴)`,
         parse_mode: "Markdown"
       });
-    } else if (text.toLowerCase() === "/materiales" || text.toLowerCase() === "materiales" || text.toLowerCase().startsWith("/materiales")) {
+    } else if (cleanText === "/materiales" || cleanText === "materiales" || cleanText.startsWith("/materiales")) {
       const pendingByProject = store.getPendingMaterialsGroupedByProject(user.id);
       if (pendingByProject.length === 0) {
         await replyBot.sendRequest("sendMessage", {
           chat_id: chatStr,
-          text: `📦 *MATERIALES POR COMPRAR* (🔴)\n\n✅ ¡Excelente! No tienes insumos pendientes por comprar en tus proyectos.`,
+          text: `📦 *MATERIALES POR COMPRAR* (🔴)\n\n✅ ¡Excelente! No tienes insumos pendientes por comprar en tus proyectos activos.`,
           parse_mode: "Markdown"
         });
       } else {
@@ -314,12 +393,13 @@ export class TelegramBotService {
         for (const projGroup of pendingByProject) {
           msgText += `📁 *Proyecto: ${projGroup.project_name}*\n`;
           for (const m of projGroup.materials) {
-            msgText += `  • *${m.quantity} ${m.unit}* - ${m.name} _[${m.category}]_\n`;
+            const icon = m.status === 'out_of_stock' ? '⚠️' : '🔴';
+            msgText += `  • ${icon} *${m.quantity} ${m.unit}* - ${m.name} _[${m.category}]_\n`;
             totalItems++;
           }
           msgText += `\n`;
         }
-        msgText += `📌 *Total:* ${totalItems} insumos pendientes.`;
+        msgText += `📌 *Total:* ${totalItems} insumos pendientes por comprar.`;
         await replyBot.sendRequest("sendMessage", {
           chat_id: chatStr,
           text: msgText,
@@ -329,7 +409,7 @@ export class TelegramBotService {
     } else {
       await replyBot.sendRequest("sendMessage", {
         chat_id: chatStr,
-        text: `🤖 *Workshop OS* (${user.email})\nRecibido: "${text}".\nUsa los botones interactivos de la aplicación para responder a los check-ins y alertas.`,
+        text: `🤖 *AGENDAPP (Workshop OS)* (${user.email})\nRecibido: "${text}".\nUsa \`/materiales\` para consultar insumos pendientes o responde a las alertas de taller.`,
         parse_mode: "Markdown"
       });
     }
@@ -341,7 +421,7 @@ export class TelegramBotService {
     if (!callbackQueryId) return false;
     return this.sendRequest("answerCallbackQuery", {
       callback_query_id: callbackQueryId,
-      text,
+      text: text || undefined,
       show_alert: showAlert
     });
   }
@@ -363,7 +443,7 @@ export class TelegramBotService {
     try {
       const user = store.getUserByTelegramChatId(chatStr);
       if (!user) {
-        responseText = "No tienes permiso para modificar esta tarea";
+        responseText = "⚠️ Este chat de Telegram no está vinculado a ninguna cuenta en AGENDAPP.";
         showAlert = true;
         if (cbId) {
           await replyBot.answerCallbackQuery(cbId, responseText, true);
@@ -371,15 +451,48 @@ export class TelegramBotService {
         }
         await replyBot.sendRequest("sendMessage", {
           chat_id: chatStr,
-          text: "Su cuenta de Telegram no está vinculada a ningún usuario de Workshop OS."
+          text: "⚠️ Este chat de Telegram no está vinculado a ninguna cuenta en AGENDAPP."
         });
         return { status: "unauthorized", message: responseText };
       }
 
       const userId = user.id;
 
-      if (data.startsWith("task_complete:")) {
-        // Format: task_complete:<taskId> or task_complete:<taskId>:<userId>
+      if (data.startsWith("ack_alarm") || data.startsWith("wxack:") || data.startsWith("ack_intraday_alert:") || data.startsWith("intraday_ack:")) {
+        const parts = data.split(":");
+        let dailyLogId = parts[1] ? parseInt(parts[1], 10) : NaN;
+
+        let dailyLog = !isNaN(dailyLogId) ? store.getDailyLogById(userId, dailyLogId) : null;
+        if (!dailyLog) {
+          const appSettings = store.getAppSettings(userId);
+          const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+          const todayIso = getLocalDateIso(new Date(), userTz);
+          dailyLog = store.getDailyLogByDate(userId, todayIso);
+        }
+
+        if (dailyLog && dailyLog.user_id === userId) {
+          store.updateDailyLog(userId, dailyLog.id, {
+            intraday_alert_acknowledged: true,
+            weather_alert_acknowledged: true
+          });
+        }
+
+        responseText = "Alarma silenciada para la jornada actual ✅";
+        showAlert = true;
+
+        if (cbId) {
+          await replyBot.answerCallbackQuery(cbId, responseText, true);
+          cbAnswered = true;
+        }
+
+        if (messageId) {
+          await replyBot.editMessageText(
+            chatStr,
+            messageId,
+            "🔕 *Alarma silenciada para la jornada actual ✅*\n_Notificaciones de alerta pausadas por el resto del día._"
+          );
+        }
+      } else if (data.startsWith("task_complete:")) {
         const parts = data.split(":");
         const taskId = parseInt(parts[1], 10);
         const targetUserId = parts[2] ? parseInt(parts[2], 10) : userId;
@@ -403,6 +516,13 @@ export class TelegramBotService {
               completed_at: nowIso
             });
             responseText = "✅ Tarea completada";
+            showAlert = false;
+
+            if (cbId) {
+              await replyBot.answerCallbackQuery(cbId, responseText, showAlert);
+              cbAnswered = true;
+            }
+
             if (messageId) {
               await replyBot.editMessageText(
                 chatStr,
@@ -438,6 +558,13 @@ export class TelegramBotService {
             store.updateDailyLog(userId, dailyLogId, { checkin_sent: true, checkin_resolved: true });
           }
           responseText = "✅ Día completo. ¡Buen trabajo!";
+          showAlert = false;
+
+          if (cbId) {
+            await replyBot.answerCallbackQuery(cbId, responseText, showAlert);
+            cbAnswered = true;
+          }
+
           if (messageId) {
             await replyBot.editMessageText(chatStr, messageId, "✅ *Día completo.* ¡Excelente trabajo!");
           }
@@ -455,6 +582,13 @@ export class TelegramBotService {
           } catch (_) {}
           const scheduledTasks = taskIds.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null && t.user_id === userId);
           responseText = "Marca el estado de cada tarea";
+          showAlert = false;
+
+          if (cbId) {
+            await replyBot.answerCallbackQuery(cbId, responseText, showAlert);
+            cbAnswered = true;
+          }
+
           if (scheduledTasks.length === 0) {
             if (messageId) {
               await replyBot.editMessageText(chatStr, messageId, "ℹ️ No hay tareas agendadas para hoy.");
@@ -514,6 +648,13 @@ export class TelegramBotService {
           }
 
           responseText = "Estado alternado";
+          showAlert = false;
+
+          if (cbId) {
+            await replyBot.answerCallbackQuery(cbId, responseText, showAlert);
+            cbAnswered = true;
+          }
+
           if (messageId) {
             const keyboard = this.buildPickerKeyboard(dailyLogId, scheduledTasks, checkedIds);
             await replyBot.editMessageKeyboard(chatStr, messageId, keyboard);
@@ -577,26 +718,16 @@ export class TelegramBotService {
 
           store.updateDailyLog(userId, dailyLogId, { checkin_sent: true, checkin_resolved: true });
           responseText = "Check-in finalizado";
+          showAlert = false;
+
+          if (cbId) {
+            await replyBot.answerCallbackQuery(cbId, responseText, showAlert);
+            cbAnswered = true;
+          }
 
           if (messageId) {
             const summaryText = `📝 **Check-in completado exitosamente.** Resumen: ${completedCount} tareas completadas, ${rescheduledCount} reagendadas.`;
             await replyBot.editMessageText(chatStr, messageId, summaryText);
-          }
-        }
-      } else if (data.startsWith("wxack:") || data.startsWith("ack_intraday_alert:") || data.startsWith("intraday_ack:")) {
-        const dailyLogId = parseInt(data.split(":")[1], 10);
-        const dailyLog = store.getDailyLogById(userId, dailyLogId);
-        if (!dailyLog || dailyLog.user_id !== userId) {
-          responseText = "No tienes permiso para modificar este registro";
-          showAlert = true;
-        } else {
-          store.updateDailyLog(userId, dailyLogId, {
-            intraday_alert_acknowledged: true,
-            weather_alert_acknowledged: true
-          });
-          responseText = "Alerta confirmada";
-          if (messageId) {
-            await replyBot.editMessageText(chatStr, messageId, "✅ **Alerta Aceptada por el Operario**");
           }
         }
       }
@@ -616,3 +747,4 @@ export class TelegramBotService {
     return { status: "ok", message: responseText };
   }
 }
+

@@ -2032,11 +2032,13 @@ export class SQLiteStore {
 
   getPendingMaterialsGroupedByProject(userId: number): { project_name: string; materials: Material[] }[] {
     const rows = this.db.prepare(`
-      SELECT m.*, p.name as project_name
+      SELECT m.*, COALESCE(p.name, 'Proyecto General') as project_name
       FROM materials m
       LEFT JOIN projects p ON p.id = m.project_id
-      WHERE m.user_id = ? AND (m.status = 'to_buy' OR m.status = 'Por Comprar')
-      ORDER BY COALESCE(p.name, 'General') ASC, m.category ASC, m.name ASC
+      WHERE m.user_id = ?
+        AND (m.status = 'to_buy' OR m.status = 'Por Comprar' OR m.status = 'out_of_stock')
+        AND (p.id IS NULL OR p.is_active = 1)
+      ORDER BY COALESCE(p.name, 'Proyecto General') ASC, m.category ASC, m.name ASC
     `).all(userId) as any[];
 
     const map = new Map<string, Material[]>();
