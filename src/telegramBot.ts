@@ -1,6 +1,18 @@
+import fs from "node:fs";
+import path from "node:path";
 import { DayEvaluation, DayStatus, Task, TaskStatus, DailyLog } from "./types.js";
 import { store } from "./db.js";
 import { getLocalDateIso } from "./dateUtils.js";
+
+// Persistimos el offset de Telegram (lastUpdateId) en disco, dentro de DATA_DIR,
+// para que sobreviva a reinicios del proceso/contenedor. Sin esto, cada restart
+// hace que Telegram reenvíe hasta 24h de updates ya procesados, causando
+// respuestas duplicadas o contradictorias (bug detectado en producción, ago 2026).
+const TELEGRAM_STATE_FILE = path.join(process.env.DATA_DIR || "./data", "telegram_offset.json");
+
+// Ventana de deduplicación en memoria: red de seguridad adicional por si dos
+// instancias llegaran a procesar el mismo update_id casi en simultáneo.
+const RECENTLY_PROCESSED_MAX = 200;
 
 export class TelegramBotService {
   private token: string;
@@ -10,6 +22,39 @@ export class TelegramBotService {
   private static pollingActive: boolean = false;
   private static pollingTimeout: NodeJS.Timeout | null = null;
   private static lastUpdateId: number = 0;
+  private static recentlyProcessedIds: number[] = [];
+
+  private static loadPersistedOffset(): number {
+    try {
+      const raw = fs.readFileSync(TELEGRAM_STATE_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.lastUpdateId === "number") {
+        return parsed.lastUpdateId;
+      }
+    } catch (_) {
+      // No existe todavía o está corrupto: arrancamos desde 0 (comportamiento anterior).
+    }
+    return 0;
+  }
+
+  private static persistOffset(updateId: number): void {
+    try {
+      const dir = path.dirname(TELEGRAM_STATE_FILE);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(TELEGRAM_STATE_FILE, JSON.stringify({ lastUpdateId: updateId }), "utf-8");
+    } catch (err) {
+      console.error("[Telegram Polling] No se pudo persistir el offset:", err);
+    }
+  }
+
+  private static alreadyProcessed(updateId: number): boolean {
+    if (TelegramBotService.recentlyProcessedIds.includes(updateId)) return true;
+    TelegramBotService.recentlyProcessedIds.push(updateId);
+    if (TelegramBotService.recentlyProcessedIds.length > RECENTLY_PROCESSED_MAX) {
+      TelegramBotService.recentlyProcessedIds.shift();
+    }
+    return false;
+  }
 
   constructor(
     token: string = process.env.TELEGRAM_BOT_TOKEN || "",
@@ -31,7 +76,8 @@ export class TelegramBotService {
     }
 
     TelegramBotService.pollingActive = true;
-    console.log("[Telegram Polling] Starting background long polling for Telegram updates...");
+    TelegramBotService.lastUpdateId = TelegramBotService.loadPersistedOffset();
+    console.log(`[Telegram Polling] Starting background long polling for Telegram updates... (offset persistido: ${TelegramBotService.lastUpdateId})`);
 
     (async () => {
       // 1. Limpieza de Webhook previo (Evita conflicto HTTP 409)
@@ -74,6 +120,13 @@ export class TelegramBotService {
             if (data.ok && Array.isArray(data.result)) {
               for (const update of data.result) {
                 TelegramBotService.lastUpdateId = Math.max(TelegramBotService.lastUpdateId, update.update_id);
+                TelegramBotService.persistOffset(TelegramBotService.lastUpdateId);
+
+                if (TelegramBotService.alreadyProcessed(update.update_id)) {
+                  console.warn(`[Telegram Polling] update_id ${update.update_id} ya fue procesado recientemente, se omite (posible duplicado).`);
+                  continue;
+                }
+
                 const botSvc = new TelegramBotService(token);
                 try {
                   if (update.callback_query) {
