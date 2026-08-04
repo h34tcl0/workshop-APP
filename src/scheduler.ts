@@ -403,23 +403,20 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
   const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
   const todayIso = getLocalDateIso(now, userTz);
   const localTime = getLocalHoursAndMinutes(now, userTz);
+  const currentLocalHour = localTime.totalHours;
+
+  // STRICT OPERATIONAL HOURS CHECK: Alertas sólo dentro de la jornada laboral
+  if (currentLocalHour < appSettings.operational_start_hour || currentLocalHour >= appSettings.operational_end_hour) {
+    return;
+  }
 
   const dailyLog = store.getDailyLogByDate(userId, todayIso);
-  if (!dailyLog || dailyLog.status !== DayStatus.DAY_VIABLE || !dailyLog.window_start || !dailyLog.window_end) {
+  if (!dailyLog) {
     return;
   }
 
-  if (dailyLog.weather_alert_acknowledged) {
-    return;
-  }
-
-  const [sH, sM] = dailyLog.window_start.split(":").map(Number);
-  const [eH, eM] = dailyLog.window_end.split(":").map(Number);
-  const windowStartH = sH + sM / 60.0;
-  const windowEndH = eH + eM / 60.0;
-  const nowH = localTime.totalHours;
-
-  if (nowH < windowStartH || nowH > windowEndH) {
+  // Operator acknowledged -> stop retries completely
+  if (dailyLog.intraday_alert_acknowledged || dailyLog.weather_alert_acknowledged) {
     return;
   }
 
@@ -429,60 +426,118 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
   }
 
   if (!targetChatId) {
-    console.log(`[Telegram] SKIPPED: No valid chatId provided for userId ${userId}`);
     return;
   }
 
   const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, targetChatId);
 
-  if (dailyLog.weather_alert_sent) {
-    if (dailyLog.weather_alert_retry_count >= 6) {
-      return;
-    }
-    const lastSentAt = dailyLog.weather_alert_last_sent_at ? new Date(dailyLog.weather_alert_last_sent_at).getTime() : 0;
-    if (Date.now() - lastSentAt < 10 * 60 * 1000) {
+  // If alert was ALREADY triggered and NOT acknowledged, check 5-minute retry interval
+  const isTriggered = dailyLog.intraday_alert_triggered || dailyLog.weather_alert_sent;
+  if (isTriggered) {
+    const lastSentIso = dailyLog.intraday_alert_last_sent_at || dailyLog.weather_alert_last_sent_at;
+    const lastSentMs = lastSentIso ? new Date(lastSentIso).getTime() : 0;
+    const elapsedMs = Date.now() - lastSentMs;
+    const FIVE_MIN_MS = 5 * 60 * 1000;
+
+    if (elapsedMs < FIVE_MIN_MS) {
       return;
     }
 
-    const sent = await telegramSvc.sendWeatherAlertBurst(dailyLog.id, dailyLog.weather_alert_message || "Cambio de clima detectado.");
+    const alertMsg = dailyLog.weather_alert_message || "Cambio climático imprevisto detectado en taller.";
+    const sent = await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, alertMsg);
     if (sent) {
+      const nowIso = new Date().toISOString();
+      const burstCount = (dailyLog.intraday_alert_burst_count || dailyLog.weather_alert_retry_count || 0) + 1;
       store.updateDailyLog(userId, dailyLog.id, {
-        weather_alert_retry_count: dailyLog.weather_alert_retry_count + 1,
-        weather_alert_last_sent_at: new Date().toISOString()
+        intraday_alert_last_sent_at: nowIso,
+        intraday_alert_burst_count: burstCount,
+        weather_alert_last_sent_at: nowIso,
+        weather_alert_retry_count: burstCount
       });
-      console.log(`[Scheduler] Weather alert retry ${dailyLog.weather_alert_retry_count + 1}/6 sent for User #${userId} on ${todayIso}.`);
+      console.log(`[Scheduler] Intraday Weather alert retry #${burstCount} sent for User #${userId} on ${todayIso}.`);
     }
     return;
   }
 
+  // If alert was NOT triggered yet: evaluate remaining workday hours for weather risk
   try {
     const forecasts = await getHourlyForecast(todayIso, appSettings.latitude, appSettings.longitude);
-    const newMap = computeHourlyClimateMap(
-      forecasts,
-      Math.floor(windowStartH),
-      Math.ceil(windowEndH),
-      appSettings.min_rain_precipitation_mm,
-      appSettings.max_humidity_percent
-    );
-    const newSegments = compressClimateSegments(newMap);
+    const startHourInt = Math.floor(currentLocalHour);
+    const endHourInt = Math.ceil(appSettings.operational_end_hour);
 
-    let oldSegments = [];
-    try {
-      oldSegments = JSON.parse(dailyLog.morning_climate_snapshot || "[]");
-    } catch (_) {}
+    const remainingWorkForecasts = forecasts.filter(f => f.hour >= startHourInt && f.hour <= endHourInt);
+    let riskFoundForecast: HourlyForecast | null = null;
 
-    const risk = detectNewWeatherRisk(oldSegments, newSegments, windowStartH, windowEndH);
-    if (!risk) return;
+    for (const f of remainingWorkForecasts) {
+      const isRain = (f.precipitation_probability != null && f.precipitation_probability >= 30) ||
+                     (f.precipitation_mm != null && f.precipitation_mm >= appSettings.min_rain_precipitation_mm);
+      const isHumid = f.relative_humidity > appSettings.max_humidity_percent;
 
-    const sent = await telegramSvc.sendWeatherAlertBurst(dailyLog.id, risk);
+      if (isRain || isHumid) {
+        riskFoundForecast = f;
+        break;
+      }
+    }
+
+    if (!riskFoundForecast) {
+      // Secondary check against morning climate snapshot
+      let oldSegments: any[] = [];
+      try {
+        oldSegments = JSON.parse(dailyLog.morning_climate_snapshot || "[]");
+      } catch (_) {}
+
+      const newMap = computeHourlyClimateMap(
+        forecasts,
+        startHourInt,
+        endHourInt,
+        appSettings.min_rain_precipitation_mm,
+        appSettings.max_humidity_percent
+      );
+      const newSegments = compressClimateSegments(newMap);
+      const riskText = detectNewWeatherRisk(oldSegments, newSegments, currentLocalHour, appSettings.operational_end_hour);
+
+      if (!riskText) return;
+
+      const sent = await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, riskText);
+      if (sent) {
+        const nowIso = new Date().toISOString();
+        store.updateDailyLog(userId, dailyLog.id, {
+          intraday_alert_triggered: true,
+          intraday_alert_last_sent_at: nowIso,
+          intraday_alert_burst_count: 1,
+          weather_alert_sent: true,
+          weather_alert_message: riskText,
+          weather_alert_last_sent_at: nowIso,
+          weather_alert_retry_count: 1
+        });
+        console.log(`[Scheduler] Intraday Weather alert triggered for User #${userId} on ${todayIso}: ${riskText}`);
+      }
+      return;
+    }
+
+    const criticalTimeStr = `${String(riskFoundForecast.hour).padStart(2, "0")}:00`;
+    const precipMm = riskFoundForecast.precipitation_mm || 0;
+    const humidityPct = riskFoundForecast.relative_humidity || 0;
+    const isRain = (riskFoundForecast.precipitation_probability != null && riskFoundForecast.precipitation_probability >= 30) ||
+                   precipMm >= appSettings.min_rain_precipitation_mm;
+
+    const detailsText = isRain
+      ? `Se pronostica lluvia para las ${criticalTimeStr} hrs (Precipitación: ${precipMm.toFixed(1)} mm / Humedad: ${Math.round(humidityPct)}%).`
+      : `Se pronostica humedad crítica para las ${criticalTimeStr} hrs (${Math.round(humidityPct)}%, Máx permitido: ${appSettings.max_humidity_percent}%).`;
+
+    const sent = await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, detailsText);
     if (sent) {
+      const nowIso = new Date().toISOString();
       store.updateDailyLog(userId, dailyLog.id, {
+        intraday_alert_triggered: true,
+        intraday_alert_last_sent_at: nowIso,
+        intraday_alert_burst_count: 1,
         weather_alert_sent: true,
-        weather_alert_message: risk,
-        weather_alert_retry_count: 1,
-        weather_alert_last_sent_at: new Date().toISOString()
+        weather_alert_message: detailsText,
+        weather_alert_last_sent_at: nowIso,
+        weather_alert_retry_count: 1
       });
-      console.log(`[Scheduler] Weather alert triggered for User #${userId} on ${todayIso}: ${risk}`);
+      console.log(`[Scheduler] Intraday Emergency Alert triggered for User #${userId} on ${todayIso}: ${detailsText}`);
     }
   } catch (err) {
     console.error(`[Scheduler] Error checking updated weather for alert tick (User #${userId}):`, err);
@@ -540,7 +595,7 @@ export function startDaemon(): void {
   console.log("  • Tier 1 (Horizon Evaluation & Calendar Mirror Sync): Dynamic trigger at operational start time");
   console.log("  • Tier 2 (Work Start Telegram Notification): Triggered at the beginning of active work block");
   console.log("  • Tier 3 (Night Check-in): Fixed trigger at configured check-in hour");
-  console.log("  • Tier 4 (Urgent Weather Monitor): Active work window scan with 10-min 6-round alert bursts");
+  console.log("  • Tier 4 (Urgent Weather Monitor): Active work window scan with 5-min 3-message alert bursts");
 
   stopDaemon();
 
@@ -565,10 +620,10 @@ export function startDaemon(): void {
     runCheckinTick().catch(err => console.error("[Daemon Tier 3 Error]:", err));
   }, 15 * 60 * 1000);
 
-  // Tier 4: Urgent Weather Monitor loop (every 10 minutes)
+  // Tier 4: Urgent Weather Monitor loop (every 5 minutes for intraday alerts)
   const t4 = setInterval(() => {
     runWeatherAlertTick().catch(err => console.error("[Daemon Tier 4 Error]:", err));
-  }, 10 * 60 * 1000);
+  }, 5 * 60 * 1000);
 
   daemonIntervals.push(t1, t2, t3, t4);
 }

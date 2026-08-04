@@ -179,24 +179,38 @@ export class TelegramBotService {
   }
 
   async sendWeatherAlertBurst(dailyLogId: number, alertText: string): Promise<boolean> {
-    const message =
-      `🚨🚨🚨 *CAMBIÓ EL CLIMA* 🚨🚨🚨\n\n` +
-      `${alertText}\n\n` +
-      `Estás dentro de tu ventana de trabajo de hoy — revisa si conviene guardar herramientas y material.`;
+    const msg1 = "🚨 ⚠️ *¡ALERTA DE EMERGENCIA EN TALLER!*";
+    const msg2 = alertText.startsWith("🌧️") || alertText.startsWith("💨")
+      ? alertText
+      : `🌧️ *CAMBIO CLIMÁTICO IMPREVISTO:* ${alertText}`;
+    const msg3 = "🛠️ *ACCIÓN REQUERIDA:* Cubre la madera expuesta, suspende aplicados de encolado/barniz y resguarda el taller.";
 
-    const inlineKeyboard = [[{ text: "✅ OK, ya lo vi", callback_data: `wxack:${dailyLogId}` }]];
+    const inlineKeyboard = [[{ text: "✅ ACEPTAR Y ENTENDIDO", callback_data: `ack_intraday_alert:${dailyLogId}` }]];
 
-    let allOk = true;
-    for (let i = 0; i < 3; i++) {
-      const ok = await this.sendRequest("sendMessage", {
-        chat_id: this.chatId,
-        text: message,
-        parse_mode: "Markdown",
-        reply_markup: { inline_keyboard: inlineKeyboard }
-      });
-      allOk = allOk && ok;
-    }
-    return allOk;
+    const res1 = await this.sendRequest("sendMessage", {
+      chat_id: this.chatId,
+      text: msg1,
+      parse_mode: "Markdown"
+    });
+
+    const res2 = await this.sendRequest("sendMessage", {
+      chat_id: this.chatId,
+      text: msg2,
+      parse_mode: "Markdown"
+    });
+
+    const res3 = await this.sendRequest("sendMessage", {
+      chat_id: this.chatId,
+      text: msg3,
+      parse_mode: "Markdown",
+      reply_markup: { inline_keyboard: inlineKeyboard }
+    });
+
+    return res1 && res2 && res3;
+  }
+
+  async sendIntradayEmergencyAlertBurst(dailyLogId: number, alertText: string): Promise<boolean> {
+    return this.sendWeatherAlertBurst(dailyLogId, alertText);
   }
 
   async sendCheckinPrompt(dailyLogId: number, scheduledTasks: Task[]): Promise<boolean> {
@@ -228,10 +242,10 @@ export class TelegramBotService {
   private buildPickerKeyboard(dailyLogId: number, scheduledTasks: Task[], checkedIds: Set<number>): any[] {
     const rows: any[] = [];
     for (const t of scheduledTasks) {
-      const mark = checkedIds.has(t.id) ? "✅" : "⬜";
-      rows.push([{ text: `${mark} ${t.title}`, callback_data: `chk:${dailyLogId}:${t.id}` }]);
+      const mark = checkedIds.has(t.id) ? "✅" : "🔁";
+      rows.push([{ text: `${mark} Tarea: ${t.title}`, callback_data: `chk:${dailyLogId}:${t.id}` }]);
     }
-    rows.push([{ text: "Confirmar", callback_data: `chkconfirm:${dailyLogId}` }]);
+    rows.push([{ text: "💾 FINALIZAR CHECK-IN", callback_data: `chkconfirm:${dailyLogId}` }]);
     return rows;
   }
 
@@ -372,11 +386,11 @@ export class TelegramBotService {
             }
           }
         }
-      } else if (data.startsWith("chkall:")) {
+      } else if (data.startsWith("chkall:") || data.startsWith("checkin_all:") || data.startsWith("checkin_yes:")) {
         const dailyLogId = parseInt(data.split(":")[1], 10);
         const dailyLog = store.getDailyLogById(userId, dailyLogId);
         if (!dailyLog || dailyLog.user_id !== userId) {
-          responseText = "No tienes permiso para modificar esta tarea";
+          responseText = "No tienes permiso para modificar este registro";
           showAlert = true;
         } else {
           if (!dailyLog.checkin_resolved) {
@@ -395,18 +409,18 @@ export class TelegramBotService {
                 });
               }
             }
-            store.updateDailyLog(userId, dailyLogId, { checkin_resolved: true });
+            store.updateDailyLog(userId, dailyLogId, { checkin_sent: true, checkin_resolved: true });
           }
           responseText = "✅ Día completo. ¡Buen trabajo!";
           if (messageId) {
-            await replyBot.editMessageText(chatStr, messageId, "✅ *Día completo.* ¡Buen trabajo!");
+            await replyBot.editMessageText(chatStr, messageId, "✅ *Día completo.* ¡Excelente trabajo!");
           }
         }
-      } else if (data.startsWith("chkpick:")) {
+      } else if (data.startsWith("chkpick:") || data.startsWith("checkin_pick:") || data.startsWith("checkin_partial:") || data.startsWith("checkin_no:")) {
         const dailyLogId = parseInt(data.split(":")[1], 10);
         const dailyLog = store.getDailyLogById(userId, dailyLogId);
         if (!dailyLog || dailyLog.user_id !== userId) {
-          responseText = "No tienes permiso para modificar esta tarea";
+          responseText = "No tienes permiso para modificar este registro";
           showAlert = true;
         } else {
           let taskIds: number[] = [];
@@ -414,25 +428,30 @@ export class TelegramBotService {
             taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
           } catch (_) {}
           const scheduledTasks = taskIds.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null && t.user_id === userId);
-          responseText = "Marca cuáles se completaron";
-          if (messageId && scheduledTasks.length > 0) {
-            const keyboard = this.buildPickerKeyboard(dailyLogId, scheduledTasks, new Set());
+          responseText = "Marca el estado de cada tarea";
+          if (scheduledTasks.length === 0) {
+            if (messageId) {
+              await replyBot.editMessageText(chatStr, messageId, "ℹ️ No hay tareas agendadas para hoy.");
+            }
+          } else if (messageId) {
+            const initialCompletedIds = new Set(scheduledTasks.map(t => t.id));
+            const keyboard = this.buildPickerKeyboard(dailyLogId, scheduledTasks, initialCompletedIds);
             await replyBot.editMessageText(
               chatStr,
               messageId,
-              "🌙 *¿Cuáles tareas se completaron?*\nTócalas para marcar/desmarcar, luego *Confirmar*.",
+              "🌙 *Selección de Tareas de la Jornada*\n\nToca cada tarea para alternar entre Completada (✅) y Reagendar (🔁). Al finalizar, presiona *FINALIZAR CHECK-IN*.",
               keyboard
             );
           }
         }
-      } else if (data.startsWith("chk:")) {
+      } else if (data.startsWith("chk:") || data.startsWith("checkin_toggle:")) {
         const parts = data.split(":");
         const dailyLogId = parseInt(parts[1], 10);
         const taskId = parseInt(parts[2], 10);
 
         const dailyLog = store.getDailyLogById(userId, dailyLogId);
         if (!dailyLog || dailyLog.user_id !== userId) {
-          responseText = "No tienes permiso para modificar esta tarea";
+          responseText = "No tienes permiso para modificar este registro";
           showAlert = true;
         } else {
           const currentKeyboard = (message.reply_markup || {}).inline_keyboard || [];
@@ -442,11 +461,13 @@ export class TelegramBotService {
           for (const row of currentKeyboard) {
             for (const btn of row) {
               const cb = btn.callback_data || "";
-              if (cb.startsWith("chk:")) {
+              if (cb.startsWith("chk:") || cb.startsWith("checkin_toggle:")) {
                 const tid = parseInt(cb.split(":")[2], 10);
-                if (!scheduledIdsInOrder.includes(tid)) scheduledIdsInOrder.push(tid);
-                if ((btn.text || "").startsWith("✅")) {
-                  checkedIds.add(tid);
+                if (!isNaN(tid)) {
+                  if (!scheduledIdsInOrder.includes(tid)) scheduledIdsInOrder.push(tid);
+                  if ((btn.text || "").startsWith("✅")) {
+                    checkedIds.add(tid);
+                  }
                 }
               }
             }
@@ -458,18 +479,25 @@ export class TelegramBotService {
             checkedIds.add(taskId);
           }
 
-          const scheduledTasks = scheduledIdsInOrder.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null && t.user_id === userId);
-          responseText = "Marcado";
+          let scheduledTasks = scheduledIdsInOrder.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null && t.user_id === userId);
+          if (scheduledTasks.length === 0 && dailyLog.scheduled_task_ids) {
+            try {
+              const ids: number[] = JSON.parse(dailyLog.scheduled_task_ids);
+              scheduledTasks = ids.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null && t.user_id === userId);
+            } catch (_) {}
+          }
+
+          responseText = "Estado alternado";
           if (messageId) {
             const keyboard = this.buildPickerKeyboard(dailyLogId, scheduledTasks, checkedIds);
             await replyBot.editMessageKeyboard(chatStr, messageId, keyboard);
           }
         }
-      } else if (data.startsWith("chkconfirm:")) {
+      } else if (data.startsWith("chkconfirm:") || data.startsWith("checkin_confirm:") || data.startsWith("checkin_finish:")) {
         const dailyLogId = parseInt(data.split(":")[1], 10);
         const dailyLog = store.getDailyLogById(userId, dailyLogId);
         if (!dailyLog || dailyLog.user_id !== userId) {
-          responseText = "No tienes permiso para modificar esta tarea";
+          responseText = "No tienes permiso para modificar este registro";
           showAlert = true;
         } else {
           const currentKeyboard = (message.reply_markup || {}).inline_keyboard || [];
@@ -479,19 +507,28 @@ export class TelegramBotService {
           for (const row of currentKeyboard) {
             for (const btn of row) {
               const cb = btn.callback_data || "";
-              if (cb.startsWith("chk:")) {
+              if (cb.startsWith("chk:") || cb.startsWith("checkin_toggle:")) {
                 const tid = parseInt(cb.split(":")[2], 10);
-                if (!allIds.includes(tid)) allIds.push(tid);
-                if ((btn.text || "").startsWith("✅")) {
-                  checkedIds.add(tid);
+                if (!isNaN(tid)) {
+                  if (!allIds.includes(tid)) allIds.push(tid);
+                  if ((btn.text || "").startsWith("✅")) {
+                    checkedIds.add(tid);
+                  }
                 }
               }
             }
           }
 
+          if (allIds.length === 0 && dailyLog.scheduled_task_ids) {
+            try {
+              const ids: number[] = JSON.parse(dailyLog.scheduled_task_ids);
+              allIds.push(...ids);
+            } catch (_) {}
+          }
+
           const nowIso = new Date().toISOString();
-          const completedTitles: string[] = [];
-          const pendingTitles: string[] = [];
+          let completedCount = 0;
+          let rescheduledCount = 0;
 
           for (const tid of allIds) {
             const t = store.getTask(userId, tid);
@@ -502,34 +539,38 @@ export class TelegramBotService {
                 progress_percentage: 100,
                 completed_at: nowIso
               });
-              completedTitles.push(t.title);
+              completedCount++;
             } else {
-              pendingTitles.push(t.title);
+              store.updateTask(userId, t.id, {
+                status: TaskStatus.PENDING,
+                completed_at: null
+              });
+              rescheduledCount++;
             }
           }
 
-          store.updateDailyLog(userId, dailyLogId, { checkin_resolved: true });
-          responseText = "Confirmado";
+          store.updateDailyLog(userId, dailyLogId, { checkin_sent: true, checkin_resolved: true });
+          responseText = "Check-in finalizado";
 
           if (messageId) {
-            let summary = `✅ *Completadas:* ${completedTitles.length > 0 ? completedTitles.join(", ") : "ninguna"}\n`;
-            if (pendingTitles.length > 0) {
-              summary += `↩️ *Vuelven al backlog:* ${pendingTitles.join(", ")}`;
-            }
-            await replyBot.editMessageText(chatStr, messageId, summary);
+            const summaryText = `📝 **Check-in completado exitosamente.** Resumen: ${completedCount} tareas completadas, ${rescheduledCount} reagendadas.`;
+            await replyBot.editMessageText(chatStr, messageId, summaryText);
           }
         }
-      } else if (data.startsWith("wxack:")) {
+      } else if (data.startsWith("wxack:") || data.startsWith("ack_intraday_alert:") || data.startsWith("intraday_ack:")) {
         const dailyLogId = parseInt(data.split(":")[1], 10);
         const dailyLog = store.getDailyLogById(userId, dailyLogId);
         if (!dailyLog || dailyLog.user_id !== userId) {
-          responseText = "No tienes permiso para modificar esta tarea";
+          responseText = "No tienes permiso para modificar este registro";
           showAlert = true;
         } else {
-          store.updateDailyLog(userId, dailyLogId, { weather_alert_acknowledged: true });
-          responseText = "✅ Confirmado, no se insiste más.";
+          store.updateDailyLog(userId, dailyLogId, {
+            intraday_alert_acknowledged: true,
+            weather_alert_acknowledged: true
+          });
+          responseText = "Alerta confirmada";
           if (messageId) {
-            await replyBot.editMessageText(chatStr, messageId, "✅ *Confirmado.* No se insiste más con esta alerta.");
+            await replyBot.editMessageText(chatStr, messageId, "✅ **Alerta Aceptada por el Operario**");
           }
         }
       }

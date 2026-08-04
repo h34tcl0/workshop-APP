@@ -215,6 +215,10 @@ export interface DailyLog {
   weather_alert_retry_count: number;
   weather_alert_last_sent_at?: string | null;
   weather_alert_message?: string | null;
+  intraday_alert_triggered?: boolean;
+  intraday_alert_acknowledged?: boolean;
+  intraday_alert_last_sent_at?: string | null;
+  intraday_alert_burst_count?: number;
   updated_at: string;
 }
 

@@ -1,413 +1,636 @@
-# 🚀 AGENDAPP (Workshop OS) — Technical Blueprint & Architecture Single Source of Truth
+# 🚀 AGENDAPP (Workshop OS) — Documentación Técnica y Arquitectura del Sistema
 
-**AGENDAPP** (formerly *Workshop OS*) is an autonomous, weather-intelligent operational execution system designed specifically for outdoor carpentry workshops, woodworking studios, and weather-sensitive manufacturing. 
+**AGENDAPP** (anteriormente *Workshop OS*) es un sistema operativo de ejecución operacional autónomo e inteligente respecto al clima, diseñado específicamente para talleres de carpintería al aire libre, estudios de ebanistería y procesos de manufactura sensibles a condiciones ambientales.
 
-It acts as a continuous decision loop: ingesting real-time meteorological forecasts, evaluating environmental drying/curing thresholds against task backlogs, scheduling macro-blocks, automatically syncing calendar blocks via the **Google Calendar API**, and delivering interactive operational prompts through a **Telegram Bot**.
-
----
-
-## 📌 1. Executive Overview & Objectives
-
-### The Problem
-Outdoor carpentry and technical crafting suffer from strict environmental vulnerabilities:
-- **PVA Wood Glues & Epoxies**: Require specific temperature ranges (typically > 10°C) and zero moisture exposure during curing. High humidity (>80%) significantly degrades cure strength.
-- **Finishes & Paints**: Water-based and oil-based topcoats require minimum temperatures and maximum humidity caps to avoid blushing, bubbling, or failing to dry.
-- **Outdoor Assembly & Power Tools**: Rain, high winds, or freezing conditions halt outdoor assembly and raw timber handling.
-- **Wasted Operational Hours**: Craftspeople lose hours manually checking forecasts or starting assembly only to be interrupted by unpredicted rain mid-cure.
-
-### The AGENDAPP Solution
-AGENDAPP automates workshop planning by:
-1. **Hourly Forecast Evaluation**: Checking temperature, humidity, and rain probability hour-by-hour across operational work windows (e.g. 09:00 to 18:00).
-2. **Setup, Active & Passive Curing Window Fitting**: Differentiating between active work (`setup_hours` + `estimated_hours`) and passive drying (`curing_hours`). Tasks requiring curing are checked to ensure rain will not occur during the post-work curing window.
-3. **Automated Event Creation**: Syncing macro-work blocks directly to **Google Calendar** with scheduled task breakdowns and dual 60-min / 30-min reminders.
-4. **Interactive Telegram Assistant**: Broadcasting morning feasibility reports and sending evening check-in messages with interactive inline buttons (`Completada ✅`, `Reagendar 🔁`) to instantly update task statuses without opening a web browser.
+El sistema funciona como un **bucle de decisión continuo**: ingiere pronósticos meteorológicos en tiempo real, evalúa umbrales ambientales de secado/curado frente al backlog de tareas, agenda bloques de trabajo optimizados, sincroniza eventos espejo en **Google Calendar API v3** y entrega notificaciones operacionales oportunas e interactivas a través de un **Bot de Telegram**.
 
 ---
 
-## 🛠️ 2. Tech Stack & Architecture
+## 📌 1. Visión General y Arquitectura Multi-Tenant con Geolocalización
 
-| Layer | Technology | Description |
-| :--- | :--- | :--- |
-| **Backend Runtime** | Node.js (v18+) & Express | Event-driven HTTP web server and REST API host. |
-| **Language** | TypeScript | Strict type safety for domain models, database queries, and evaluation engines. |
-| **Bundler / Compiler** | `esbuild` | Fast production compilation generating `dist/server.cjs` (Node CJS target). |
-| **Database Engine** | SQLite via `sql.js` | In-memory SQLite relational engine with atomic disk persistence (`data/workshop.db`). |
-| **Calendar Integration**| `googleapis` (v173+) | Google Calendar API v3 integration with Service Account & OAuth credentials. |
-| **Bot & Messaging** | Telegram Bot API | Custom HTTP polling & webhook engine with inline keyboard callback handlers. |
-| **Weather Engine** | Open-Meteo API | Hourly meteorological data fetching with fallback mock scenarios. |
-| **Frontend Rendering** | EJS (Embedded JavaScript) | Server-Side Rendered views with responsive components. |
-| **Styling & UI** | Tailwind CSS | Utility-first CSS layout with custom dark/slate theme design tokens. |
-| **PWA Layer** | Web App Manifest & Service Worker | Installable mobile web app with network-first Service Worker asset caching (`sw.js`). |
-| **Daemon Scheduler** | Custom `node-cron` / Ticker | 5-minute autonomous ticker checking evaluation times, check-ins, and intraday weather risks. |
+### El Desafío Operacional
+La carpintería técnica y el trabajo en taller al aire libre sufren vulnerabilidades climáticas estrictas:
+- **Colas PVA y Adhesivos**: Requieren temperaturas mínimas (usualmente > 10 °C) y ausencia de humedad directa durante la aplicación y el curado. Niveles de humedad relativa superiores al 80% degradan significativamente la resistencia mecánica del ensamblado.
+- **Acabados, Barnices y Pinturas**: Los recubrimientos al agua o sintéticos requieren ventanas térmicas específicas y humedad controlada para evitar "velado", burbujas o fallas de secado.
+- **Ensamblado e Insumos**: La lluvia o humedad crítica interrumpe el trabajo exterior con herramientas eléctricas y deteriora la madera expuesta.
+
+### La Solución AGENDAPP
+AGENDAPP automatiza completamente la planificación del taller mediante una arquitectura **Multi-Tenant aislada**:
+
+1. **Aislamiento Multi-Tenant Completo**:
+   - Cada usuario (`user_id`) posee un contexto completamente aislado en la base de datos: su propio backlog de tareas, proyectos, plantillas, logs diarios y configuración operacional (`app_settings`).
+2. **Geolocalización y Cálculo Dinámico de Zona Horaria**:
+   - El usuario configura la latitud y longitud exactas de su taller (mediante un mapa interactivo Leaflet/OpenStreetMap).
+   - El backend utiliza `tz-lookup` para determinar automáticamente la zona horaria IANA correspondiente (ej. `America/Santiago`, `America/Buenos_Aires`).
+   - La aplicación sincroniza y presenta la **hora local exacta del taller** (`local_time_info`), garantizando que la evaluación matutina, las notificaciones y los eventos de Google Calendar coincidan con el huso horario real del sitio de trabajo.
 
 ---
 
-## 📂 3. Directory Tree & Module Topology
+## 📅 2. Sincronización Espejo Multi-Día (Google Calendar API v3)
+
+AGENDAPP implementa una arquitectura de **sincronización espejo flotante** proyectada en una ventana móvil de **7 días**:
 
 ```
-AGENDAPP/
-├── .env.example                  # Template for environment configuration
-├── .gitignore                    # Git exclusion rules
-├── Dockerfile                    # Containerization build recipe
-├── README.md                     # Technical architecture documentation
-├── metadata.json                 # AI Studio app capabilities & metadata
-├── package.json                  # NPM dependencies, scripts, and build target
-├── tsconfig.json                 # TypeScript compiler configuration
-├── server.ts                     # Express application entry point & route definitions
-├── data/                         # Persistent database directory
-│   └── workshop.db               # SQLite database file (generated at runtime)
-├── src/                          # Backend TypeScript source code
-│   ├── auth.ts                   # Cryptographic authentication & session signing
-│   ├── calendarService.ts        # Google Calendar API integration service
-│   ├── dateUtils.ts              # Localized date formatting & timezone helpers
-│   ├── db.ts                     # SQLite initialization, schema definition & query store
-│   ├── evaluator.ts              # Weather feasibility & curing timeline evaluation engine
-│   ├── holidaysService.ts        # Holiday detection & date exclusion logic
-│   ├── scheduler.ts              # Background daemon tick engine & local time utilities
-│   ├── telegramBot.ts            # Telegram Bot polling, webhook & callback handler
-│   ├── types.ts                  # Domain models, TypeScript interfaces & status enums
-│   └── weatherService.ts         # Open-Meteo & mock weather forecast ingestion
-├── static/                       # Static frontend assets
-│   ├── manifest.json             # PWA Web App Manifest configuration
-│   ├── sw.js                     # Service Worker script for offline caching
-│   ├── css/
-│   │   └── main.css              # Custom Tailwind CSS rules & layout styling
-│   ├── icons/                    # App icon assets (SVG/PNG)
-│   └── js/
-│       ├── agenda.js             # Timeline rendering & task agenda interactions
-│       ├── backlog.js            # Task creation, modal controls & project backlog
-│       ├── map.js                # Location selection & coordinate handling
-│       └── settings.js           # User configuration & Telegram testing handlers
-└── views/                        # EJS template views
-    ├── index.ejs                 # Primary AGENDAPP dashboard view
-    ├── login.ejs                 # Authentication login view
-    ├── register.ejs              # User registration view
-    └── components/               # Modular EJS components
-        ├── agenda.ejs            # Timeline & scheduled task block component
-        ├── backlog.ejs           # Project task backlog & template drawer component
-        └── settings_modal.ejs    # Settings modal component for operational parameters
+[Evaluación Continua a 7 Días]
+  ├── Día 1 (Viable)    ---> [Google Calendar: Bloque Creado / Actualizado]
+  ├── Día 2 (Viable)    ---> [Google Calendar: Bloque Creado / Actualizado]
+  ├── Día 3 (Bloqueado) ---> [Google Calendar: Bloque Eliminado / Limpiado]
+  └── Día 4..7          ---> [Monitoreo Proyectado]
 ```
 
----
-
-## 📑 4. Exhaustive File-by-File Technical Matrix
-
-Below is the complete catalog of every file in the repository, detailing its primary responsibility, key exports, and system dependencies.
-
-| File Path & Name | Primary Responsibility & Module Owner | Key Exports & Functions | Core Dependencies & Interacting Modules |
-| :--- | :--- | :--- | :--- |
-| `server.ts` | Express server entry point, route middleware, and HTTP API handling. | Server initialization, REST routes (`/api/*`, `/evaluation/*`, `/settings/*`), auth routes. | `express`, `src/db.ts`, `src/auth.ts`, `src/scheduler.ts`, `src/telegramBot.ts` |
-| `src/auth.ts` | Security module for password hashing and HMAC session token signing. | `hashPassword`, `verifyPassword`, `signToken`, `verifyToken`, `requireAuth`, `createSessionCookie` | Node `crypto`, `express`, `src/db.ts` |
-| `src/calendarService.ts` | Integration with Google Calendar API v3 for event creation. | `GoogleCalendarService`, `calendarService.createWorkshopEvent` | `googleapis`, Node `fs`, Node `path`, `src/db.ts` |
-| `src/dateUtils.ts` | Formatting helpers for Spanish localized dates and time strings. | `formatDateShortEs`, `formatDateLongEs` | Standard JS Date APIs |
-| `src/db.ts` | SQLite database manager, schema migrations, and query data access object (`store`). | `initDatabase`, `store` (CRUD for tasks, projects, app_settings, daily_logs, etc.) | `sql.js`, Node `fs`, Node `path`, `src/types.ts`, `src/auth.ts` |
-| `src/evaluator.ts` | Core weather evaluation algorithm, curing logic, and task fitting. | `evaluator.evaluateDay` | `src/types.ts`, `src/holidaysService.ts` |
-| `src/holidaysService.ts` | Statutory holiday detection for Chile / operational region. | `getHolidayDatesForRange`, `isHoliday` | `src/types.ts` |
-| `src/scheduler.ts` | Daemon ticker controlling evaluation runs, Telegram alerts, check-ins. | `startDaemon`, `runMorningEvaluation`, `runCheckinTick`, `runWeatherAlertTick`, `getLocalDateIso` | `src/db.ts`, `src/evaluator.ts`, `src/weatherService.ts`, `src/telegramBot.ts`, `src/calendarService.ts` |
-| `src/telegramBot.ts` | Telegram Bot service handling notifications, webhooks, and inline button callbacks. | `TelegramBotService`, Telegram webhook endpoint handlers | `src/db.ts`, `src/types.ts`, HTTP fetch API |
-| `src/types.ts` | Central TypeScript interfaces, type aliases, and system enums. | `Task`, `Project`, `AppSettings`, `DayEvaluation`, `DayStatus`, `TaskStatus`, `TaskCategory`, `WeatherRisk` | Pure TypeScript type definitions |
-| `src/weatherService.ts` | Meteorological forecast client for Open-Meteo API and mock scenarios. | `getHourlyForecast`, `MockWeatherService` | HTTP fetch API, `src/types.ts` |
-| `views/index.ejs` | Main dashboard template layout combining Agenda, Backlog, and Settings. | SSR Dashboard HTML structure | EJS Engine, Tailwind CSS, `views/components/*` |
-| `views/login.ejs` | Login form view with password and session submission. | Authentication Login Form | EJS Engine, `src/auth.ts` |
-| `views/register.ejs` | User registration view for creating new workshop accounts. | Registration Form | EJS Engine, `src/auth.ts` |
-| `views/components/agenda.ejs` | Dashboard component rendering active day timeline and weather window. | Timeline EJS Partial | `views/index.ejs` |
-| `views/components/backlog.ejs` | Dashboard component rendering project task cards and template manager. | Backlog EJS Partial | `views/index.ejs` |
-| `views/components/settings_modal.ejs` | Modal component for modifying operational parameters & Telegram settings. | Settings Modal EJS Partial | `views/index.ejs` |
-| `static/js/agenda.js` | Client-side DOM logic for timeline visualization and task status updates. | Task progress handlers, inline state updates | Browser DOM API |
-| `static/js/backlog.js` | Client-side DOM logic for creating tasks, editing projects, applying templates. | Modal controls, task creation AJAX | Browser DOM API |
-| `static/js/favorites.js` | Autocomplete logic for quick task selection without blur conflicts. | Real-time title/category search | Browser DOM API |
-| `static/js/map.js` | Interactive coordinate map selector for workshop location configuration. | Latitude/longitude picker | Leaflet.js / OpenStreetMap DOM API |
-| `static/js/settings.js` | Settings form submission handlers and Telegram test message buttons. | Settings AJAX handlers | Browser DOM API |
-| `static/css/main.css` | Custom styles, scrollbar styling, and Tailwind imports. | CSS design tokens | Browser CSS Engine |
-| `static/manifest.json` | Web App Manifest for mobile installation (PWA). | Web App Metadata | Mobile Browsers / PWA Installers |
-| `static/sw.js` | Service Worker providing network-first caching for offline readiness. | SW fetch interceptor & cache management | Browser Service Worker API |
-| `.env.example` | Environment variable specification template. | Config blueprint | Node `process.env` |
-| `Dockerfile` | Multi-stage Docker container specification. | Container build recipe | Docker Engine |
-| `package.json` | Project manifest, dependencies, and build/start scripts. | Dependency graph & scripts | NPM / Node.js |
-| `tsconfig.json` | TypeScript compiler options. | TS Compiler configuration | `tsc` / `esbuild` / `tsx` |
-| `metadata.json` | Platform metadata and major capabilities. | Platform features registration | AI Studio Environment |
+### Ciclo de Vida de los Eventos en Google Calendar
+1. **Creación de Bloques Macro**: Para cada día evaluado como viable (`DAY_VIABLE`), el sistema genera o actualiza un evento macro en Google Calendar (ej. `🔨 Taller Carpintería (09:00 - 17:00)`), agregando el desglose detallado de tareas y tiempos de preparación en la descripción.
+2. **Actualización Transparente**: Si el operario modifica horarios, parámetros de jornada o el backlog, el evento se actualiza automáticamente preservando su identificador.
+3. **Limpieza por Inviabilidad Meteorológica**: Si una actualización meteorológica vuelve inviable un día previamente agendado (`DAY_BLOCKED` por lluvia o humedad excesiva), el sistema **elimina automáticamente** el evento de Google Calendar para evitar falsas confirmaciones.
+4. **Resiliencia Técnica y Rescorte de Errores 404**:
+   - Si un usuario elimina manualmente el evento en la interfaz gráfica de Google Calendar, la API devolverá un error `404 Not Found` en el siguiente ciclo de sincronización.
+   - El servicio `src/calendarService.ts` captura este escenario de forma transparente, limpia la referencia obsoleta en la base de datos y recrea el evento si el día sigue siendo viable, manteniendo la integridad del estado.
+   - Persistencia explícita de `google_event_id` en la tabla `daily_logs`.
 
 ---
 
-## 🔄 5. End-to-End Data Flow & Lifecycles
+## 📲 3. Sistema de Notificaciones Puntuales en Telegram
+
+AGENDAPP rediseñó su motor de mensajería para eliminar el "spam" de reportes matutinos rutinarios y enfocar la comunicación en momentos operacionales críticos.
+
+```
+                    +---------------------------------------+
+                    |       EVENTO DE INICIO DE TRABAJO     |
+                    | (Inicio del primer bloque agendado)   |
+                    +-------------------+-------------------+
+                                        |
+                                        v
+                    +---------------------------------------+
+                    |  sendWorkStartNotification()          |
+                    |  - Detalle de preparación/setup       |
+                    |  - Desglose de tareas activas         |
+                    |  - Tiempos de curado proyectados      |
+                    +-------------------+-------------------+
+                                        |
+                                        v
+                    +---------------------------------------+
+                    |     CHECK-IN NOCTURNO INTERACTIVO     |
+                    |  (checkin_hour ej. 19:00 hrs)         |
+                    |  [ Completada ✅ ]  [ Reagendar 🔁 ]  |
+                    +---------------------------------------+
+```
+
+1. **Eliminación de Spam Matutino**: Ya no se envían mensajes genéricos al despertar. Las alertas se disparan con precisión cuando hay una acción requerida.
+2. **Notificación al Inicio Exacto del Trabajo (`sendWorkStartNotification`)**:
+   - Se dispara automáticamente en el minuto exacto en que comienza la primera tarea agendada del día.
+   - Informa al operario sobre la preparación requerida (tiempo de setup/limpieza), la secuencia de tareas activas y los tiempos de curado/secado necesarios.
+3. **Check-in Nocturno Interactivo**:
+   - Se envía a la hora configurada (`checkin_hour`, ej. 19:00 hrs) mediante teclados inline de Telegram.
+   - Permite al operario marcar cada tarea como `Completada ✅` o `Reagendar 🔁` con un solo toque, actualizando el estado en la base de datos SQLite sin abrir el navegador.
+
+---
+
+## 📋 4. Backlog de Tareas y Autocompletado Inteligente
+
+### Eliminación del Módulo de "Favoritas"
+- Se eliminó completamente la sección visual de tarjetas y botones de estrella ("Tareas Favoritas") para simplificar la interfaz y evitar la duplicidad de datos.
+- Se removieron los controladores y endpoints obsoletos (`/tasks/:id/favorite`, `/favorites/*`), concentrando el flujo de trabajo en la entrada principal del backlog.
+
+### Motor de Autocompletado Dinámico de Tareas
+Para acelerar el registro de tareas frecuentes (ej. *Lijado de cubiertas*, *Encolado de bastidores*, *Barnizado final*), el campo "TÍTULO DE LA TAREA" incorpora autocompletado dinámico basado en el historial del usuario:
+
+```
+[ Input: "Lija..." ]
+       │
+       ├── Backend: Query `store.getTaskHistory(userId)`
+       │   SELECT title, category, estimated_hours, curing_hours ...
+       │
+       └── Frontend: Lista `<datalist>` + Desplegable Filtrado
+           ├── "Lijado de cubiertas"  (Carpintería • 2.0h)
+           └── "Lijado de cantos"      (Carpintería • 1.0h)
+```
+
+- **Sugerencias Instantáneas**: Al escribir en el campo de título, el sistema despliega coincidencias del historial de tareas previamente creadas por el usuario.
+- **Relleno Automático de Parámetros**: Al seleccionar una sugerencia (vía clic, navegación por teclado con flechas/Enter, o datalist nativo HTML5), se completan automáticamente:
+  - **Título de la tarea**
+  - **Categoría** (Carpintería, Encolado PVA, Barnizado/Pintura, Epoxi)
+  - **Horas estimadas de trabajo activo**
+  - **Horas de curado/secado requeridas**
+
+---
+
+## 🔍 5. Motor de Evaluación Meteorológica y Curado Pasivo Nocturno (`src/evaluator.ts`)
+
+El núcleo de inteligencia operacional de AGENDAPP reside en `src/evaluator.ts`. A diferencia de un gestor de proyectos convencional, el sistema no solo evalúa si hay horas de sol durante la jornada laboral del taller (`operational_start_hour` a `operational_end_hour`), sino que simula la exposición de los materiales a lo largo de todo su proceso físico de secado.
+
+```
+Jornada Operativa (09:00 - 18:00)             Extensión de Curado Pasivo Nocturno (hasta 23:00+)
+┌───────────────────────────────────────────┬─────────────────────────────────────────────┐
+│ 09:00 Setup │ 10:00 - 15:00 Trabajo Activo │ 15:00 - 21:00 Curado PVA / Epoxi (Pasivo)   │
+└─────────────┴─────────────────────────────┴─────────────────────────────────────────────┘
+                                             ▲ Si a las 20:00 Lllueve o Humedad > 80% ────┤
+                                               --> DÍA RECHAZADO / DAY_BLOCKED PREVENTIVO
+```
+
+### 1. Proyección de Curado Pasivo Extramuros (`operational_end_hour`)
+- **Tiempos Activos vs. Pasivos**: Las tareas como *Encolado PVA* (2h curado), *Barnizado/Pintura* (2h a 4h curado) y *Epoxi* (6h+ curado) requieren que la pieza permanezca inmóvil y protegida en el taller.
+- **Ventana de Evaluación Extendida**: Aunque la presencia activa del operario finalice a las 18:00 hrs (`operational_end_hour`), si una tarea de encolado o epoxi se ejecuta en la tarde (ej. a las 15:00 hrs), el curado pasivo se extiende hasta las 21:00 hrs o la medianoche.
+- **Cálculo de `bufferEndHour`**: El motor evalúa las condiciones climáticas de cada hora `h` desde `startHour` hasta `bufferEndHour = Math.min(23, Math.floor(maxCuringEnd))`.
+
+### 2. Reglas Ambientales Estrictas por Categoría y Curado Nocturno
+Durante todo el período de trabajo activo **y** la ventana de curado pasivo nocturno, el evaluador aplica las siguientes verificaciones horario por horario:
+- **Precipitación y Lluvia**: Si la probabilidad de lluvia es `>= 30%` o la precipitación es `>= min_rain_precipitation_mm` (ej. 0.2mm), la ventana queda invalidada.
+- **Humedad Relativa Máxima (`max_humidity_percent`)**: Si en cualquier hora del curado (incluso pasadas las 19:00 o 22:00 hrs) la humedad relativa supera el umbral (ej. 80%), se detecta un conflicto ambiental.
+- **Regla Especial para Epoxi**: Exige temperatura mínima de **15.0 °C** y humedad relativa máxima de **75.0%** en todo el bloque de trabajo y sus 6 horas de curado.
+
+### 3. `DAY_BLOCKED` Preventivo y Justificación Explícita (`unassigned_reason`)
+Si una tarde o noche proyecta humedad nocturna o lluvia que arruinaría una tarea realizada en la tarde, el motor rechaza preventivamente esa ventana y marca la jornada como `DAY_BLOCKED` registrando el motivo exacto:
+- `Exceso de humedad detectado a las 21:00 hrs (86%, Máx permitido: 80%).`
+- `Riesgo de lluvia detectado a las 22:00 hrs (Probabilidad: 65%, Precipitación: 1.2mm).`
+- `Temperatura ambiente baja para Epoxi a las 20:00 hrs (12°C, Mínimo requerido: 15°C).`
+- `Ventana de tiempo continuo disponible (2.0h) es menor al mínimo requerido (4.0h).`
+- `Sin agendamiento: No hay tareas pendientes compatibles en el backlog.`
+
+---
+
+## 📡 6. Especificación de Endpoints REST (API Reference)
+
+A continuación se detallan los endpoints HTTP que expone `server.ts` para la administración del taller:
+
+### 🔐 Autenticación y Sesión
+
+#### `POST /login`
+Inicia sesión en la plataforma y establece la cookie firmada `workshop_token`.
+- **Request Body**:
+  ```json
+  {
+    "email": "maestro@taller.cl",
+    "password": "secretoSeguro123"
+  }
+  ```
+- **Response 303 Redirect**: Redirige a `/` en éxito.
+- **Response 401 Unauthorized**:
+  ```json
+  {
+    "status": "error",
+    "message": "Credenciales inválidas"
+  }
+  ```
+
+#### `POST /register`
+Crea una nueva cuenta de usuario e inicializa sus parámetros operacionales por defecto (`app_settings`).
+- **Request Body**:
+  ```json
+  {
+    "email": "nuevo@taller.cl",
+    "password": "secretoSeguro123"
+  }
+  ```
+- **Response 303 Redirect**: Redirige a `/`.
+
+#### `GET /logout`
+Destruye la sesión actual, elimina la cookie y redirige a `/login`.
+
+#### `GET /api/auth/status`
+Verifica si la sesión actual es válida.
+- **Response 200 OK**:
+  ```json
+  {
+    "authenticated": true,
+    "user": {
+      "id": 1,
+      "email": "maestro@taller.cl"
+    }
+  }
+  ```
+
+---
+
+### 📋 Gestión de Tareas y Backlog
+
+#### `GET /tasks/history` (o `/tasks/suggestions`)
+Obtiene la lista de títulos y parámetros históricos únicos del usuario para el autocompletado inteligente.
+- **Response 200 OK**:
+  ```json
+  [
+    {
+      "title": "Lijado de cubiertas",
+      "category": "carpentry",
+      "estimated_hours": 2.0,
+      "curing_hours": 0.0
+    },
+    {
+      "title": "Encolado de bastidores",
+      "category": "pva_glue",
+      "estimated_hours": 1.5,
+      "curing_hours": 2.0
+    }
+  ]
+  ```
+
+#### `POST /tasks/add`
+Agrega una nueva tarea al backlog del usuario.
+- **Request Body (Form Data / JSON)**:
+  ```json
+  {
+    "title": "Barnizado final de mesa",
+    "category": "varnish_paint",
+    "estimated_hours": 2.5,
+    "curing_hours": 4.0
+  }
+  ```
+- **Response 303 Redirect**: Redirige a `/`.
+
+#### `POST /tasks/:id/update`
+Actualiza el título, categoría y tiempos de una tarea existente.
+- **Request Body**:
+  ```json
+  {
+    "title": "Lijado y pulido fino",
+    "category": "carpentry",
+    "estimated_hours": 1.5,
+    "curing_hours": 0.0
+  }
+  ```
+
+#### `POST /tasks/:id/delete`
+Elimina una tarea del backlog.
+- **Response 303 Redirect**: Redirige a `/`.
+
+#### `POST /tasks/reorder`
+Reordena la secuencia de tareas en el backlog mediante Drag & Drop.
+- **Request Body**:
+  ```json
+  {
+    "task_ids": [12, 8, 15, 3]
+  }
+  ```
+- **Response 200 OK**:
+  ```json
+  {
+    "status": "ok"
+  }
+  ```
+
+#### `POST /tasks/import`
+Importa masivamente tareas en formato JSON generadas por IA.
+- **Request Body**:
+  ```json
+  {
+    "project_name": "Mueble de Cocina",
+    "tasks": [
+      {
+        "title": "Corte de terciado",
+        "category": "carpentry",
+        "estimated_hours": 3.0,
+        "curing_hours": 0.0
+      }
+    ]
+  }
+  ```
+- **Response 200 OK**:
+  ```json
+  {
+    "status": "success",
+    "message": "Se importaron 1 tareas con éxito."
+  }
+  ```
+
+---
+
+### 📆 Evaluación y Agenda
+
+#### `POST /evaluation/run` (o `/evaluation/force_run`)
+Fuerza la ejecución inmediata del motor de evaluación climática a 7 días.
+- **Response 200 OK**:
+  ```json
+  {
+    "status": "success",
+    "message": "Evaluación completada para 7 días.",
+    "evaluated_days": 7
+  }
+  ```
+
+#### `POST /calendar/create`
+Genera o fuerza la sincronización espejo a Google Calendar para una fecha dada.
+- **Request Body**:
+  ```json
+  {
+    "dateIso": "2026-08-03",
+    "start_time": "09:00",
+    "taskIds": [10, 11]
+  }
+  ```
+- **Response 200 OK**:
+  ```json
+  {
+    "status": "success",
+    "message": "Evento de Google Calendar creado con éxito.",
+    "eventId": "cal_evt_987654321"
+  }
+  ```
+
+---
+
+### ⚙️ Configuración Operacional
+
+#### `POST /settings/update`
+Actualiza la ubicación del taller, horas operativas y credenciales de Telegram.
+- **Request Body**:
+  ```json
+  {
+    "latitude": -32.99,
+    "longitude": -71.27,
+    "operational_start_hour": 9,
+    "operational_end_hour": 18,
+    "max_humidity_percent": 80.0,
+    "telegram_chat_id": "123456789"
+  }
+  ```
+- **Response 303 Redirect**: Redirige a `/`.
+
+---
+
+## 🛡️ 7. Resiliencia, Caché y Tolerancia a Fallos
+
+AGENDAPP implementa una capa de resiliencia distribuida para garantizar la disponibilidad continua del taller frente a fallos de servicios externos:
 
 ```
 +-----------------------------------------------------------------------------------+
-|                                DAEMON TICKER                                      |
+|                            CAPA DE RESILIENCIA Y CACHÉ                            |
++-------------------+-------------------------------+-------------------------------+
+|  OPEN-METEO API   |       TELEGRAM BOT API        |   GOOGLE CALENDAR API v3      |
++-------------------+-------------------------------+-------------------------------+
+| • Timeout de 8s   | • Ejecución asíncrona         | • Manejo de cuotas (429)      |
+| • Snapshot SQLite | • Silenciamiento de errores   | • Reintento en 5xx            |
+| • Fallback local  |   400/403 sin frenar daemon   | • Recreación limpia en 404    |
++-------------------+-------------------------------+-------------------------------+
+```
+
+### 1. Ingesta Meteorológica (Open-Meteo API)
+- **Timeout y Reintentos**: Las solicitudes HTTP de pronóstico se ejecutan con timeout estricto de 8 segundos y reintentos automáticos.
+- **Persistencia de Snapshot**: Cada pronóstico obtenido con éxito se guarda en la columna `morning_climate_snapshot` de `daily_logs` en formato JSON.
+- **Fallback Transparente**: Si la API de Open-Meteo se encuentra fuera de servicio o inalcanzable, el evaluador utiliza el último snapshot almacenado en SQLite para continuar agendando el día sin interrumpir al operario.
+
+### 2. Mensajería Distribuida (Telegram Bot API)
+- **Ejecución Asíncrona Non-Blocking**: Los ticks de notificación (`runWorkStartTick`, `runCheckinTick`) se ejecutan dentro de bloques `try/catch` aislados en el daemon (`scheduler.ts`).
+- **Aislamiento de Errores**: Si un usuario tiene un `telegram_chat_id` inválido, o bloqueó el bot (`403 Forbidden`), la falla es capturada y registrada en los logs del servidor sin detener los procesos de otros usuarios ni bloquear el hilo principal de Node.js.
+
+### 3. Sincronización de Calendario (Google Calendar API v3)
+- **Manejo de Errores 404 (Eventos Eliminados)**: Si un evento espejo es eliminado manualmente en la app de Google Calendar, el servicio detecta la respuesta `404 Not Found`, limpia la columna `google_event_id` en SQLite y vuelve a crear el evento si la jornada sigue siendo viable.
+- **Tolerancia a Errores 5xx**: Errores temporales de red o indisponibilidad de la API de Google son manejados con reintentos exponenciales en el siguiente tick del daemon (cada 15 minutos).
+
+---
+
+## 🛠️ 8. Tech Stack & Matriz Técnica
+
+### Tech Stack Principal
+| Capa | Tecnología | Descripción |
+| :--- | :--- | :--- |
+| **Entorno de Ejecución** | Node.js (v18+) & Express | Servidor HTTP, middleware de sesiones REST API. |
+| **Lenguaje** | TypeScript | Tipado estricto para modelos de dominio y motores de evaluación. |
+| **Compilador / Empaquetador**| `esbuild` | Compilación ultra-rápida a CommonJS (`dist/server.cjs`). |
+| **Base de Datos** | SQLite vía `better-sqlite3` | Motor relacional en disco con modo WAL (`journal_mode = WAL`). |
+| **Zona Horaria** | `tz-lookup` | Identificación dinámica de huso horario IANA según lat/lon. |
+| **Calendario** | `googleapis` (API v3) | Sincronización espejo con Google Calendar API. |
+| **Mensajería** | Telegram Bot API | Notificaciones operacionales e interacciones inline. |
+| **Motor Meteorológico** | Open-Meteo API | Pronósticos horarias de temperatura, humedad y precipitaciones. |
+| **Renderizado Frontend** | EJS (Embedded JavaScript) | Vistas SSR modulares y reactivas. |
+| **Diseño y Estilos** | Tailwind CSS | Interfaz oscura de alta precisión para ambientes de taller. |
+
+---
+
+## 📂 9. Árbol de Archivos del Proyecto
+
+```
+AGENDAPP/
+├── .env.example                  # Plantilla de variables de entorno
+├── .gitignore                    # Reglas de exclusión de Git
+├── Dockerfile                    # Receta de construcción de contenedor Docker
+├── README.md                     # Documentación técnica y arquitectura (Single Source of Truth)
+├── metadata.json                 # Metadatos del applet e intenciones de la plataforma
+├── package.json                  # Dependencias NPM, scripts de compilación y ejecución
+├── tsconfig.json                 # Configuración del compilador TypeScript
+├── server.ts                     # Punto de entrada de Express y definición de rutas REST
+├── data/                         # Directorio de persistencia de SQLite
+│   └── workshop.db               # Archivo de base de datos SQLite (generado en runtime)
+├── src/                          # Código fuente backend en TypeScript
+│   ├── auth.ts                   # Autenticación, hashing PBKDF2 y firma HMAC de sesiones
+│   ├── calendarService.ts        # Servicio de integración con Google Calendar API v3
+│   ├── dateUtils.ts              # Formateo de fechas y localización en español
+│   ├── db.ts                     # Gestor SQLite, migraciones de esquema y capa DAO (`store`)
+│   ├── evaluator.ts              # Motor de evaluación meteorológica y calce de tiempos de curado
+│   ├── holidaysService.ts        # Detección de feriados e irrenunciables
+│   ├── scheduler.ts              # Daemon en segundo plano, tickers y tiempo local
+│   ├── telegramBot.ts            # Bot de Telegram, webhooks y callbacks de teclado inline
+│   ├── types.ts                  # Interfaces TypeScript, modelos y enums
+│   └── weatherService.ts         # Cliente meteorológico para Open-Meteo API
+├── static/                       # Archivos estáticos del frontend
+│   ├── manifest.json             # Manifiesto Web App (PWA)
+│   ├── sw.js                     # Service Worker para almacenamiento en caché
+│   ├── css/
+│   │   └── main.css              # Reglas CSS de Tailwind e interfaz
+│   ├── icons/                    # Iconos y recursos gráficos
+│   └── js/
+│       ├── agenda.js             # Lógica del cliente para la línea de tiempo
+│       ├── backlog.js            # Lógica del backlog, drag & drop y autocompletado
+│       ├── map.js                # Selector interactivo de coordenadas del taller (Leaflet)
+│       └── settings.js           # Gestor del modal de configuración y pruebas de Telegram
+└── views/                        # Plantillas de renderizado EJS
+    ├── index.ejs                 # Vista principal del Dashboard de AGENDAPP
+    ├── login.ejs                 # Vista de inicio de sesión
+    ├── register.ejs              # Vista de registro de usuario
+    └── components/               # Componentes EJS modulares
+        ├── agenda.ejs            # Componente de línea de tiempo y resumen diario
+        ├── backlog.ejs           # Componente de backlog de tareas y plantillas
+        └── settings_modal.ejs    # Modal de configuración de parámetros operacionales
+```
+
+---
+
+## 📑 10. Matriz Técnica Detallada Archivo por Archivo
+
+| Archivo | Responsabilidad Principal | Exportaciones / Métodos Clave | Dependencias |
+| :--- | :--- | :--- | :--- |
+| `server.ts` | Servidor HTTP Express, rutas REST (`/api/*`, `/tasks/*`, `/evaluation/*`), autenticación. | Inicialización de Express, endpoints de autenticación y lógica del dashboard. | `express`, `src/db.ts`, `src/auth.ts`, `src/scheduler.ts`, `src/telegramBot.ts` |
+| `src/auth.ts` | Seguridad de contraseñas y tokens HMAC de sesión. | `hashPassword`, `verifyPassword`, `signToken`, `verifyToken`, `requireAuth` | Node `crypto`, `express`, `src/db.ts` |
+| `src/calendarService.ts` | Integración con Google Calendar API v3. | `GoogleCalendarService`, `createWorkshopEvent` | `googleapis`, Node `fs`, `src/db.ts` |
+| `src/dateUtils.ts` | Formateo de fechas y textos en español. | `formatDateShortEs`, `formatDateLongEs` | JavaScript Standard Date API |
+| `src/db.ts` | Capa DAO de SQLite, migraciones y persistencia en disco. | `initDatabase`, `store` (CRUD de tareas, proyectos, configuraciones, logs) | `better-sqlite3`, Node `fs`, `src/types.ts` |
+| `src/evaluator.ts` | Motor de evaluación climática y calce de tiempos de curado. | `evaluator.evaluateDay` | `src/types.ts`, `src/holidaysService.ts` |
+| `src/holidaysService.ts` | Identificación de feriados legales. | `getHolidayDatesForRange`, `isHoliday` | `src/types.ts` |
+| `src/scheduler.ts` | Daemon en segundo plano para tickers meteorológicos y notificaciones. | `startDaemon`, `runMorningEvaluation`, `runCheckinTick`, `processWorkStartNotificationsForUser` | `src/db.ts`, `src/evaluator.ts`, `src/weatherService.ts`, `src/telegramBot.ts` |
+| `src/telegramBot.ts` | Bot de Telegram, recepción de webhooks y botones inline. | `TelegramBotService`, handlers de callback | `src/db.ts`, HTTP fetch API |
+| `src/types.ts` | Interfaces de dominio y tipos de datos en TypeScript. | `Task`, `Project`, `AppSettings`, `DailyLog`, `TaskStatus`, `TaskCategory` | TypeScript Pure Types |
+| `src/weatherService.ts` | Ingesta de pronósticos meteorológicos de Open-Meteo. | `getHourlyForecast`, `computeHourlyClimateMap` | HTTP fetch API, `src/types.ts` |
+| `views/index.ejs` | Vista principal SSR que integra Agenda, Backlog y Configuración. | Estructura HTML del Dashboard | EJS Engine, Tailwind CSS |
+| `views/components/backlog.ejs` | Componente de backlog con formulario de creación y autocompletado. | Parcial EJS del Backlog | EJS Engine |
+| `static/js/backlog.js` | Lógica de cliente para drag & drop y autocompletado inteligente. | `initTaskAutocomplete`, `initSortable` | Browser DOM API |
+
+---
+
+## 🔄 11. Diagrama de Flujo de Datos End-to-End
+
+```
++-----------------------------------------------------------------------------------+
+|                                DAEMON SCHEDULER                                   |
 |                             (src/scheduler.ts)                                    |
 +----------------------------------------+------------------------------------------+
                                          |
                                          v
 +-----------------------------------------------------------------------------------+
-| 1. INGEST FORECAST                     | 2. EVALUATE FEASIBILITY                  |
-| Open-Meteo API / Mock                  | Weather Engine (src/evaluator.ts)        |
-| -> Hourly Temp, Humidity, Rain         | -> Match Working Window & Curing Caps    |
+| 1. INGESTA CLIMÁTICA POR USUARIO       | 2. EVALUACIÓN Y CALCE                    |
+| Open-Meteo API (Lat/Lon del taller)   | Motor Climático (src/evaluator.ts)       |
+| -> Temp, Humedad, Precipitación        | -> Filtro de jornadas y tiempos curado   |
 +----------------------------------------+------------------------------------------+
                                          |
                                          v
 +-----------------------------------------------------------------------------------+
-| 3. PERSIST DAY LOG                                                                |
-| Store Evaluation in SQLite (src/db.ts -> daily_logs table)                        |
+| 3. PERSISTENCIA EN SQLITE                                                         |
+| Tabla `daily_logs` (Estado DAY_VIABLE o DAY_BLOCKED con block_reason)             |
 +-------------------+---------------------------------------+-----------------------+
                     |                                       |
                     v                                       v
 +---------------------------------------+   +---------------------------------------+
-| 4. GOOGLE CALENDAR SYNC               |   | 5. TELEGRAM MORNING BROADCAST         |
-| (src/calendarService.ts)              |   | (src/telegramBot.ts)                  |
-| Creates Macro-Block Event:            |   | Sends Morning Summary Card with       |
-| "🔨 Taller Carpintería (09:00-17:00)" |   | Scheduled Tasks to Workshop Operator  |
+| 4. SINCRONIZACIÓN ESPEJO GOOGLE CAL.  |   | 5. NOTIFICACIÓN DE INICIO DE TRABAJO  |
+| (src/calendarService.ts)              |   | (Telegram Bot al min exacto de inicio)|
+| Crea/Actualiza/Elimina evento macro:  |   | Informa tiempo de setup, tareas       |
+| "🔨 Taller Carpintería (09:00-17:00)" |   | activas y ventanas de curado.          |
 +---------------------------------------+   +---------------------------------------+
                                                             |
                                                             v
 +-----------------------------------------------------------------------------------+
-| 6. EVENING CHECK-IN PROMPT (src/telegramBot.ts @ checkin_hour)                    |
-| Sends Interactive Message with Inline Keyboard:                                   |
-| [ Completada ✅ ]   [ Reagendar 🔁 ]                                              |
+| 6. CHECK-IN NOCTURNO INTERACTIVO (checkin_hour ej. 19:00 hrs)                     |
+| Bot envía teclado inline: [ Completada ✅ ]  [ Reagendar 🔁 ]                      |
 +----------------------------------------+------------------------------------------+
                                          |
                                          v
 +-----------------------------------------------------------------------------------+
-| 7. CALLBACK QUERY PROCESSING (src/telegramBot.ts Callback Handler)                 |
-| Operator taps button -> Bot receives webhook/polling payload                     |
-| -> SQLite task status updated to 'completed' or rescheduled to next cycle        |
+| 7. PROCESAMIENTO DE CALLBACK (src/telegramBot.ts)                                 |
+| Operario presiona botón -> Actualización instantánea del estado de tareas en DB.  |
 +-----------------------------------------------------------------------------------+
 ```
 
 ---
 
-## 🗄️ 6. Database Schema & Domain Type System
+## 🗄️ 12. Esquema de Base de Datos SQLite (`data/workshop.db`)
 
-### SQLite Database Tables (`data/workshop.db`)
-
-#### 1. `users`
-| Column | Data Type | Constraints | Description |
+### Tabla `users`
+| Columna | Tipo | Restricciones | Descripción |
 | :--- | :--- | :--- | :--- |
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Unique user identifier. |
-| `email` | TEXT | UNIQUE NOT NULL | User login email address. |
-| `password_hash` | TEXT | NOT NULL | PBKDF2 hash formatted as `salt:hash`. |
-| `created_at` | TEXT | NOT NULL | ISO Timestamp of user creation. |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID único del usuario. |
+| `email` | TEXT | UNIQUE NOT NULL | Correo electrónico de acceso. |
+| `password_hash` | TEXT | NOT NULL | Hash PBKDF2 (`salt:hash`). |
+| `must_change_password` | INTEGER | NOT NULL DEFAULT 0 | Flag de cambio obligatorio de clave. |
+| `created_at` | TEXT | NOT NULL | Fecha de creación del usuario. |
 
-#### 2. `app_settings`
-| Column | Data Type | Constraints | Description |
+### Tabla `app_settings`
+| Columna | Tipo | Restricciones | Descripción |
 | :--- | :--- | :--- | :--- |
-| `id` | INTEGER | PRIMARY KEY CHECK(id=1) | Singleton settings row. |
-| `operational_start_hour` | INTEGER | NOT NULL DEFAULT 9 | Day start time (0-23). |
-| `operational_end_hour` | INTEGER | NOT NULL DEFAULT 18 | Day end time (0-23). |
-| `max_humidity_percent` | REAL | NOT NULL DEFAULT 80.0 | Maximum allowed humidity % for work. |
-| `latitude` | REAL | NOT NULL DEFAULT -32.99 | Workshop location latitude. |
-| `longitude` | REAL | NOT NULL DEFAULT -71.27 | Workshop location longitude. |
-| `setup_hours` | REAL | NOT NULL DEFAULT 1.0 | Setup time required before active work. |
-| `teardown_hours` | REAL | NOT NULL DEFAULT 1.0 | Cleanup time required after active work. |
-| `min_work_hours` | REAL | NOT NULL DEFAULT 1.0 | Minimum work window length to mark day viable. |
-| `min_work_hours_unless_final`| REAL | NOT NULL DEFAULT 4.0 | Threshold required unless finalizing project. |
-| `min_rain_precipitation_mm` | REAL | NOT NULL DEFAULT 0.2 | Minimum rain mm/h considered active precipitation. |
-| `checkin_hour` | INTEGER | NOT NULL DEFAULT 19 | Hour for evening Telegram check-in prompt. |
-| `morning_eval_lead_hours` | INTEGER | NOT NULL DEFAULT 1 | Hours before work start to run morning evaluation. |
-| `exclude_saturdays` | INTEGER | NOT NULL DEFAULT 1 | Boolean (0/1): Exclude Saturdays. |
-| `exclude_sundays` | INTEGER | NOT NULL DEFAULT 1 | Boolean (0/1): Exclude Sundays. |
-| `exclude_holidays` | INTEGER | NOT NULL DEFAULT 1 | Boolean (0/1): Exclude statutory holidays. |
-| `require_curing_before_cutoff`| INTEGER | NOT NULL DEFAULT 1 | Boolean (0/1): Enforce curing completion before day end. |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID de la configuración. |
+| `user_id` | INTEGER | UNIQUE NOT NULL | FK hacia `users.id`. |
+| `operational_start_hour` | INTEGER | NOT NULL DEFAULT 9 | Hora de inicio de la jornada (0-23). |
+| `operational_end_hour` | INTEGER | NOT NULL DEFAULT 18 | Hora de término de la jornada (0-23). |
+| `max_humidity_percent` | REAL | NOT NULL DEFAULT 80.0 | Límite máximo de humedad para trabajar (%). |
+| `latitude` | REAL | NOT NULL DEFAULT -32.99 | Latitud geográfica del taller. |
+| `longitude` | REAL | NOT NULL DEFAULT -71.27 | Longitud geográfica del taller. |
+| `timezone` | TEXT | NULL | Zona horaria IANA calculada (ej. `America/Santiago`). |
+| `setup_hours` | REAL | NOT NULL DEFAULT 1.0 | Tiempo de preparación pre-jornada (horas). |
+| `teardown_hours` | REAL | NOT NULL DEFAULT 1.0 | Tiempo de limpieza post-jornada (horas). |
+| `min_work_hours` | REAL | NOT NULL DEFAULT 1.0 | Duración mínima para validar un día como viable. |
+| `checkin_hour` | INTEGER | NOT NULL DEFAULT 19 | Hora para la notificación nocturna de Telegram. |
+| `telegram_chat_id` | TEXT | NULL | Chat ID de Telegram del usuario. |
+| `google_calendar_id` | TEXT | NULL | ID del calendario de Google Calendar. |
+| `google_calendar_enabled`| INTEGER | NOT NULL DEFAULT 0 | Interruptor de activación de Google Calendar. |
 
-#### 3. `projects`
-| Column | Data Type | Constraints | Description |
+### Tabla `projects`
+| Columna | Tipo | Restricciones | Descripción |
 | :--- | :--- | :--- | :--- |
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Project identifier. |
-| `name` | TEXT | NOT NULL | Project title. |
-| `description` | TEXT | NULL | Project details. |
-| `is_active` | INTEGER | NOT NULL DEFAULT 0 | Active project selector flag. |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID único del proyecto. |
+| `user_id` | INTEGER | NOT NULL | FK hacia `users.id`. |
+| `name` | TEXT | NOT NULL | Nombre del proyecto. |
+| `description` | TEXT | NULL | Descripción detallada. |
+| `is_active` | INTEGER | NOT NULL DEFAULT 0 | Flag de proyecto activo. |
 
-#### 4. `tasks`
-| Column | Data Type | Constraints | Description |
+### Tabla `tasks`
+| Columna | Tipo | Restricciones | Descripción |
 | :--- | :--- | :--- | :--- |
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Task identifier. |
-| `project_id` | INTEGER | NOT NULL | FK to `projects.id`. |
-| `title` | TEXT | NOT NULL | Task title. |
-| `description` | TEXT | NULL | Detailed task instructions. |
-| `category` | TEXT | NOT NULL | Category (e.g., `carpentry`, `pva_glue`, `epoxy`, `finish`). |
-| `estimated_hours` | REAL | NOT NULL DEFAULT 1.0 | Active work duration in hours. |
-| `curing_hours` | REAL | NOT NULL DEFAULT 0.0 | Passive drying duration in hours. |
-| `requires_curing` | INTEGER | NOT NULL DEFAULT 0 | Boolean (0/1): Flags if task needs drying time. |
-| `status` | TEXT | NOT NULL DEFAULT 'pending' | Task state (`pending`, `scheduled`, `in_progress`, `completed`, `blocked`). |
-| `progress_percentage` | INTEGER | NOT NULL DEFAULT 0 | Completion progress (0-100). |
-| `order_num` | INTEGER | NOT NULL DEFAULT 1 | Display sequence order within project. |
-| `completed_at` | TEXT | NULL | ISO timestamp when completed. |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID de la tarea. |
+| `user_id` | INTEGER | NOT NULL | FK hacia `users.id`. |
+| `project_id` | INTEGER | NOT NULL | FK hacia `projects.id`. |
+| `title` | TEXT | NOT NULL | Título de la tarea. |
+| `category` | TEXT | NOT NULL | Categoría (`carpentry`, `pva_glue`, `varnish_paint`, `epoxy`). |
+| `estimated_hours` | REAL | NOT NULL DEFAULT 1.0 | Horas de trabajo activo. |
+| `curing_hours` | REAL | NOT NULL DEFAULT 0.0 | Horas de curado o secado pasivo. |
+| `requires_curing` | INTEGER | NOT NULL DEFAULT 0 | Indica si requiere protección ambiental de secado. |
+| `status` | TEXT | NOT NULL DEFAULT 'pending' | Estado (`pending`, `scheduled`, `in_progress`, `completed`). |
+| `order_num` | INTEGER | NOT NULL DEFAULT 1 | Orden secuencial en el backlog. |
 
-#### 5. `daily_logs`
-| Column | Data Type | Constraints | Description |
+### Tabla `daily_logs`
+| Columna | Tipo | Restricciones | Descripción |
 | :--- | :--- | :--- | :--- |
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Log entry identifier. |
-| `eval_date` | TEXT | UNIQUE NOT NULL | Evaluation date (`YYYY-MM-DD`). |
-| `status` | TEXT | NOT NULL | Day outcome status (`DAY_VIABLE` / `DAY_BLOCKED`). |
-| `block_reason` | TEXT | NULL | Human readable reason if day is blocked. |
-| `window_start` | TEXT | NULL | Feasible work window start time (`HH:MM`). |
-| `window_end` | TEXT | NULL | Feasible work window end time (`HH:MM`). |
-| `net_work_hours` | REAL | NULL | Calculated usable work hours. |
-| `tasks_summary` | TEXT | NULL | String summary of scheduled tasks. |
-| `scheduled_task_ids` | TEXT | NULL | JSON array string of scheduled task IDs. |
-| `morning_climate_snapshot` | TEXT | NULL | Snapshot of weather metrics during evaluation. |
-| `telegram_notified` | INTEGER | NOT NULL DEFAULT 0 | Boolean flag: Telegram morning alert sent. |
-| `calendar_created` | INTEGER | NOT NULL DEFAULT 0 | Boolean flag: Google Calendar event inserted. |
-| `checkin_sent` | INTEGER | NOT NULL DEFAULT 0 | Boolean flag: Evening check-in prompt sent. |
-| `checkin_resolved` | INTEGER | NOT NULL DEFAULT 0 | Boolean flag: Operator completed evening check-in. |
-| `weather_alert_sent` | INTEGER | NOT NULL DEFAULT 0 | Boolean flag: Intraday weather warning sent. |
-| `updated_at` | TEXT | NOT NULL | Last update timestamp. |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID del registro diario. |
+| `user_id` | INTEGER | NOT NULL | FK hacia `users.id`. |
+| `eval_date` | TEXT | NOT NULL | Fecha evaluada (`YYYY-MM-DD`). |
+| `status` | TEXT | NOT NULL | Resultado (`DAY_VIABLE` o `DAY_BLOCKED`). |
+| `block_reason` | TEXT | NULL | Explicación detallada si el día fue bloqueado. |
+| `window_start` | TEXT | NULL | Hora inicio de ventana de trabajo (`HH:MM`). |
+| `window_end` | TEXT | NULL | Hora término de ventana de trabajo (`HH:MM`). |
+| `net_work_hours` | REAL | NULL | Horas netas de trabajo disponibles. |
+| `scheduled_task_ids` | TEXT | NULL | JSON con IDs de tareas agendadas. |
+| `google_event_id` | TEXT | NULL | Identificador del evento en Google Calendar. |
+| `calendar_created` | INTEGER | NOT NULL DEFAULT 0 | Flag de confirmación de evento en Google Calendar. |
+| `checkin_sent` | INTEGER | NOT NULL DEFAULT 0 | Flag de notificación nocturna enviada. |
 
 ---
 
-## 🧠 7. Weather Evaluation & Window Allocation Engine
+## 🚀 13. Guía de Instalación, Desarrollo y Despliegue
 
-The evaluation engine in `src/evaluator.ts` operates deterministically:
-
-```
-[Operational Hours: 09:00 - 18:00]
-|-------------------------------------------------------------------|
-09:00        10:00               14:00            16:00        18:00
-[Setup 1h]   [Active Task Work]  [Teardown 1h]   [Passive Curing]
-             (carpentry/glue)                    (No Rain Allowed!)
-```
-
-### Evaluation Algorithm Steps:
-1. **Day Exclusion Checks**:
-   - Check if date is a Saturday (`exclude_saturdays`) or Sunday (`exclude_sundays`).
-   - Check if date is a statutory holiday (`exclude_holidays`).
-   - Check if a `day_override` exists in SQLite for the target date.
-2. **Hourly Weather Ingestion**:
-   - For every hour in `[operational_start_hour, operational_end_hour]`:
-     - Test temperature limits ($10^\circ\text{C} \le T \le 35^\circ\text{C}$).
-     - Test maximum humidity ($H \le \text{max\_humidity\_percent}$).
-     - Test rain precipitation ($P < \text{min\_rain\_precipitation\_mm}$).
-3. **Window Extraction**:
-   - Find contiguous hours meeting all weather criteria.
-   - Deduct `setup_hours` at the start of the window and `teardown_hours` at the end.
-   - If remaining net hours < `min_work_hours`, set `status = DAY_BLOCKED`.
-4. **Task Fitting & Curing Verification**:
-   - Select pending tasks ordered by `order_num`.
-   - Fit tasks chronologically into the net work window.
-   - For any task where `requires_curing == 1`:
-     - Extend a post-work curing check for `curing_hours`.
-     - Verify that rain probability remains $0$ during the curing window. If rain threatens during curing, flag or postpone the task.
-
----
-
-## 🔒 8. Security, Auth & Token Engine
-
-### Password Storage
-- **Algorithm**: `PBKDF2` (Password-Based Key Derivation Function 2) using `SHA-512`.
-- **Iterations**: `10,000`
-- **Salt**: 16 random bytes generated via `crypto.randomBytes(16)`.
-- **Stored Format**: `salt:hash` (hex strings).
-
-### Session Security & Cookie Handling
-- **Session Tokens**: Signed HMAC-SHA256 tokens encoding `user_id`, `email`, and `exp` timestamp.
-- **Cookie Configuration**:
-  - Name: `workshop_session`
-  - Directives: `Path=/; HttpOnly; SameSite=None; Secure; Max-Age=2592000`
-  - **Iframe & Preview Compatibility**: `SameSite=None; Secure` allows AGENDAPP to execute seamlessly within embedded cloud IDE sandboxes and mobile webviews without cross-site cookie rejection.
-
----
-
-## ⚙️ 9. Environment Variables & Configuration (`.env`)
-
-All configurable parameters are read from environment variables or `app_settings` in SQLite:
-
-```env
-# Server Network Port (Default: 3000)
-PORT=3000
-
-# SQLite Persistence Directory
-DATA_DIR=data
-
-# Google Calendar Integration Credentials
-GOOGLE_APPLICATION_CREDENTIALS=google-credentials.json
-GOOGLE_CALENDAR_ID=primary
-
-# Telegram Bot Token & Target Chat ID
-TELEGRAM_BOT_TOKEN=7890123456:AAFxXxXxXxXxXxXxXxXxXxXxXxXx
-TELEGRAM_CHAT_ID=-1001234567890
-TELEGRAM_WEBHOOK_SECRET=my_secure_webhook_secret
-
-# Application Timezone
-TIMEZONE=America/Santiago
-```
-
----
-
-## 🚀 10. Installation, Local Dev, Production Build & Deployment
-
-### 1. Installation & Compilation
+### 1. Instalación de Dependencias y Compilación
 ```bash
-# Install NPM dependencies
+# Instalar dependencias del proyecto
 npm install
 
-# Compile TypeScript into single CJS bundle (dist/server.cjs)
+# Compilar TypeScript a producción (dist/server.cjs) usando esbuild
 npm run build
 ```
 
-### 2. Local Development
+### 2. Entorno de Desarrollo Local
 ```bash
-# Run server with live TS reload using tsx
+# Iniciar servidor con recarga en vivo mediante tsx
 npm run dev
 ```
 
-### 3. Production Deployment with PM2
+### 3. Despliegue en Producción con PM2
 ```bash
-# Build production bundle
+# Compilar el empaquetado de producción
 npm run build
 
-# Launch server process using PM2
+# Iniciar proceso con PM2
 pm2 start dist/server.cjs --name "agendapp" --update-env
 ```
 
-### 4. Containerized Docker Deployment
+### 4. Despliegue Contenerizado con Docker
 ```bash
-# Build Docker image
+# Construir imagen Docker
 docker build -t agendapp:latest .
 
-# Run Docker container with environment file
-docker run -d -p 3000:3000 --env-file .env -v $(pwd)/data:/app/data --name agendapp_app agendapp:latest
+# Ejecutar contenedor con volumen de persistencia
+docker run -d -p 3000:3000 --env-file .env -v $(pwd)/data:/app/data --name agendapp_container agendapp:latest
 ```
 
-### 5. Manual Evaluation & API Endpoint Testing
-AGENDAPP exposes endpoint triggers for manual verification, automated testing, or external webhooks:
+### 5. Respaldos en Caliente de SQLite (Modo WAL)
+AGENDAPP opera SQLite configurado en modo **Write-Ahead Logging (WAL)** (`journal_mode = WAL`), garantizando un rendimiento óptimo de lectura/escritura concurrente.
+
+Para realizar respaldos seguros sin detener el servidor en ejecución, utiliza la API de respaldo en caliente o comandos nativos `VACUUM INTO`:
 
 ```bash
-# 1. Force Morning Evaluation Loop (Triggers Weather Check, DB Log, Calendar Event & Telegram Alert)
-curl -X POST http://localhost:3000/evaluation/force_run
+# Método A: Copia de seguridad nativa SQLite usando VACUUM INTO en Docker
+docker exec -it agendapp_container sqlite3 /app/data/workshop.db "VACUUM INTO '/app/data/backup-$(date +%Y%m%d%H%M%S).db';"
 
-# 2. Force Evening Check-In Telegram Message (Sends Interactive Task Buttons)
-curl -X POST http://localhost:3000/evaluation/force_checkin
-
-# 3. Trigger Mock Scenario Evaluation (e.g. test rain scenario)
-curl -X POST http://localhost:3000/evaluation/force_run -H "Content-Type: application/json" -d '{"scenario": "rain_afternoon"}'
-```
-
-### 5. Database Backups (WAL Mode)
-AGENDAPP uses `better-sqlite3` configured in Write-Ahead Logging (WAL) mode (`journal_mode = WAL`). In WAL mode, SQLite maintains three files on disk:
-- `data/workshop.db` (Primary database file)
-- `data/workshop.db-wal` (Write-Ahead Log containing active transactions)
-- `data/workshop.db-shm` (Shared memory index file)
-
-To guarantee a crash-consistent, non-corrupted backup while the server is active, use the native SQLite online backup API endpoint (`POST /api/admin/backup`) or shell commands using `VACUUM INTO` or `sqlite3`:
-
-```bash
-# Method A: Trigger Online Backup via HTTP API Endpoint (Recommended)
-curl -X POST http://localhost:3000/api/admin/backup \
-     -H "Cookie: workshop_session=<YOUR_SESSION_TOKEN>" \
-     -H "Content-Type: application/json"
-
-# Method B: Execute Native Online Backup inside Docker / Shell using VACUUM INTO
-docker exec -it agendapp_app sqlite3 /app/data/workshop.db "VACUUM INTO '/app/data/backup-$(date +%Y%m%d%H%M%S).db';"
-
-# Method C: Direct Local Shell Backup via sqlite3 CLI
+# Método B: Copia de seguridad local directa mediante CLI de sqlite3
 sqlite3 data/workshop.db "VACUUM INTO 'data/backup-live.db';"
 ```
 
 ---
 
-## 🤖 AI & Developer Handover Guardrails
+## 🛡️ 14. Guardagujas de Desarrollo e Integración
 
-When extending AGENDAPP:
-1. **Never Bypass `evaluator.ts` for Schedule Logic**: All scheduling operations must run through `evaluateDay()` to maintain weather, curing, and window safety guarantees.
-2. **Preserve `SameSite=None; Secure` Cookie Flags**: Altering cookie settings breaks iframe preview sandboxes and embedded execution environments.
-3. **Database Export Consistency**: When modifying `src/db.ts`, ensure `saveToDisk()` is invoked after write operations so `data/workshop.db` remains persistent across restarts.
-4. **Calendar Fallback Handling**: `src/calendarService.ts` must never crash the application if `google-credentials.json` is missing or invalid; always log a warning and fallback gracefully to simulated execution.
+1. **Evaluación Centralizada en `evaluator.ts`**: Toda modificación de horarios o viabilidad de tareas debe pasar por el motor de evaluación para asegurar los umbrales climáticos y de curado.
+2. **Cookies `SameSite=None; Secure`**: Mantener las banderas de cookies para soportar la ejecución en entornos incrustados (iframes) e interfaces móviles.
+3. **Persistencia Directa**: Toda escritura en SQLite debe reflejarse en `data/workshop.db` para asegurar la durabilidad tras reinicios del contenedor.
