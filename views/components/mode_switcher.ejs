@@ -1,40 +1,19 @@
-<!-- BARRA PRINCIPAL DE CONMUTACIÓN DE MODOS -->
-<div class="w-full mb-6">
-    <!-- TOGGLE PRINCIPAL DE MODO -->
-    <div class="bg-surface border-2 border-hairline rounded-2xl p-1.5 flex shadow-panel max-w-xl mx-auto">
-        <button type="button" 
-                id="mode-btn-planning" 
-                onclick="switchWorkspaceMode('planning')" 
-                class="flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all min-h-[48px] bg-brass text-canvas shadow-md">
-            <svg class="w-4 h-4"><use href="#i-sidebar"/></svg>
-            <span>📋 Modo Planificación</span>
-        </button>
-        <button type="button" 
-                id="mode-btn-workshop" 
-                onclick="switchWorkspaceMode('workshop')" 
-                class="flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all min-h-[48px] text-ink2 hover:text-ink">
-            <span>🛠️ Modo Taller</span>
-        </button>
-    </div>
-
-    <!-- SUB-TABS DENTRO DEL MODO PLANIFICACIÓN -->
-    <div id="planning-subtabs-bar" class="flex items-center justify-center gap-2 mt-4">
-        <button type="button" 
-                id="plan-tab-btn-agenda" 
-                onclick="switchPlanningSubtab('agenda')" 
-                class="px-4 py-2 rounded-xl text-xs font-semibold bg-surface border border-brass text-brass shadow-sm transition-all flex items-center gap-1.5">
-            <span>📅 Agenda y Backlog</span>
-        </button>
-        <button type="button" 
-                id="plan-tab-btn-materials" 
-                onclick="switchPlanningSubtab('materials')" 
-                class="px-4 py-2 rounded-xl text-xs font-semibold bg-surface border border-hairline text-ink2 hover:text-ink transition-all flex items-center gap-1.5">
-            <span>📦 Módulo de Materiales</span>
-            <% if ((locals.materials || []).filter(m => m.status === 'to_buy').length > 0) { %>
-                <span class="w-2 h-2 rounded-full bg-rust"></span>
-            <% } %>
-        </button>
-    </div>
+<!-- CONMUTADOR SEGMENTADO DE MODOS (HEADER) -->
+<div class="bg-surface2/80 border border-hairline p-1 rounded-xl flex items-center gap-1 shadow-inner shrink-0">
+    <button type="button" 
+            id="mode-btn-planning" 
+            onclick="switchWorkspaceMode('planning')" 
+            class="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all bg-brass text-canvas shadow-sm">
+        <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-calendar"/></svg>
+        <span class="hidden sm:inline">Planificación</span>
+    </button>
+    <button type="button" 
+            id="mode-btn-workshop" 
+            onclick="switchWorkspaceMode('workshop')" 
+            class="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all text-ink2 hover:text-ink">
+        <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-wrench"/></svg>
+        <span class="hidden sm:inline">Taller</span>
+    </button>
 </div>
 
 <script>
@@ -48,10 +27,10 @@ function switchWorkspaceMode(mode) {
     if (!planningBtn || !workshopBtn) return;
 
     if (mode === 'workshop') {
-        planningBtn.classList.remove('bg-brass', 'text-canvas', 'shadow-md');
-        planningBtn.classList.add('text-ink2');
-        workshopBtn.classList.add('bg-brass', 'text-canvas', 'shadow-md');
-        workshopBtn.classList.remove('text-ink2');
+        planningBtn.classList.remove('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
+        planningBtn.classList.add('text-ink2', 'font-medium');
+        workshopBtn.classList.add('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
+        workshopBtn.classList.remove('text-ink2', 'font-medium');
 
         if (planningSubtabs) planningSubtabs.classList.add('hidden');
         if (planningContainer) planningContainer.classList.add('hidden');
@@ -59,10 +38,10 @@ function switchWorkspaceMode(mode) {
 
         localStorage.setItem('agendapp_workspace_mode', 'workshop');
     } else {
-        workshopBtn.classList.remove('bg-brass', 'text-canvas', 'shadow-md');
-        workshopBtn.classList.add('text-ink2');
-        planningBtn.classList.add('bg-brass', 'text-canvas', 'shadow-md');
-        planningBtn.classList.remove('text-ink2');
+        workshopBtn.classList.remove('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
+        workshopBtn.classList.add('text-ink2', 'font-medium');
+        planningBtn.classList.add('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
+        planningBtn.classList.remove('text-ink2', 'font-medium');
 
         if (planningSubtabs) planningSubtabs.classList.remove('hidden');
         if (planningContainer) planningContainer.classList.remove('hidden');
@@ -106,7 +85,6 @@ function switchPlanningSubtab(subtab) {
     }
 }
 
-// Restore saved mode on page load
 document.addEventListener('DOMContentLoaded', () => {
     const savedMode = localStorage.getItem('agendapp_workspace_mode');
     const savedSubtab = localStorage.getItem('agendapp_planning_subtab');

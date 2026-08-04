@@ -5,9 +5,9 @@
         <!-- HEADER -->
         <div class="flex items-center justify-between border-b border-hairline pb-4">
             <div>
-                <span class="text-[10px] font-mono font-bold tracking-widest text-brass uppercase">MODO TALLER</span>
                 <h2 class="font-display text-xl sm:text-2xl font-bold text-ink flex items-center gap-2">
-                    🧮 Calculadora de Offsets & Medidas
+                    <svg class="w-6 h-6 text-brass"><use href="#i-calc"/></svg>
+                    Calculadora de Offsets & Medidas
                 </h2>
             </div>
             <button type="button" onclick="openManageOffsetsModal()" class="flex items-center gap-1.5 bg-surface2 hover:bg-hairline border border-hairline text-ink2 hover:text-ink px-3 py-2 rounded-xl text-xs font-semibold transition-colors">
@@ -93,7 +93,7 @@
     <div class="bg-surface border border-hairline rounded-2xl w-full max-w-md p-6 shadow-2xl space-y-5">
         <div class="flex items-center justify-between border-b border-hairline pb-3">
             <h3 class="font-display text-lg font-bold text-ink flex items-center gap-2">
-                🛠️ Configurar Presets de Offsets
+                <svg class="w-5 h-5 text-brass"><use href="#i-gear"/></svg> Configurar Presets de Offsets
             </h3>
             <button type="button" onclick="closeManageOffsetsModal()" class="text-ink3 hover:text-ink">
                 <svg class="w-5 h-5"><use href="#i-close"/></svg>

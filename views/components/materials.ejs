@@ -4,11 +4,10 @@
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-surface border border-hairline rounded-2xl p-5 shadow-panel">
         <div>
             <div class="flex items-center gap-2">
-                <span class="text-[11px] font-mono font-semibold tracking-widest text-brass uppercase">LOGÍSTICA</span>
-                <span class="text-xs bg-surface2 border border-hairline text-ink2 px-2 py-0.5 rounded-full font-mono">Modo Planificación</span>
+                <span class="text-[11px] font-mono font-semibold tracking-widest text-brass uppercase">LOGÍSTICA E INSUMOS</span>
             </div>
             <h2 class="font-display text-xl font-bold text-ink mt-1 flex items-center gap-2">
-                <svg class="w-5 h-5 text-brass"><use href="#i-import"/></svg>
+                <svg class="w-5 h-5 text-brass"><use href="#i-box"/></svg>
                 Gestión de Materiales e Insumos
             </h2>
             <p class="text-xs text-ink2 mt-0.5">Control de inventario, lista de compras y checklist por proyecto</p>
@@ -36,11 +35,15 @@
             <span class="block text-xl sm:text-2xl font-bold font-mono text-ink mt-0.5"><%= allMats.length %></span>
         </div>
         <div class="bg-surface border border-rust/30 bg-rust/5 rounded-xl p-3.5 sm:p-4 text-center">
-            <span class="block text-[10px] sm:text-xs font-semibold text-rust uppercase tracking-wider">🔴 Por Comprar</span>
+            <span class="block text-[10px] sm:text-xs font-semibold text-rust uppercase tracking-wider flex items-center justify-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-rust"></span> Por Comprar
+            </span>
             <span class="block text-xl sm:text-2xl font-bold font-mono text-rust mt-0.5" id="mat-to-buy-count"><%= toBuyCount %></span>
         </div>
         <div class="bg-surface border border-moss/30 bg-moss/5 rounded-xl p-3.5 sm:p-4 text-center">
-            <span class="block text-[10px] sm:text-xs font-semibold text-moss uppercase tracking-wider">🟢 En Taller</span>
+            <span class="block text-[10px] sm:text-xs font-semibold text-moss uppercase tracking-wider flex items-center justify-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-moss"></span> En Taller
+            </span>
             <span class="block text-xl sm:text-2xl font-bold font-mono text-moss mt-0.5" id="mat-in-stock-count"><%= inStockCount %></span>
         </div>
     </div>
@@ -95,20 +98,20 @@
                 <div>
                     <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Categoría</label>
                     <select name="category" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
-                        <option value="Madera">🪵 Madera</option>
-                        <option value="Tornillería">🔩 Tornillería</option>
-                        <option value="Adhesivos/Barniz">🧪 Adhesivos/Barniz</option>
-                        <option value="Insumos">🛠️ Insumos</option>
-                        <option value="Herrajes">🚪 Herrajes</option>
-                        <option value="Placas/Tableros">📐 Placas/Tableros</option>
-                        <option value="General">📦 General</option>
+                        <option value="Madera">Madera</option>
+                        <option value="Tornillería">Tornillería</option>
+                        <option value="Adhesivos/Barniz">Adhesivos / Barniz</option>
+                        <option value="Insumos">Insumos</option>
+                        <option value="Herrajes">Herrajes</option>
+                        <option value="Placas/Tableros">Placas / Tableros</option>
+                        <option value="General">General</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Estado Inicial</label>
                     <select name="status" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass font-semibold">
-                        <option value="to_buy" selected class="text-rust">🔴 Por Comprar</option>
-                        <option value="in_stock" class="text-moss">🟢 En Taller</option>
+                        <option value="to_buy" selected class="text-rust">Por Comprar</option>
+                        <option value="in_stock" class="text-moss">En Taller</option>
                     </select>
                 </div>
             </div>
@@ -126,11 +129,11 @@
             <button type="button" onclick="filterMaterials('all')" id="mat-filter-all" class="mat-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-brass text-canvas">
                 Todos (<%= allMats.length %>)
             </button>
-            <button type="button" onclick="filterMaterials('to_buy')" id="mat-filter-to_buy" class="mat-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface2 text-ink2 hover:text-ink border border-hairline">
-                🔴 Por Comprar (<%= toBuyCount %>)
+            <button type="button" onclick="filterMaterials('to_buy')" id="mat-filter-to_buy" class="mat-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface2 text-ink2 hover:text-ink border border-hairline flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-rust"></span> Por Comprar (<%= toBuyCount %>)
             </button>
-            <button type="button" onclick="filterMaterials('in_stock')" id="mat-filter-in_stock" class="mat-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface2 text-ink2 hover:text-ink border border-hairline">
-                🟢 En Taller (<%= inStockCount %>)
+            <button type="button" onclick="filterMaterials('in_stock')" id="mat-filter-in_stock" class="mat-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface2 text-ink2 hover:text-ink border border-hairline flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-moss"></span> En Taller (<%= inStockCount %>)
             </button>
         </div>
 
@@ -145,7 +148,7 @@
         <% if (allMats.length === 0) { %>
             <div class="bg-surface border border-dashed border-hairline rounded-2xl p-8 text-center">
                 <div class="w-12 h-12 rounded-full bg-surface2 border border-hairline flex items-center justify-center text-ink3 mx-auto mb-3">
-                    <svg class="w-6 h-6"><use href="#i-import"/></svg>
+                    <svg class="w-6 h-6"><use href="#i-box"/></svg>
                 </div>
                 <h3 class="font-display text-base font-semibold text-ink">No hay materiales registrados</h3>
                 <p class="text-xs text-ink3 mt-1 max-w-md mx-auto">Agrega tus insumos manualmente o importa una lista en formato JSON para llevar el control de compras de tu taller.</p>
@@ -168,10 +171,10 @@
                                 class="shrink-0 transition-transform active:scale-95 text-xs font-bold px-3 py-2 rounded-xl border flex items-center gap-1.5 shadow-sm min-h-[44px] min-w-[130px] justify-center <%= mat.status === 'to_buy' ? 'bg-rust/10 border-rust/40 text-rust hover:bg-rust/20' : 'bg-moss/10 border-moss/40 text-moss hover:bg-moss/20' %>">
                             <% if (mat.status === 'to_buy') { %>
                                 <span class="w-2.5 h-2.5 rounded-full bg-rust animate-pulse"></span>
-                                🔴 Por Comprar
+                                Por Comprar
                             <% } else { %>
                                 <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg>
-                                🟢 En Taller
+                                En Taller
                             <% } %>
                         </button>
 
