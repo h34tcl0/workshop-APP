@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { store } from "./db.js";
 
 export interface CalendarSyncResult {
@@ -19,6 +20,16 @@ export class GoogleCalendarService {
   constructor() {
     this.calendarId = process.env.GOOGLE_CALENDAR_ID || "primary";
     this.init();
+  }
+
+  private isValidPrivateKey(key: string): boolean {
+    if (!key || !key.trim()) return false;
+    try {
+      crypto.createPrivateKey(key);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   private cleanPrivateKey(key: string): string {
@@ -57,18 +68,22 @@ export class GoogleCalendarService {
             const credentials = JSON.parse(rawJson);
             if (credentials.private_key && typeof credentials.private_key === "string") {
               credentials.private_key = this.cleanPrivateKey(credentials.private_key);
+              if (!this.isValidPrivateKey(credentials.private_key)) {
+                console.warn("[GoogleCalendarService] GOOGLE_CREDENTIALS_JSON contains an invalid private key format.");
+              } else {
+                if (credentials.client_email) {
+                  this.serviceAccountEmail = credentials.client_email;
+                }
+                if (credentials.type === "service_account") {
+                  const jwt = google.auth.fromJSON(credentials) as any;
+                  jwt.scopes = ["https://www.googleapis.com/auth/calendar"];
+                  auth = jwt;
+                } else {
+                  auth = google.auth.fromJSON(credentials);
+                }
+                console.log("[GoogleCalendarService] Initialized successfully using GOOGLE_CREDENTIALS_JSON environment variable.");
+              }
             }
-            if (credentials.client_email) {
-              this.serviceAccountEmail = credentials.client_email;
-            }
-            if (credentials.type === "service_account") {
-              const jwt = google.auth.fromJSON(credentials) as any;
-              jwt.scopes = ["https://www.googleapis.com/auth/calendar"];
-              auth = jwt;
-            } else {
-              auth = google.auth.fromJSON(credentials);
-            }
-            console.log("[GoogleCalendarService] Initialized successfully using GOOGLE_CREDENTIALS_JSON environment variable.");
           } catch (jsonErr: any) {
             console.warn("[GoogleCalendarService] GOOGLE_CREDENTIALS_JSON is not valid JSON:", jsonErr.message);
           }
@@ -81,13 +96,18 @@ export class GoogleCalendarService {
       if (!auth && process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
         const clientEmail = process.env.GOOGLE_CLIENT_EMAIL.trim();
         const privateKey = this.cleanPrivateKey(process.env.GOOGLE_PRIVATE_KEY);
-        this.serviceAccountEmail = clientEmail;
-        auth = new google.auth.JWT({
-          email: clientEmail,
-          key: privateKey,
-          scopes: ["https://www.googleapis.com/auth/calendar"]
-        });
-        console.log(`[GoogleCalendarService] Initialized successfully using GOOGLE_CLIENT_EMAIL (${clientEmail}) & GOOGLE_PRIVATE_KEY.`);
+        if (!this.isValidPrivateKey(privateKey)) {
+          this.initError = "GOOGLE_PRIVATE_KEY has an invalid or unsupported PEM private key format.";
+          console.warn(`[GoogleCalendarService] ${this.initError}`);
+        } else {
+          this.serviceAccountEmail = clientEmail;
+          auth = new google.auth.JWT({
+            email: clientEmail,
+            key: privateKey,
+            scopes: ["https://www.googleapis.com/auth/calendar"]
+          });
+          console.log(`[GoogleCalendarService] Initialized successfully using GOOGLE_CLIENT_EMAIL (${clientEmail}) & GOOGLE_PRIVATE_KEY.`);
+        }
       }
 
       // 3. Check credentials file path fallback list
@@ -119,24 +139,30 @@ export class GoogleCalendarService {
             const credentials = JSON.parse(rawData);
             if (credentials.private_key && typeof credentials.private_key === "string") {
               credentials.private_key = this.cleanPrivateKey(credentials.private_key);
+              if (!this.isValidPrivateKey(credentials.private_key)) {
+                this.initError = `File '${selectedPath}' contains an invalid private_key format.`;
+                console.warn(`[GoogleCalendarService] ${this.initError}`);
+              }
             }
-            if (credentials.client_email) {
-              this.serviceAccountEmail = credentials.client_email;
-            }
+            if (!this.initError) {
+              if (credentials.client_email) {
+                this.serviceAccountEmail = credentials.client_email;
+              }
 
-            if (credentials.type === "service_account") {
-              const jwt = google.auth.fromJSON(credentials) as any;
-              jwt.scopes = ["https://www.googleapis.com/auth/calendar"];
-              auth = jwt;
-            } else if (credentials.type === "authorized_user" || credentials.refresh_token) {
-              auth = google.auth.fromJSON(credentials);
-            } else {
-              auth = new google.auth.GoogleAuth({
-                keyFile: selectedPath,
-                scopes: ["https://www.googleapis.com/auth/calendar"]
-              });
+              if (credentials.type === "service_account") {
+                const jwt = google.auth.fromJSON(credentials) as any;
+                jwt.scopes = ["https://www.googleapis.com/auth/calendar"];
+                auth = jwt;
+              } else if (credentials.type === "authorized_user" || credentials.refresh_token) {
+                auth = google.auth.fromJSON(credentials);
+              } else {
+                auth = new google.auth.GoogleAuth({
+                  keyFile: selectedPath,
+                  scopes: ["https://www.googleapis.com/auth/calendar"]
+                });
+              }
+              console.log(`[GoogleCalendarService] Credenciales cargadas desde: ${selectedPath}`);
             }
-            console.log(`[GoogleCalendarService] Credenciales cargadas desde: ${selectedPath}`);
           } catch (fileErr: any) {
             this.initError = `Error leyendo/parseando el archivo de credenciales en '${selectedPath}': ${fileErr.message || fileErr}`;
             console.warn(`[GoogleCalendarService] ${this.initError}`);
