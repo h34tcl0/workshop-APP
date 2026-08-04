@@ -21,6 +21,30 @@ export class GoogleCalendarService {
     this.init();
   }
 
+  private cleanPrivateKey(key: string): string {
+    if (!key) return "";
+    let k = key.trim();
+    if ((k.startsWith('"') && k.endsWith('"')) || (k.startsWith("'") && k.endsWith("'"))) {
+      k = k.slice(1, -1).trim();
+    }
+    k = k.replace(/\\n/g, "\n").replace(/\r/g, "");
+
+    if (k.includes("-----BEGIN PRIVATE KEY-----")) {
+      const lines = k.split("\n").map(l => l.trim()).filter(Boolean);
+      const bodyLines = lines.filter(l => !l.includes("BEGIN") && !l.includes("END"));
+      return `-----BEGIN PRIVATE KEY-----\n${bodyLines.join("\n")}\n-----END PRIVATE KEY-----\n`;
+    }
+    if (k.includes("-----BEGIN RSA PRIVATE KEY-----")) {
+      const lines = k.split("\n").map(l => l.trim()).filter(Boolean);
+      const bodyLines = lines.filter(l => !l.includes("BEGIN") && !l.includes("END"));
+      return `-----BEGIN RSA PRIVATE KEY-----\n${bodyLines.join("\n")}\n-----END RSA PRIVATE KEY-----\n`;
+    }
+    if (!k.includes("-----BEGIN")) {
+      return `-----BEGIN PRIVATE KEY-----\n${k}\n-----END PRIVATE KEY-----\n`;
+    }
+    return k;
+  }
+
   private init() {
     try {
       let auth: any = null;
@@ -31,6 +55,9 @@ export class GoogleCalendarService {
         if (rawJson.startsWith("{") || rawJson.startsWith("[")) {
           try {
             const credentials = JSON.parse(rawJson);
+            if (credentials.private_key && typeof credentials.private_key === "string") {
+              credentials.private_key = this.cleanPrivateKey(credentials.private_key);
+            }
             if (credentials.client_email) {
               this.serviceAccountEmail = credentials.client_email;
             }
@@ -53,7 +80,7 @@ export class GoogleCalendarService {
       // 2. Check individual environment variables (GOOGLE_CLIENT_EMAIL and GOOGLE_PRIVATE_KEY)
       if (!auth && process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
         const clientEmail = process.env.GOOGLE_CLIENT_EMAIL.trim();
-        const privateKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n").trim();
+        const privateKey = this.cleanPrivateKey(process.env.GOOGLE_PRIVATE_KEY);
         this.serviceAccountEmail = clientEmail;
         auth = new google.auth.JWT({
           email: clientEmail,
@@ -67,20 +94,15 @@ export class GoogleCalendarService {
       if (!auth) {
         const candidatePaths: string[] = [];
 
-        // a) GOOGLE_APPLICATION_CREDENTIALS
         if (process.env.GOOGLE_APPLICATION_CREDENTIALS && process.env.GOOGLE_APPLICATION_CREDENTIALS.trim()) {
           candidatePaths.push(process.env.GOOGLE_APPLICATION_CREDENTIALS.trim());
         }
-        // GOOGLE_SERVICE_ACCOUNT_KEY_PATH (optional secondary env)
         if (process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH && process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH.trim()) {
           candidatePaths.push(process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH.trim());
         }
-        // b) path.join(process.cwd(), "data", "google-credentials.json")
         candidatePaths.push(path.join(process.cwd(), "data", "google-credentials.json"));
-        // c) path.join(process.cwd(), "google-credentials.json")
         candidatePaths.push(path.join(process.cwd(), "google-credentials.json"));
 
-        // Deduplicate paths while preserving order
         const uniquePaths = Array.from(new Set(candidatePaths));
         let selectedPath: string | null = null;
 
@@ -95,6 +117,9 @@ export class GoogleCalendarService {
           try {
             const rawData = fs.readFileSync(selectedPath, "utf8");
             const credentials = JSON.parse(rawData);
+            if (credentials.private_key && typeof credentials.private_key === "string") {
+              credentials.private_key = this.cleanPrivateKey(credentials.private_key);
+            }
             if (credentials.client_email) {
               this.serviceAccountEmail = credentials.client_email;
             }

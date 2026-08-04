@@ -475,8 +475,41 @@ export async function initDatabase(): Promise<Database.Database> {
   }
 
   seedDefaultsIfEmpty(dbInstance);
+  cleanupDuplicateTelegramChatIds(dbInstance);
 
   return dbInstance;
+}
+
+function cleanupDuplicateTelegramChatIds(db: Database.Database) {
+  try {
+    const duplicates = db.prepare(`
+      SELECT CAST(telegram_chat_id AS TEXT) as chat_id, COUNT(*) as c
+      FROM app_settings
+      WHERE telegram_chat_id IS NOT NULL AND TRIM(CAST(telegram_chat_id AS TEXT)) != ''
+      GROUP BY CAST(telegram_chat_id AS TEXT)
+      HAVING c > 1
+    `).all() as any[];
+
+    for (const dup of duplicates) {
+      const chatId = String(dup.chat_id).trim();
+      const userRows = db.prepare(`
+        SELECT user_id FROM app_settings
+        WHERE CAST(telegram_chat_id AS TEXT) = ?
+        ORDER BY user_id DESC
+      `).all(chatId) as any[];
+
+      if (userRows.length > 1) {
+        const keepUserId = Number(userRows[0].user_id);
+        const removeUserIds = userRows.slice(1).map(r => Number(r.user_id));
+        for (const rId of removeUserIds) {
+          db.prepare("UPDATE app_settings SET telegram_chat_id = NULL WHERE user_id = ?").run(rId);
+        }
+        console.log(`[DB Startup Cleanup] Resolved duplicate Telegram Chat ID ${chatId}. Retained for user #${keepUserId}, unlinked from user(s) [${removeUserIds.join(', ')}].`);
+      }
+    }
+  } catch (err) {
+    console.error("[DB Startup Cleanup Error]:", err);
+  }
 }
 
 export function closeDatabase(): void {
@@ -665,7 +698,6 @@ export class SQLiteStore {
   getAppSettings(userId: number): AppSettings {
     let row = this.db.prepare("SELECT * FROM app_settings WHERE user_id = ?").get(userId) as any;
     if (!row) {
-      const defaultChatId = userId === 1 ? (process.env.TELEGRAM_CHAT_ID || null) : null;
       const defaultCalId = userId === 1 ? (process.env.GOOGLE_CALENDAR_ID || null) : null;
       const defaultCalEnabled = userId === 1 && Boolean(process.env.GOOGLE_CALENDAR_ID) ? 1 : 0;
 
@@ -676,15 +708,12 @@ export class SQLiteStore {
           min_work_hours_unless_final, min_rain_precipitation_mm, checkin_hour,
           morning_eval_lead_hours, exclude_saturdays, exclude_sundays, exclude_holidays,
           require_curing_before_cutoff, telegram_chat_id, google_calendar_id, google_calendar_enabled
-        ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.2, 19, 1, 1, 1, 1, 1, ?, ?, ?);
-      `).run(userId, defaultChatId, defaultCalId, defaultCalEnabled);
+        ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.2, 19, 1, 1, 1, 1, 1, NULL, ?, ?);
+      `).run(userId, defaultCalId, defaultCalEnabled);
       row = this.db.prepare("SELECT * FROM app_settings WHERE user_id = ?").get(userId) as any;
     }
 
-    let telegramChatId = row.telegram_chat_id ? String(row.telegram_chat_id).trim() : null;
-    if (!telegramChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
-      telegramChatId = process.env.TELEGRAM_CHAT_ID.trim();
-    }
+    const telegramChatId = row.telegram_chat_id ? String(row.telegram_chat_id).trim() : null;
 
     let googleCalId = row.google_calendar_id ? String(row.google_calendar_id).trim() : null;
     if (!googleCalId && userId === 1 && process.env.GOOGLE_CALENDAR_ID) {
@@ -736,6 +765,14 @@ export class SQLiteStore {
     const tz = data.timezone && String(data.timezone).trim() ? String(data.timezone).trim() : computedTz;
     updated.timezone = tz;
 
+    const newChatId = updated.telegram_chat_id ? String(updated.telegram_chat_id).trim() : null;
+    if (newChatId) {
+      // Unlink telegram_chat_id from any other user to guarantee single-user uniqueness
+      this.db.prepare(
+        "UPDATE app_settings SET telegram_chat_id = NULL WHERE CAST(telegram_chat_id AS TEXT) = ? AND user_id != ?"
+      ).run(newChatId, userId);
+    }
+
     this.db.prepare(
       `UPDATE app_settings SET
         operational_start_hour = ?,
@@ -776,7 +813,7 @@ export class SQLiteStore {
       updated.exclude_sundays ? 1 : 0,
       updated.exclude_holidays ? 1 : 0,
       updated.require_curing_before_cutoff ? 1 : 0,
-      updated.telegram_chat_id ? String(updated.telegram_chat_id).trim() : null,
+      newChatId,
       updated.google_calendar_id ? String(updated.google_calendar_id).trim() : null,
       updated.google_calendar_enabled ? 1 : 0,
       updated.timezone,
@@ -791,22 +828,24 @@ export class SQLiteStore {
     const chatStr = String(telegramChatId).trim();
     if (!chatStr) return undefined;
 
-    const row = this.db.prepare(`
+    const rows = this.db.prepare(`
       SELECT u.id, u.email
       FROM users u
       JOIN app_settings s ON s.user_id = u.id
       WHERE CAST(s.telegram_chat_id AS TEXT) = ?
-    `).get(chatStr) as any;
+      ORDER BY u.id DESC
+    `).all(chatStr) as any[];
 
-    if (row) {
-      return { id: Number(row.id), email: String(row.email) };
-    }
-
-    if (process.env.TELEGRAM_CHAT_ID && chatStr === process.env.TELEGRAM_CHAT_ID.trim()) {
-      const admin = this.db.prepare("SELECT id, email FROM users ORDER BY id ASC LIMIT 1").get() as any;
-      if (admin) {
-        return { id: Number(admin.id), email: String(admin.email) };
+    if (rows.length > 0) {
+      const primary = rows[0];
+      if (rows.length > 1) {
+        const duplicateUserIds = rows.slice(1).map(r => Number(r.id));
+        for (const dupId of duplicateUserIds) {
+          this.db.prepare("UPDATE app_settings SET telegram_chat_id = NULL WHERE user_id = ?").run(dupId);
+        }
+        console.warn(`[DB] Cleaned duplicate telegram_chat_id (${chatStr}) from duplicate user(s): ${duplicateUserIds.join(', ')}. Retained for active user #${primary.id}`);
       }
+      return { id: Number(primary.id), email: String(primary.email) };
     }
 
     return undefined;
