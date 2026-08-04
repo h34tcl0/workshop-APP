@@ -330,11 +330,42 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
   }
 });
 
+// POST /projects/active - Switch active project
+app.post('/projects/active', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const { project_id } = req.body;
+  if (project_id) {
+    store.setActiveProject(userId, parseInt(project_id, 10));
+  }
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ success: true });
+  }
+  res.redirect(303, '/');
+});
+
+// POST /projects/add - Create a new project
+app.post('/projects/add', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const { name, description } = req.body;
+  if (!name || !String(name).trim()) {
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(400).json({ error: 'El nombre del proyecto es obligatorio' });
+    }
+    return res.redirect(303, '/');
+  }
+  const project = store.addProject(userId, String(name).trim(), description ? String(description).trim() : undefined);
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ success: true, project });
+  }
+  res.redirect(303, '/');
+});
+
 // POST /tasks/add
 app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  const { title, description, category, estimated_hours, curing_hours, order } = req.body;
+  const { title, description, category, estimated_hours, curing_hours, order, project_id } = req.body;
   store.addTask(userId, {
+    project_id: project_id ? parseInt(project_id, 10) : undefined,
     title,
     description: description || '',
     category: category || TaskCategory.CARPENTRY,
@@ -349,12 +380,13 @@ app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
 app.post('/tasks/:id/update', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
   const id = parseInt(req.params.id);
-  const { title, estimated_hours, curing_hours, category } = req.body;
+  const { title, estimated_hours, curing_hours, category, project_id } = req.body;
   const updated = store.updateTask(userId, id, {
     title,
     estimated_hours: parseFloat(estimated_hours),
     curing_hours: parseFloat(curing_hours),
-    category
+    category,
+    project_id: project_id ? parseInt(project_id, 10) : undefined
   });
   if (!updated) {
     return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });

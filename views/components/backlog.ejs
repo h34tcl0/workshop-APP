@@ -22,6 +22,16 @@
     </script>
     <div id="tab-manual" class="tab-content">
         <form action="/tasks/add" method="post" class="bg-surface border border-hairline rounded-2xl p-5 sm:p-6 space-y-4 shadow-panel">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="sm:col-span-2">
+                    <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Proyecto Asignado</label>
+                    <select name="project_id" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer">
+                        <% (locals.all_projects || []).forEach(function(p) { %>
+                            <option value="<%= p.id %>" <%= p.id === (locals.project ? locals.project.id : 0) ? 'selected' : '' %>><%= p.name %></option>
+                        <% }); %>
+                    </select>
+                </div>
+            </div>
             <div class="relative">
                 <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Título de la tarea</label>
                 <input type="text" id="manual-title" name="title" required placeholder="Ej. Lijado de cubiertas" autocomplete="off" list="task-history-datalist" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">

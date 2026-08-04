@@ -430,6 +430,33 @@ export async function initDatabase(): Promise<Database.Database> {
     dbInstance.exec("ALTER TABLE daily_logs_new RENAME TO daily_logs;");
   }
 
+  // Ensure project_id column exists in tasks and materials and backfill defaults if missing
+  const currentTasksCols = dbInstance.prepare("PRAGMA table_info(tasks)").all() as any[];
+  if (!currentTasksCols.some(c => c.name === 'project_id')) {
+    dbInstance.exec("ALTER TABLE tasks ADD COLUMN project_id INTEGER;");
+  }
+
+  const currentMaterialsCols = dbInstance.prepare("PRAGMA table_info(materials)").all() as any[];
+  if (!currentMaterialsCols.some(c => c.name === 'project_id')) {
+    dbInstance.exec("ALTER TABLE materials ADD COLUMN project_id INTEGER;");
+  }
+
+  const usersList = dbInstance.prepare("SELECT id FROM users").all() as any[];
+  for (const u of usersList) {
+    const uId = Number(u.id);
+    let defaultProj = dbInstance.prepare("SELECT id FROM projects WHERE user_id = ? AND is_active = 1 LIMIT 1").get(uId) as any;
+    if (!defaultProj) {
+      defaultProj = dbInstance.prepare("SELECT id FROM projects WHERE user_id = ? LIMIT 1").get(uId) as any;
+    }
+    if (!defaultProj) {
+      const ins = dbInstance.prepare("INSERT INTO projects (user_id, name, description, is_active) VALUES (?, 'Taller Principal', 'Proyecto por defecto', 1)").run(uId);
+      defaultProj = { id: Number(ins.lastInsertRowid) };
+    }
+    const projId = Number(defaultProj.id);
+    dbInstance.prepare("UPDATE tasks SET project_id = ? WHERE user_id = ? AND (project_id IS NULL OR project_id = 0)").run(projId, uId);
+    dbInstance.prepare("UPDATE materials SET project_id = ? WHERE user_id = ? AND (project_id IS NULL OR project_id = 0)").run(projId, uId);
+  }
+
   seedDefaultsIfEmpty(dbInstance);
 
   return dbInstance;
@@ -797,6 +824,14 @@ export class SQLiteStore {
       "INSERT INTO projects (user_id, name, description, is_active) VALUES (?, ?, ?, 1)"
     ).run(userId, name, description || "");
     return { id: Number(info.lastInsertRowid), name, description: description || "", is_active: true };
+  }
+
+  setActiveProject(userId: number, projectId: number): Project | null {
+    const proj = this.db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").get(projectId, userId) as any;
+    if (!proj) return null;
+    this.db.prepare("UPDATE projects SET is_active = 0 WHERE user_id = ?").run(userId);
+    this.db.prepare("UPDATE projects SET is_active = 1 WHERE id = ? AND user_id = ?").run(projectId, userId);
+    return { id: Number(proj.id), name: String(proj.name), description: proj.description || "", is_active: true };
   }
 
   // --- TASKS ---
@@ -1785,22 +1820,32 @@ export class SQLiteStore {
   }
 
   getPendingMaterialsForActiveProjects(userId: number): { project_name: string; materials: Material[] }[] {
-    const activeProjects = this.getProjects(userId).filter(p => p.is_active);
-    const result: { project_name: string; materials: Material[] }[] = [];
+    return this.getPendingMaterialsGroupedByProject(userId);
+  }
 
-    for (const p of activeProjects) {
-      const rows = this.db.prepare(`
-        SELECT * FROM materials
-        WHERE user_id = ? AND project_id = ? AND status = 'to_buy'
-        ORDER BY category ASC, name ASC
-      `).all(userId, p.id) as any[];
+  getPendingMaterialsGroupedByProject(userId: number): { project_name: string; materials: Material[] }[] {
+    const rows = this.db.prepare(`
+      SELECT m.*, p.name as project_name
+      FROM materials m
+      LEFT JOIN projects p ON p.id = m.project_id
+      WHERE m.user_id = ? AND (m.status = 'to_buy' OR m.status = 'Por Comprar')
+      ORDER BY COALESCE(p.name, 'General') ASC, m.category ASC, m.name ASC
+    `).all(userId) as any[];
 
-      const items = rows.map(r => this.rowToMaterial({ ...r, project_name: p.name }));
-      if (items.length > 0) {
-        result.push({ project_name: p.name, materials: items });
+    const map = new Map<string, Material[]>();
+    for (const r of rows) {
+      const projName = r.project_name || "Proyecto General";
+      const mat = this.rowToMaterial(r);
+      if (!map.has(projName)) {
+        map.set(projName, []);
       }
+      map.get(projName)!.push(mat);
     }
 
+    const result: { project_name: string; materials: Material[] }[] = [];
+    for (const [project_name, materials] of map.entries()) {
+      result.push({ project_name, materials });
+    }
     return result;
   }
 

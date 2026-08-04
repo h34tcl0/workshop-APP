@@ -301,11 +301,11 @@ export class TelegramBotService {
         parse_mode: "Markdown"
       });
     } else if (text.toLowerCase() === "/materiales" || text.toLowerCase() === "materiales" || text.toLowerCase().startsWith("/materiales")) {
-      const pendingByProject = store.getPendingMaterialsForActiveProjects(user.id);
+      const pendingByProject = store.getPendingMaterialsGroupedByProject(user.id);
       if (pendingByProject.length === 0) {
         await replyBot.sendRequest("sendMessage", {
           chat_id: chatStr,
-          text: `📦 *MATERIALES POR COMPRAR* (🔴)\n\n✅ ¡Excelente! No tienes insumos pendientes por comprar en tus proyectos activos.`,
+          text: `📦 *MATERIALES POR COMPRAR* (🔴)\n\n✅ ¡Excelente! No tienes insumos pendientes por comprar en tus proyectos.`,
           parse_mode: "Markdown"
         });
       } else {

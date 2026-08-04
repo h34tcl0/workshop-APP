@@ -268,7 +268,7 @@ Reordena la secuencia de tareas en el backlog mediante Drag & Drop.
   ```
 
 #### `POST /tasks/import`
-Importa masivamente tareas en formato JSON generadas por IA.
+Importa masivamente tareas en formato JSON generadas por IA y las asocia al proyecto indicado (`project_id` o `project_name`).
 - **Request Body**:
   ```json
   {
@@ -290,6 +290,45 @@ Importa masivamente tareas en formato JSON generadas por IA.
     "message": "Se importaron 1 tareas con éxito."
   }
   ```
+
+---
+
+### 📁 Gestión de Proyectos y Materiales
+
+#### `POST /projects/active`
+Cambia el proyecto activo del usuario para filtrar tareas y materiales.
+- **Request Body**: `{ "project_id": 2 }`
+- **Response 200 OK / 303 Redirect**
+
+#### `POST /projects/add`
+Crea un nuevo proyecto en la base de datos para el usuario activo.
+- **Request Body**: `{ "name": "Estructura Pérgola", "description": "Pérgola de Roble" }`
+
+#### `GET /api/materials`
+Obtiene la lista de materiales e insumos asociados al usuario y/o proyecto.
+
+#### `POST /materials/add`
+Registra un nuevo material asociado a un `project_id` explícito.
+- **Request Body**:
+  ```json
+  {
+    "project_id": 1,
+    "name": "Tornillos T2 2 pulgadas",
+    "quantity": 100,
+    "unit": "unidades",
+    "category": "Tornillería",
+    "status": "to_buy"
+  }
+  ```
+
+#### `POST /materials/:id/toggle`
+Conmuta el estado de un material entre `Por Comprar` (`to_buy`) y `En Taller` (`in_stock`).
+
+#### `POST /materials/:id/update`
+Actualiza un material existente en la base de datos.
+
+#### `POST /materials/:id/delete`
+Elimina un material de la base de datos.
 
 ---
 
@@ -576,6 +615,31 @@ AGENDAPP/
 | `google_event_id` | TEXT | NULL | Identificador del evento en Google Calendar. |
 | `calendar_created` | INTEGER | NOT NULL DEFAULT 0 | Flag de confirmación de evento en Google Calendar. |
 | `checkin_sent` | INTEGER | NOT NULL DEFAULT 0 | Flag de notificación nocturna enviada. |
+
+### Tabla `materials`
+| Columna | Tipo | Restricciones | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID del material. |
+| `user_id` | INTEGER | NOT NULL | FK hacia `users.id`. |
+| `project_id` | INTEGER | NOT NULL | FK hacia `projects.id` (Relación explícita con Proyecto). |
+| `name` | TEXT | NOT NULL | Nombre del material/insumo. |
+| `quantity` | REAL | NOT NULL DEFAULT 1.0 | Cantidad requerida. |
+| `unit` | TEXT | NOT NULL DEFAULT 'unidades' | Unidad de medida (`piezas`, `mm`, `m2`, `kg`, etc.). |
+| `category` | TEXT | NOT NULL DEFAULT 'General' | Categoría del material. |
+| `status` | TEXT | NOT NULL DEFAULT 'to_buy' | Estado (`to_buy` o `in_stock`). |
+| `created_at` | TEXT | NOT NULL | Fecha de creación ISO. |
+| `updated_at` | TEXT | NOT NULL | Fecha de última actualización ISO. |
+
+### Tabla `calculator_offsets`
+| Columna | Tipo | Restricciones | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID del offset. |
+| `user_id` | INTEGER | NOT NULL | FK hacia `users.id`. |
+| `label` | TEXT | NOT NULL | Etiqueta o nombre del descuento/holgura. |
+| `offset_value` | REAL | NOT NULL | Valor numérico del offset (+ / -). |
+| `unit` | TEXT | NOT NULL DEFAULT 'mm' | Unidad de medida. |
+| `description` | TEXT | NULL | Descripción detallada. |
+| `order_num` | INTEGER | NOT NULL DEFAULT 1 | Orden visual. |
 
 ---
 
