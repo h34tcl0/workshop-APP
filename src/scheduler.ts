@@ -220,8 +220,7 @@ export async function runMorningEvaluation(
   const todayIso = targetDateIso || getLocalDateIso(new Date(), userTz);
   console.log(`[Scheduler] Running Multi-Day Evaluation for User #${userId} starting ${todayIso} (TZ: ${userTz})...`);
 
-  const activeProject = store.getActiveProject(userId);
-  const pendingTasks = store.getPendingTasks(userId, activeProject.id);
+  const pendingTasks = store.getPendingTasks(userId);
 
   const forecastDaysCount = appSettings.forecast_days || 7;
   const horizonEvaluations: Array<{ date_iso: string; evaluation: DayEvaluation }> = [];

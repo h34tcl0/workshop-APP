@@ -335,15 +335,63 @@ export function evaluateDayFeasibility(
           const taskActiveEnd = taskStart + task.estimated_hours;
 
           if (taskActiveEnd > endHour - cfg.teardown_hours + 0.01) {
-            break;
+            continue;
           }
 
           let nextOffset = currentOffset + task.estimated_hours;
           const requiresCuring = task.requires_curing || task.curing_hours > 0 || task.category === TaskCategory.PVA_GLUE || task.category === TaskCategory.VARNISH_PAINT || task.category === TaskCategory.EPOXY;
+          const cureDur = requiresCuring ? (task.curing_hours > 0 ? task.curing_hours : (task.category === TaskCategory.EPOXY ? 6.0 : 2.0)) : 0.0;
 
           if (requiresCuring) {
-            const cureDur = task.curing_hours > 0 ? task.curing_hours : (task.category === TaskCategory.EPOXY ? 6.0 : 2.0);
             nextOffset = currentOffset + task.estimated_hours + cureDur;
+          }
+
+          // Test weather compatibility specifically for this candidate task in this window
+          const taskTeardownEnd = taskActiveEnd + cfg.teardown_hours;
+          const taskMaxCuringEnd = requiresCuring ? taskStart + task.estimated_hours + cureDur : taskTeardownEnd;
+          const checkBufferEnd = Math.min(23, Math.floor(Math.max(taskTeardownEnd + 1, taskMaxCuringEnd)));
+          const isEpoxyTask = task.category === TaskCategory.EPOXY || (task.category as string) === "epoxy";
+
+          let taskWeatherConflict = false;
+          let conflictDetail: string | null = null;
+
+          for (let h = startHour; h <= checkBufferEnd; h++) {
+            const wf = hourlyWeather.get(h);
+            if (wf) {
+              if (isRainyForecast(wf, cfg.min_rain_precipitation_mm)) {
+                taskWeatherConflict = true;
+                conflictDetail = `Riesgo de lluvia a las ${String(h).padStart(2, "0")}:00 hrs durante [${task.project_name || 'Tarea'}] "${task.title}".`;
+                break;
+              }
+
+              const isPostWorkPassiveCuring = h >= Math.floor(taskTeardownEnd) || h >= cfg.operational_end_hour;
+              if (!isPostWorkPassiveCuring && h >= startHour + cfg.setup_hours && wf.relative_humidity > cfg.max_humidity_percent) {
+                taskWeatherConflict = true;
+                conflictDetail = `Exceso de humedad a las ${String(h).padStart(2, "0")}:00 hrs (${wf.relative_humidity}%) durante [${task.project_name || 'Tarea'}] "${task.title}".`;
+                break;
+              }
+
+              if (isEpoxyTask) {
+                if (wf.temperature_c < 15.0) {
+                  taskWeatherConflict = true;
+                  conflictDetail = `Temperatura baja (<15°C) para Epoxi a las ${String(h).padStart(2, "0")}:00 hrs en [${task.project_name || 'Tarea'}] "${task.title}".`;
+                  break;
+                }
+                if (!isPostWorkPassiveCuring && wf.relative_humidity > 75.0) {
+                  taskWeatherConflict = true;
+                  conflictDetail = `Humedad alta (>75%) para Epoxi a las ${String(h).padStart(2, "0")}:00 hrs en [${task.project_name || 'Tarea'}] "${task.title}".`;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (taskWeatherConflict) {
+            if (!firstWeatherConflictDetail) {
+              firstWeatherConflictDetail = conflictDetail;
+            }
+            // Skip this weather-incompatible task and try subsequent candidate tasks in the pool
+            continue;
           }
 
           scheduledPackage.push(task);
@@ -354,66 +402,6 @@ export function evaluateDayFeasibility(
       }
 
       if (accumulatedActiveHours < cfg.min_work_hours || scheduledPackage.length === 0) continue;
-
-      const actualTeardownEnd = startHour + lastActiveEndOffset + cfg.teardown_hours;
-      let maxCuringEnd = actualTeardownEnd;
-      let taskCursor = cfg.setup_hours;
-
-      for (const t of scheduledPackage) {
-        const reqCur = t.requires_curing || t.curing_hours > 0 || t.category === TaskCategory.PVA_GLUE || t.category === TaskCategory.VARNISH_PAINT || t.category === TaskCategory.EPOXY;
-        if (reqCur) {
-          const cDur = t.curing_hours > 0 ? t.curing_hours : (t.category === TaskCategory.EPOXY ? 6.0 : 2.0);
-          const cEnd = startHour + taskCursor + t.estimated_hours + cDur;
-          if (cEnd > maxCuringEnd) maxCuringEnd = cEnd;
-          taskCursor += t.estimated_hours + cDur;
-        } else {
-          taskCursor += t.estimated_hours;
-        }
-      }
-
-      const bufferEndHour = Math.min(23, Math.floor(Math.max(actualTeardownEnd + 1, maxCuringEnd)));
-
-      const hasEpoxyTask = scheduledPackage.some(t => t.category === TaskCategory.EPOXY || (t.category as string) === "epoxy");
-
-      let hasWeatherConflict = false;
-      for (let h = startHour; h <= bufferEndHour; h++) {
-        const wf = hourlyWeather.get(h);
-        if (wf) {
-          if (isRainyForecast(wf, cfg.min_rain_precipitation_mm)) {
-            hasWeatherConflict = true;
-            if (!firstWeatherConflictDetail) {
-              firstWeatherConflictDetail = `Riesgo de lluvia detectado a las ${String(h).padStart(2, "0")}:00 hrs (Probabilidad: ${wf.precipitation_probability}%, Precipitación: ${wf.precipitation_mm}mm).`;
-            }
-            break;
-          }
-          if (h >= startHour + cfg.setup_hours && wf.relative_humidity > cfg.max_humidity_percent) {
-            hasWeatherConflict = true;
-            if (!firstWeatherConflictDetail) {
-              firstWeatherConflictDetail = `Exceso de humedad detectado a las ${String(h).padStart(2, "0")}:00 hrs (${wf.relative_humidity}%, Máx permitido: ${cfg.max_humidity_percent}%).`;
-            }
-            break;
-          }
-          // Requirement 5: Specific epoxy category weather threshold rules (temp >= 15°C, humidity <= 75%)
-          if (hasEpoxyTask) {
-            if (wf.temperature_c < 15.0) {
-              hasWeatherConflict = true;
-              if (!firstWeatherConflictDetail) {
-                firstWeatherConflictDetail = `Temperatura ambiente baja para Epoxi a las ${String(h).padStart(2, "0")}:00 hrs (${wf.temperature_c}°C, Mínimo requerido: 15°C).`;
-              }
-              break;
-            }
-            if (wf.relative_humidity > 75.0) {
-              hasWeatherConflict = true;
-              if (!firstWeatherConflictDetail) {
-                firstWeatherConflictDetail = `Humedad relativa excesiva para Epoxi a las ${String(h).padStart(2, "0")}:00 hrs (${wf.relative_humidity}%, Máximo permitido para epoxi: 75%).`;
-              }
-              break;
-            }
-          }
-        }
-      }
-
-      if (hasWeatherConflict) continue;
 
       if (accumulatedActiveHours > maxWorkScheduled) {
         maxWorkScheduled = accumulatedActiveHours;
@@ -455,9 +443,10 @@ export function evaluateDayFeasibility(
     for (let i = 0; i < bestScheduledTasks.length; i++) {
       const task = bestScheduledTasks[i];
       const tEnd = currH + task.estimated_hours;
+      const projPrefix = task.project_name ? `[${task.project_name}] ` : "";
       timeline.push({
         time_range: `${formatHour(currH)} — ${formatHour(tEnd)}`,
-        title: ` [#${task.order}] ${task.title}`,
+        title: `${projPrefix}#${task.order || (i + 1)} ${task.title}`,
         duration: `${task.estimated_hours.toFixed(1)}h`
       });
       currH = tEnd;
@@ -519,8 +508,10 @@ export function evaluateDayFeasibility(
   // Audit and construct explicit unassigned_reason when no tasks scheduled
   let auditUnassignedReason = "";
 
-  if (weatherSummary.max_humidity > cfg.max_humidity_percent) {
-    auditUnassignedReason = `Sin agendamiento: La humedad promedio/máxima (${weatherSummary.max_humidity}%) excede el umbral límite configurado (${cfg.max_humidity_percent}%).`;
+  if (firstWeatherConflictDetail) {
+    auditUnassignedReason = `Sin agendamiento: ${firstWeatherConflictDetail}`;
+  } else if (weatherSummary.max_humidity > cfg.max_humidity_percent) {
+    auditUnassignedReason = `Sin agendamiento: La humedad máxima en horario laboral (${weatherSummary.max_humidity}%) excede el umbral límite configurado (${cfg.max_humidity_percent}%).`;
   } else if (freeWindows.length > 0) {
     const maxFreeH = Math.max(...freeWindows.map(w => w.duration_hours));
     const minTaskHours = Math.min(...pendingTasks.map(t => t.estimated_hours));
@@ -539,8 +530,6 @@ export function evaluateDayFeasibility(
     }
   } else if (hadWeatherViableButTooShort) {
     auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre es menor al tiempo mínimo de ${cfg.min_work_hours_unless_final.toFixed(1)}h de trabajo neto requerido por las tareas en backlog.`;
-  } else if (firstWeatherConflictDetail) {
-    auditUnassignedReason = `Sin agendamiento: ${firstWeatherConflictDetail}`;
   } else if (weatherSummary.total_rain_mm > 0) {
     auditUnassignedReason = `Sin agendamiento: Riesgo de lluvia detectado en la jornada (${weatherSummary.total_rain_mm} mm de precipitación acumulada).`;
   } else {

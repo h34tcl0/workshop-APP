@@ -148,7 +148,25 @@ Si una tarde o noche proyecta humedad nocturna o lluvia que arruinaría una tare
 
 ---
 
-## 📡 6. Especificación de Endpoints REST (API Reference)
+## 📁 6. Gestión de Proyectos, Agendamiento Multi-Proyecto y Mezcla Oportunista de Tareas
+
+### 1. Reconstrucción de la Sección de Proyectos (Sidebar Izquierdo)
+- **Vistas Acordeón Colapsables**: Cada proyecto registrado en la base de datos se presenta como una tarjeta colapsable tipo acordeón.
+- **Desglose Interno de Tareas**: Al hacer clic en la tarjeta de un proyecto, se despliegan sus tareas internas pertenecientes a ese `project_id`.
+- **Edición Directa e Inline**: Permite modificar título, categoría, horas activas, horas de curado y reasignar de proyecto cualquier tarea guardada directamente en la tarjeta sin salir de la vista.
+- **Conmutador de Activación (`is_active`)**: Cada proyecto y cada tarea incorporan un interruptor de activación (`Activo para Agendar`) para pausar o incluir dinámicamente sus elementos en el pool global de agendamiento.
+
+### 2. Motor de Agendamiento Multi-Proyecto y Mezcla Oportunista (`src/evaluator.ts` / `src/scheduler.ts`)
+- **Pool Global de Proyectos Activos**: El agendador no se limita al proyecto activo primario, sino que recopila tareas pendientes de **todos los proyectos marcados con `is_active = 1`**.
+- **Evaluación de Mezcla Oportunista por Clima**:
+  - Durante la evaluación matutina de una jornada (ej. Miércoles), si una tarea de un proyecto (ej. *Barnizado* en Proyecto "Zapatero") es descartada por restricciones meteorológicas de humedad o lluvia, el motor no da por bloqueado el día ni se detiene.
+  - El evaluador continúa probando secuencialmente con la siguiente tarea del pool global (ej. *Corte de listones* en Proyecto "Taburete").
+  - Si la tarea del segundo proyecto es compatible con la ventana climática, se agenda en esa jornada.
+- **Distintivos de Proyecto en la Agenda y Calendario**: En el cronograma detallado de la Agenda, notificaciones de Telegram y eventos espejo en Google Calendar, las tareas agendadas muestran un distintivo explícito con el nombre del proyecto correspondiente (ej. `[Zapatero] #1 Barnizado final`).
+
+---
+
+## 📡 7. Especificación de Endpoints REST (API Reference)
 
 A continuación se detallan los endpoints HTTP que expone `server.ts` para la administración del taller:
 
@@ -221,6 +239,24 @@ Obtiene la lista de títulos y parámetros históricos únicos del usuario para 
       "curing_hours": 2.0
     }
   ]
+  ```
+
+#### `POST /projects/:id/toggle`
+Alterna el estado de activación (`is_active`) de un proyecto para incluirlo o pausarlo en el agendamiento multi-proyecto.
+- **Request Body**:
+  ```json
+  {
+    "is_active": "true | false"
+  }
+  ```
+
+#### `POST /tasks/:id/toggle-active`
+Alterna el estado de activación (`is_active`) de una tarea individual dentro de su proyecto.
+- **Request Body**:
+  ```json
+  {
+    "is_active": "true | false"
+  }
   ```
 
 #### `POST /tasks/add`

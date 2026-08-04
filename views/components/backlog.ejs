@@ -25,11 +25,22 @@
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div class="sm:col-span-2">
                     <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Proyecto Asignado</label>
-                    <select name="project_id" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer">
+                    <select name="project_id" id="task-project-select" onchange="handleProjectSelectChange(this)" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3.5 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer">
                         <% (locals.all_projects || []).forEach(function(p) { %>
                             <option value="<%= p.id %>" <%= p.id === (locals.project ? locals.project.id : 0) ? 'selected' : '' %>><%= p.name %></option>
                         <% }); %>
+                        <option value="__new__" class="font-bold text-brass">➕ [ Agregar nuevo proyecto... ]</option>
                     </select>
+                    <div id="inline-new-project-container" class="hidden mt-2 p-2.5 bg-surface2 border border-brass/50 rounded-xl space-y-2">
+                        <p class="text-[11px] font-semibold text-brass flex items-center gap-1">
+                            <svg class="w-3.5 h-3.5"><use href="#i-plus"/></svg> Crear Nuevo Proyecto
+                        </p>
+                        <div class="flex gap-2">
+                            <input type="text" id="inline-project-name-input" placeholder="Nombre del proyecto..." class="flex-1 bg-surface border border-hairline text-ink text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-brass">
+                            <button type="button" onclick="createInlineProject()" class="bg-brass hover:bg-brassdim text-canvas font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors shrink-0">Crear</button>
+                            <button type="button" onclick="cancelInlineProject()" class="bg-surface border border-hairline text-ink2 text-xs px-2.5 py-1.5 rounded-lg transition-colors shrink-0">Cancelar</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="relative">
@@ -181,67 +192,170 @@
         </div>
     </div>
 
-    <!-- PLANTILLAS DE PROYECTOS (TEMPLATES) -->
+    <!-- SECCIÓN PROYECTOS -->
     <div class="bg-surface border border-hairline rounded-2xl overflow-hidden shadow-panel">
-        <button type="button" onclick="toggleTemplates()" class="w-full flex items-center justify-between px-4 py-3 text-left">
+        <button type="button" onclick="toggleProjects()" class="w-full flex items-center justify-between px-4 py-3 text-left">
             <span class="flex items-center gap-2 text-sm font-semibold text-ink2">
                 <svg class="w-4 h-4 text-brass"><use href="#i-import"/></svg>
-                Plantillas de proyectos
+                Proyectos
                 <span class="text-[11px] font-mono text-ink3 bg-surface2 border border-hairline px-2 py-0.5 rounded-full">
-                    <%= typeof project_templates !== 'undefined' && project_templates ? project_templates.length : 0 %>
+                    <%= typeof all_projects !== 'undefined' && all_projects ? all_projects.length : 0 %>
                 </span>
             </span>
-            <svg id="templates-chevron" class="w-4 h-4 text-ink3 transition-transform"><use href="#i-chevron-down-sm"/></svg>
+            <svg id="projects-chevron" class="w-4 h-4 text-ink3 transition-transform"><use href="#i-chevron-down-sm"/></svg>
         </button>
-        <div id="templates-panel" class="hidden border-t border-hairline p-4 space-y-4">
-            <!-- Form Guardar plantilla actual -->
-            <form action="/project-templates/save" method="post" id="save-template-form" class="bg-surface2/60 border border-hairline rounded-xl p-3.5 space-y-3">
-                <p class="text-xs font-semibold text-ink2">Guardar backlog activo como plantilla</p>
+        <div id="projects-panel" class="hidden border-t border-hairline p-4 space-y-4">
+            <!-- Form Crear nuevo proyecto -->
+            <form action="/projects/add" method="post" id="add-project-form" class="bg-surface2/60 border border-hairline rounded-xl p-3.5 space-y-3">
+                <p class="text-xs font-semibold text-ink2">Crear nuevo proyecto</p>
                 <div class="flex flex-col sm:flex-row gap-2">
-                    <input type="text" name="name" required placeholder="Nombre de plantilla (ej. Estructura Pérgola)" class="flex-1 bg-surface border border-hairline text-ink text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
+                    <input type="text" name="name" required placeholder="Nombre (ej. Estructura Pérgola)" class="flex-1 bg-surface border border-hairline text-ink text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
                     <button type="submit" class="bg-brass hover:bg-brassdim text-canvas font-semibold text-xs px-4 py-2 rounded-lg transition-colors whitespace-nowrap min-h-[44px] sm:min-h-0 flex items-center justify-center gap-1.5">
-                        <svg class="w-3.5 h-3.5"><use href="#i-plus"/></svg> Guardar
+                        <svg class="w-3.5 h-3.5"><use href="#i-plus"/></svg> Crear
                     </button>
                 </div>
             </form>
 
-            <!-- Lista de Plantillas -->
-            <% if (typeof project_templates !== 'undefined' && project_templates && project_templates.length > 0) { %>
-            <div class="space-y-2.5 max-h-72 overflow-y-auto">
-                <% project_templates.forEach(function(tpl) { 
-                    const totalActive = (tpl.items || []).reduce((sum, item) => sum + (item.estimated_hours || 0), 0);
-                    const totalCuring = (tpl.items || []).reduce((sum, item) => sum + (item.curing_hours || 0), 0);
+            <!-- Lista de Proyectos con Acordeón y Edición Directa de Tareas -->
+            <% if (typeof all_projects !== 'undefined' && all_projects && all_projects.length > 0) { %>
+            <div class="space-y-3 max-h-96 overflow-y-auto pr-1">
+                <% all_projects.forEach(function(p) { 
+                    const projTasks = (typeof all_tasks !== 'undefined' && all_tasks) ? all_tasks.filter(function(t) { return t.project_id === p.id; }) : [];
+                    const isProjActive = p.is_active !== false;
                 %>
-                <div class="bg-surface border border-hairline rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div class="min-w-0">
-                        <h5 class="text-xs font-semibold text-ink truncate"><%= tpl.name %></h5>
-                        <div class="flex items-center gap-2 mt-1 text-[11px] font-mono text-ink3">
-                            <span><%= (tpl.items || []).length %> tareas</span>
-                            <span>•</span>
-                            <span class="text-ink2"><%= totalActive %>h activas</span>
-                            <% if (totalCuring > 0) { %>
-                            <span>•</span>
-                            <span class="text-chalk"><%= totalCuring %>h curado</span>
-                            <% } %>
+                <div class="bg-surface border <%= isProjActive ? 'border-brass/40 bg-brass/5' : 'border-hairline opacity-75' %> rounded-xl overflow-hidden shadow-xs transition-all" id="project-card-<%= p.id %>">
+                    <!-- Header Acordeón Proyecto -->
+                    <div class="p-3 flex items-center justify-between gap-2 cursor-pointer select-none" onclick="toggleProjectAccordion('<%= p.id %>')">
+                        <div class="flex items-center gap-2 min-w-0 flex-1">
+                            <svg id="proj-chevron-<%= p.id %>" class="w-4 h-4 text-ink3 transition-transform duration-200 shrink-0"><use href="#i-chevron-down-sm"/></svg>
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <h5 class="text-xs font-bold text-ink truncate"><%= p.name %></h5>
+                                    <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border <%= isProjActive ? 'bg-moss/10 text-moss border-moss/30 font-semibold' : 'bg-surface2 text-ink3 border-hairline' %> shrink-0">
+                                        <%= isProjActive ? '⚡ Agendable' : 'Pausado' %>
+                                    </span>
+                                    <span class="text-[10px] font-mono text-ink3 bg-surface2 border border-hairline px-1.5 py-0.5 rounded-full shrink-0">
+                                        <%= projTasks.length %> tareas
+                                    </span>
+                                </div>
+                                <% if (p.description) { %>
+                                <p class="text-[11px] text-ink3 truncate mt-0.5"><%= p.description %></p>
+                                <% } %>
+                            </div>
+                        </div>
+                        
+                        <!-- Toggle Activo para Agendar -->
+                        <div class="flex items-center gap-2 shrink-0" onclick="event.stopPropagation()">
+                            <form action="/projects/<%= p.id %>/toggle" method="post" class="inline-block">
+                                <input type="hidden" name="is_active" value="<%= isProjActive ? 'false' : 'true' %>">
+                                <button type="submit" title="<%= isProjActive ? 'Desactivar proyecto para agendamiento' : 'Activar proyecto para agendamiento' %>" class="px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors flex items-center gap-1.5 min-h-[32px] sm:min-h-0 <%= isProjActive ? 'bg-moss/10 text-moss border-moss/30 hover:bg-moss/20' : 'bg-surface2 text-ink2 border-hairline hover:bg-hairline' %>">
+                                    <span class="w-2 h-2 rounded-full <%= isProjActive ? 'bg-moss' : 'bg-ink3' %>"></span>
+                                    <%= isProjActive ? 'Activo' : 'Activar' %>
+                                </button>
+                            </form>
                         </div>
                     </div>
-                    <div class="flex items-center gap-2 shrink-0">
-                        <form action="/project-templates/<%= tpl.id %>/apply" method="post" class="inline-block">
-                            <button type="submit" class="bg-moss/10 hover:bg-moss/20 text-moss border border-moss/20 font-semibold px-3 py-1.5 rounded-lg text-xs transition-colors flex items-center gap-1 min-h-[36px] sm:min-h-0">
-                                <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg> Aplicar
-                            </button>
-                        </form>
-                        <form action="/project-templates/<%= tpl.id %>/delete" method="post" class="inline-block">
-                            <button type="submit" aria-label="Eliminar plantilla" class="bg-rust/10 hover:bg-rust/20 text-rust border border-rust/20 font-semibold p-1.5 rounded-lg text-xs transition-colors min-h-[36px] min-w-[36px] sm:min-h-0 sm:min-w-0 flex items-center justify-center">
-                                <svg class="w-3.5 h-3.5"><use href="#i-close"/></svg>
-                            </button>
-                        </form>
+
+                    <!-- Cuerpo Acordeón: Tareas del Proyecto -->
+                    <div id="proj-body-<%= p.id %>" class="hidden border-t border-hairline bg-canvas/40 p-3 space-y-2.5">
+                        <% if (projTasks.length > 0) { %>
+                        <div class="space-y-2">
+                            <% projTasks.forEach(function(t) { 
+                                const isTaskActive = t.is_active !== false;
+                            %>
+                            <div class="bg-surface border border-hairline rounded-lg p-2.5 space-y-2 shadow-xs" id="task-card-<%= t.id %>">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="flex items-center gap-2 min-w-0 flex-1">
+                                        <!-- Task Active Checkbox -->
+                                        <form action="/tasks/<%= t.id %>/toggle-active" method="post" class="inline-block shrink-0">
+                                            <input type="hidden" name="is_active" value="<%= isTaskActive ? 'false' : 'true' %>">
+                                            <button type="submit" title="<%= isTaskActive ? 'Desactivar esta tarea del agendamiento' : 'Activar esta tarea para el agendamiento' %>" class="w-5 h-5 rounded flex items-center justify-center border transition-colors <%= isTaskActive ? 'bg-moss text-canvas border-moss' : 'bg-surface2 text-transparent border-hairline hover:border-ink3' %>">
+                                                <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg>
+                                            </button>
+                                        </form>
+
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center gap-1.5">
+                                                <span class="text-[10px] font-mono text-ink3 font-bold">#<%= t.order %></span>
+                                                <p class="text-xs font-semibold text-ink truncate <%= !isTaskActive ? 'line-through text-ink3' : '' %>"><%= t.title %></p>
+                                            </div>
+                                            <div class="flex items-center gap-2 mt-0.5 text-[10px] font-mono text-ink3">
+                                                <span class="capitalize text-brass font-medium"><%= category_labels[t.category] || t.category %></span>
+                                                <span>•</span>
+                                                <span><%= t.estimated_hours %>h activas</span>
+                                                <% if (t.curing_hours > 0) { %>
+                                                <span>•</span>
+                                                <span class="text-chalk"><%= t.curing_hours %>h curado</span>
+                                                <% } %>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <button type="button" onclick="toggleTaskInlineEdit('<%= t.id %>')" aria-label="Editar tarea" class="p-1 rounded bg-surface2 hover:bg-hairline text-ink2 text-xs font-semibold transition-colors flex items-center gap-1">
+                                            <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg>
+                                        </button>
+                                        <form action="/tasks/<%= t.id %>/delete" method="post" class="inline-block">
+                                            <button type="submit" aria-label="Eliminar tarea" onclick="return confirm('¿Eliminar esta tarea?')" class="p-1 rounded bg-rust/10 hover:bg-rust/20 text-rust text-xs transition-colors flex items-center justify-center">
+                                                <svg class="w-3.5 h-3.5"><use href="#i-close"/></svg>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+
+                                <!-- Inline Edit Form -->
+                                <form id="task-edit-form-<%= t.id %>" action="/tasks/<%= t.id %>/update" method="post" class="hidden border-t border-hairline pt-2.5 mt-2 space-y-2 bg-surface2/50 rounded-md p-2">
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        <div class="sm:col-span-2">
+                                            <label class="block text-[10px] font-semibold text-ink3 uppercase">Título</label>
+                                            <input type="text" name="title" value="<%= t.title %>" required class="w-full bg-surface border border-hairline text-ink text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brass">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-semibold text-ink3 uppercase">Categoría</label>
+                                            <select name="category" class="w-full bg-surface border border-hairline text-ink text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brass">
+                                                <% categories.forEach(function(cat) { %>
+                                                <option value="<%= cat %>" <%= cat === t.category ? 'selected' : '' %>><%= category_labels[cat] || cat %></option>
+                                                <% }); %>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-semibold text-ink3 uppercase">Horas Activas</label>
+                                            <input type="number" step="0.5" min="0.5" name="estimated_hours" value="<%= t.estimated_hours %>" required class="w-full bg-surface border border-hairline text-ink text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brass">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-semibold text-ink3 uppercase">Horas Curado</label>
+                                            <input type="number" step="0.5" min="0" name="curing_hours" value="<%= t.curing_hours %>" class="w-full bg-surface border border-hairline text-ink text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brass">
+                                        </div>
+                                        <div>
+                                            <label class="block text-[10px] font-semibold text-ink3 uppercase">Proyecto</label>
+                                            <select name="project_id" class="w-full bg-surface border border-hairline text-ink text-xs rounded px-2 py-1.5 focus:outline-none focus:border-brass">
+                                                <% all_projects.forEach(function(proj) { %>
+                                                <option value="<%= proj.id %>" <%= proj.id === t.project_id ? 'selected' : '' %>><%= proj.name %></option>
+                                                <% }); %>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="flex justify-end gap-1.5 pt-1">
+                                        <button type="button" onclick="toggleTaskInlineEdit('<%= t.id %>')" class="px-2.5 py-1 text-xs text-ink3 hover:text-ink bg-surface border border-hairline rounded transition-colors">Cancelar</button>
+                                        <button type="submit" class="px-3 py-1 text-xs bg-brass hover:bg-brassdim text-canvas font-semibold rounded transition-colors">Guardar</button>
+                                    </div>
+                                </form>
+                            </div>
+                            <% }); %>
+                        </div>
+                        <% } else { %>
+                        <p class="text-xs text-ink3 italic py-1 text-center">Sin tareas en este proyecto.</p>
+                        <% } %>
+
+                        <button type="button" onclick="quickAddTaskToProject('<%= p.id %>')" class="w-full border border-dashed border-hairline hover:border-brass text-ink3 hover:text-brass text-xs py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1 font-medium">
+                            <svg class="w-3.5 h-3.5"><use href="#i-plus"/></svg> Añadir tarea a <%= p.name %>
+                        </button>
                     </div>
                 </div>
                 <% }); %>
             </div>
             <% } else { %>
-            <p class="text-xs text-ink3 italic text-center py-2">No hay plantillas guardadas aún.</p>
+            <p class="text-xs text-ink3 italic text-center py-2">No hay proyectos registrados aún.</p>
             <% } %>
         </div>
     </div>

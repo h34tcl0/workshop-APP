@@ -57,6 +57,7 @@ export interface Project {
 export interface Task {
   id: number;
   project_id: number;
+  project_name?: string;
   title: string;
   description?: string;
   category: TaskCategory;
@@ -67,6 +68,7 @@ export interface Task {
   progress_percentage: number;
   completed_at?: Date | string | null;
   requires_curing?: boolean;
+  is_active?: boolean;
 }
 
 export interface FavoriteTask {

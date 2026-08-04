@@ -224,7 +224,8 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     const scenario = typeof req.query.scenario === 'string' ? req.query.scenario : undefined;
     const appSettings = store.getAppSettings(userId);
     const activeProject = store.getActiveProject(userId);
-    const tasks = store.getPendingTasks(userId, activeProject.id);
+    const tasks = store.getPendingTasks(userId);
+    const allTasks = store.getTasks(userId);
     let simulatedPendingTasks = [...tasks];
 
     const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || 'America/Santiago';
@@ -322,7 +323,8 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
       project_templates: projectTemplates,
       materials,
       calculator_offsets: calculatorOffsets,
-      all_projects: allProjects
+      all_projects: allProjects,
+      all_tasks: allTasks
     });
   } catch (err) {
     console.error('Error rendering dashboard:', err);
@@ -360,6 +362,19 @@ app.post('/projects/add', (req: AuthenticatedRequest, res) => {
   res.redirect(303, '/');
 });
 
+// POST /projects/:id/toggle - Toggle project active state
+app.post('/projects/:id/toggle', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const id = parseInt(req.params.id, 10);
+  const { is_active } = req.body;
+  const isActiveBool = is_active !== undefined ? (is_active === 'true' || is_active === true || is_active === 1 || is_active === '1') : undefined;
+  const updated = store.toggleProjectActive(userId, id, isActiveBool);
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ success: true, project: updated });
+  }
+  res.redirect(303, '/');
+});
+
 // POST /tasks/add
 app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
@@ -376,20 +391,38 @@ app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
   res.redirect(303, '/');
 });
 
+// POST /tasks/:id/toggle-active
+app.post('/tasks/:id/toggle-active', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const id = parseInt(req.params.id, 10);
+  const { is_active } = req.body;
+  const isActiveBool = is_active !== undefined ? (is_active === 'true' || is_active === true || is_active === 1 || is_active === '1') : undefined;
+  const updated = store.toggleTaskActive(userId, id, isActiveBool);
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ success: true, task: updated });
+  }
+  res.redirect(303, '/');
+});
+
 // POST /tasks/:id/update
 app.post('/tasks/:id/update', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  const id = parseInt(req.params.id);
-  const { title, estimated_hours, curing_hours, category, project_id } = req.body;
+  const id = parseInt(req.params.id, 10);
+  const { title, estimated_hours, curing_hours, category, project_id, is_active } = req.body;
+  const isActiveBool = is_active !== undefined ? (is_active === 'true' || is_active === true || is_active === 1 || is_active === '1') : undefined;
   const updated = store.updateTask(userId, id, {
-    title,
-    estimated_hours: parseFloat(estimated_hours),
-    curing_hours: parseFloat(curing_hours),
-    category,
-    project_id: project_id ? parseInt(project_id, 10) : undefined
+    title: title ? String(title).trim() : undefined,
+    estimated_hours: estimated_hours !== undefined ? parseFloat(estimated_hours) : undefined,
+    curing_hours: curing_hours !== undefined ? parseFloat(curing_hours) : undefined,
+    category: category || undefined,
+    project_id: project_id ? parseInt(project_id, 10) : undefined,
+    is_active: isActiveBool
   });
   if (!updated) {
     return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });
+  }
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ success: true, task: updated });
   }
   res.redirect(303, '/');
 });

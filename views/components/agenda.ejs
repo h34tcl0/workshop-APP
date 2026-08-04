@@ -168,7 +168,12 @@
                                 #<%= task.order || (idx + 1) %>
                             </span>
                             <div class="min-w-0 flex-1">
-                                <p class="text-xs font-medium text-ink truncate"><%= task.title %></p>
+                                <p class="text-xs font-medium text-ink truncate">
+                                    <% if (task.project_name) { %>
+                                        <span class="text-brass font-bold text-[11px] mr-1 bg-brass/10 border border-brass/20 px-1.5 py-0.5 rounded">[<%= task.project_name %>]</span>
+                                    <% } %>
+                                    <%= task.title %>
+                                </p>
                                 <% if (task.category && category_labels[task.category]) { %>
                                 <p class="text-[10px] text-ink3 capitalize truncate"><%= category_labels[task.category] %></p>
                                 <% } %>

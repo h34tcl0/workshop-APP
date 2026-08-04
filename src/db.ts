@@ -435,6 +435,9 @@ export async function initDatabase(): Promise<Database.Database> {
   if (!currentTasksCols.some(c => c.name === 'project_id')) {
     dbInstance.exec("ALTER TABLE tasks ADD COLUMN project_id INTEGER;");
   }
+  if (!currentTasksCols.some(c => c.name === 'is_active')) {
+    dbInstance.exec("ALTER TABLE tasks ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;");
+  }
 
   const currentMaterialsCols = dbInstance.prepare("PRAGMA table_info(materials)").all() as any[];
   if (!currentMaterialsCols.some(c => c.name === 'project_id')) {
@@ -834,6 +837,14 @@ export class SQLiteStore {
     return { id: Number(proj.id), name: String(proj.name), description: proj.description || "", is_active: true };
   }
 
+  toggleProjectActive(userId: number, projectId: number, isActive?: boolean): Project | null {
+    const proj = this.db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").get(projectId, userId) as any;
+    if (!proj) return null;
+    const newActive = isActive !== undefined ? (isActive ? 1 : 0) : (proj.is_active ? 0 : 1);
+    this.db.prepare("UPDATE projects SET is_active = ? WHERE id = ? AND user_id = ?").run(newActive, projectId, userId);
+    return { id: Number(proj.id), name: String(proj.name), description: proj.description || "", is_active: Boolean(newActive) };
+  }
+
   // --- TASKS ---
   private rowToTask(row: any): Task {
     const cat = (row.category || TaskCategory.CARPENTRY) as TaskCategory;
@@ -843,6 +854,7 @@ export class SQLiteStore {
     return {
       id: Number(row.id),
       project_id: Number(row.project_id),
+      project_name: row.project_name ? String(row.project_name) : undefined,
       title: String(row.title),
       description: row.description || "",
       category: cat,
@@ -852,37 +864,79 @@ export class SQLiteStore {
       status: row.status as TaskStatus,
       progress_percentage: Number(row.progress_percentage || 0),
       order: Number(row.order_num),
-      completed_at: row.completed_at || null
+      completed_at: row.completed_at || null,
+      is_active: row.is_active !== undefined && row.is_active !== null ? Boolean(row.is_active) : true
     };
   }
 
   getTasks(userId: number): Task[] {
-    const rows = this.db.prepare("SELECT * FROM tasks WHERE user_id = ? ORDER BY order_num ASC, id ASC").all(userId);
+    const rows = this.db.prepare(`
+      SELECT t.*, p.name as project_name
+      FROM tasks t
+      LEFT JOIN projects p ON p.id = t.project_id
+      WHERE t.user_id = ?
+      ORDER BY t.order_num ASC, t.id ASC
+    `).all(userId);
     return rows.map(row => this.rowToTask(row));
   }
 
   getPendingTasks(userId: number, projectId?: number): Task[] {
-    const pId = projectId ?? this.getActiveProject(userId).id;
-    return this.getPendingTasksForProject(userId, pId);
+    if (projectId) {
+      return this.getPendingTasksForProject(userId, projectId);
+    }
+    return this.getPendingTasksForActiveProjects(userId);
+  }
+
+  getPendingTasksForActiveProjects(userId: number): Task[] {
+    const rows = this.db.prepare(`
+      SELECT t.*, p.name as project_name
+      FROM tasks t
+      JOIN projects p ON p.id = t.project_id
+      WHERE t.user_id = ? AND p.is_active = 1 AND (t.is_active IS NULL OR t.is_active = 1) AND t.status != 'completed'
+      ORDER BY t.order_num ASC, t.id ASC
+    `).all(userId);
+    return rows.map(row => this.rowToTask(row));
   }
 
   getPendingTasksForProject(userId: number, projectId: number): Task[] {
-    const rows = this.db.prepare(
-      "SELECT * FROM tasks WHERE user_id = ? AND project_id = ? AND status != 'completed' ORDER BY order_num ASC, id ASC"
-    ).all(userId, projectId);
+    const rows = this.db.prepare(`
+      SELECT t.*, p.name as project_name
+      FROM tasks t
+      JOIN projects p ON p.id = t.project_id
+      WHERE t.user_id = ? AND t.project_id = ? AND (t.is_active IS NULL OR t.is_active = 1) AND t.status != 'completed'
+      ORDER BY t.order_num ASC, t.id ASC
+    `).all(userId, projectId);
     return rows.map(row => this.rowToTask(row));
   }
 
   getTask(userId: number, id: number): Task | null {
-    const row = this.db.prepare("SELECT * FROM tasks WHERE id = ? AND user_id = ?").get(id, userId);
+    const row = this.db.prepare(`
+      SELECT t.*, p.name as project_name
+      FROM tasks t
+      LEFT JOIN projects p ON p.id = t.project_id
+      WHERE t.id = ? AND t.user_id = ?
+    `).get(id, userId);
     if (!row) return null;
     return this.rowToTask(row);
   }
 
   getTaskGlobal(id: number): Task | null {
-    const row = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
+    const row = this.db.prepare(`
+      SELECT t.*, p.name as project_name
+      FROM tasks t
+      LEFT JOIN projects p ON p.id = t.project_id
+      WHERE t.id = ?
+    `).get(id);
     if (!row) return null;
     return this.rowToTask(row);
+  }
+
+  toggleTaskActive(userId: number, taskId: number, isActive?: boolean): Task | null {
+    const task = this.getTask(userId, taskId);
+    if (!task) return null;
+    const newActive = isActive !== undefined ? (isActive ? 1 : 0) : (task.is_active ? 0 : 1);
+    this.db.prepare("UPDATE tasks SET is_active = ? WHERE id = ? AND user_id = ?").run(newActive, taskId, userId);
+    return this.getTask(userId, taskId);
   }
 
   addTask(userId: number, taskData: {
@@ -928,6 +982,7 @@ export class SQLiteStore {
 
     const updated = { ...existing, ...data };
     const reqCurInt = computeRequiresCuring(updated.category, updated.curing_hours) ? 1 : 0;
+    const isActiveInt = updated.is_active !== undefined ? (updated.is_active ? 1 : 0) : 1;
 
     this.db.prepare(
       `UPDATE tasks SET
@@ -940,7 +995,9 @@ export class SQLiteStore {
         status = ?,
         progress_percentage = ?,
         order_num = ?,
-        completed_at = ?
+        completed_at = ?,
+        project_id = ?,
+        is_active = ?
       WHERE id = ? AND user_id = ?;`
     ).run(
       updated.title,
@@ -953,6 +1010,8 @@ export class SQLiteStore {
       updated.progress_percentage,
       updated.order,
       updated.completed_at ? String(updated.completed_at) : null,
+      updated.project_id,
+      isActiveInt,
       id,
       userId
     );

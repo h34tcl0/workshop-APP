@@ -66,12 +66,98 @@ function toggleHistory() {
     if (chevron) chevron.classList.toggle('rotate-180');
 }
 
-// ── Plantillas de proyectos (colapsable) ──
-function toggleTemplates() {
-    const panel = document.getElementById('templates-panel');
-    const chevron = document.getElementById('templates-chevron');
+// ── Acordeón de Proyectos y Edición Inline de Tareas ──
+function toggleProjectAccordion(projectId) {
+    const body = document.getElementById(`proj-body-${projectId}`);
+    const chevron = document.getElementById(`proj-chevron-${projectId}`);
+    if (body) body.classList.toggle('hidden');
+    if (chevron) chevron.classList.toggle('rotate-180');
+}
+
+function toggleTaskInlineEdit(taskId) {
+    const form = document.getElementById(`task-edit-form-${taskId}`);
+    if (form) form.classList.toggle('hidden');
+}
+
+function quickAddTaskToProject(projectId) {
+    const projSelect = document.getElementById('task-project-select');
+    if (projSelect) {
+        projSelect.value = projectId;
+    }
+    const titleInput = document.querySelector('#add-task-form input[name="title"]');
+    if (titleInput) {
+        titleInput.focus();
+        titleInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+// ── Proyectos (colapsable) ──
+function toggleProjects() {
+    const panel = document.getElementById('projects-panel') || document.getElementById('templates-panel');
+    const chevron = document.getElementById('projects-chevron') || document.getElementById('templates-chevron');
     if (panel) panel.classList.toggle('hidden');
     if (chevron) chevron.classList.toggle('rotate-180');
+}
+function toggleTemplates() {
+    toggleProjects();
+}
+
+// ── Creación Rápida de Proyectos en Formulario de Tarea ──
+function handleProjectSelectChange(selectEl) {
+    const container = document.getElementById('inline-new-project-container');
+    if (!selectEl || !container) return;
+    if (selectEl.value === '__new__') {
+        container.classList.remove('hidden');
+        const input = document.getElementById('inline-project-name-input');
+        if (input) input.focus();
+    } else {
+        container.classList.add('hidden');
+    }
+}
+
+function cancelInlineProject() {
+    const container = document.getElementById('inline-new-project-container');
+    const selectEl = document.getElementById('task-project-select');
+    if (container) container.classList.add('hidden');
+    if (selectEl && selectEl.options.length > 1) {
+        selectEl.selectedIndex = 0;
+    }
+}
+
+function createInlineProject() {
+    const input = document.getElementById('inline-project-name-input');
+    const selectEl = document.getElementById('task-project-select');
+    const container = document.getElementById('inline-new-project-container');
+    if (!input || !input.value.trim() || !selectEl) return;
+
+    const projName = input.value.trim();
+    fetch('/projects/add', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        },
+        body: JSON.stringify({ name: projName })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success && data.project) {
+            const newOpt = document.createElement('option');
+            newOpt.value = data.project.id;
+            newOpt.textContent = data.project.name;
+            const newIndex = selectEl.options.length - 1;
+            selectEl.insertBefore(newOpt, selectEl.options[newIndex]);
+            selectEl.value = data.project.id;
+            input.value = '';
+            if (container) container.classList.add('hidden');
+            showToast('Proyecto "' + data.project.name + '" creado');
+        } else if (data.error) {
+            showToast(data.error);
+        }
+    })
+    .catch(() => {
+        showToast('Error al crear proyecto');
+    });
 }
 
 // ── SortableJS: Drag & Drop del backlog ──
