@@ -8,6 +8,7 @@ import { formatDateShortEs, getLocalDateIso, getWorkshopLocalTime, getTimezoneBy
 import { TaskCategory, TaskStatus, Task } from './src/types.js';
 import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick } from './src/scheduler.js';
 import { TelegramBotService } from './src/telegramBot.js';
+import { calendarService } from './src/calendarService.js';
 import { requireAuth, hashPassword, verifyPassword, signToken, createSessionCookie, createClearSessionCookie, AuthenticatedRequest } from './src/auth.js';
 
 const app = express();
@@ -276,7 +277,7 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
         forcedTasksWithHours
       );
 
-      if (evalRes.status === 'DAY_VIABLE' && evalRes.scheduled_tasks.length > 0) {
+      if (evalRes.status === 'DAY_VIABLE' && evalRes.scheduled_tasks && evalRes.scheduled_tasks.length > 0) {
         const scheduledIds = new Set(evalRes.scheduled_tasks.map(t => t.id));
         simulatedPendingTasks = simulatedPendingTasks.filter(t => !scheduledIds.has(t.id));
       }

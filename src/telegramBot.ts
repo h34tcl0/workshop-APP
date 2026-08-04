@@ -59,13 +59,17 @@ export class TelegramBotService {
       }
 
       // 3. Bucle Long Polling
+      let conflictCount = 0;
       const poll = async () => {
         if (!TelegramBotService.pollingActive) return;
+
+        let delayMs = 3000;
 
         try {
           const url = `https://api.telegram.org/bot${token}/getUpdates?offset=${TelegramBotService.lastUpdateId + 1}&timeout=5`;
           const res = await fetch(url);
           if (res.ok) {
+            conflictCount = 0;
             const data = await res.json();
             if (data.ok && Array.isArray(data.result)) {
               for (const update of data.result) {
@@ -89,14 +93,25 @@ export class TelegramBotService {
               TelegramBotService.pollingActive = false;
               return;
             }
-            console.error(`[Telegram Polling HTTP Error ${res.status}]: ${errText}`);
+            if (res.status === 409) {
+              conflictCount++;
+              delayMs = Math.min(30000, 5000 * Math.pow(2, Math.min(conflictCount - 1, 3)));
+              if (conflictCount === 1 || conflictCount % 10 === 0) {
+                console.warn(`[Telegram Polling HTTP 409 Conflict]: ${errText}. Retrying in ${delayMs / 1000}s...`);
+                try {
+                  await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=true`);
+                } catch (_) {}
+              }
+            } else {
+              console.error(`[Telegram Polling HTTP Error ${res.status}]: ${errText}`);
+            }
           }
         } catch (err) {
           console.error("[Telegram Polling Exception]:", err);
         }
 
         if (TelegramBotService.pollingActive) {
-          TelegramBotService.pollingTimeout = setTimeout(poll, 3000);
+          TelegramBotService.pollingTimeout = setTimeout(poll, delayMs);
         }
       };
 

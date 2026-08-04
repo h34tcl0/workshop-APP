@@ -17,9 +17,11 @@ La carpintería técnica y el trabajo en taller al aire libre sufren vulnerabili
 ### La Solución AGENDAPP
 AGENDAPP automatiza completamente la planificación del taller mediante una arquitectura **Multi-Tenant aislada**:
 
-1. **Aislamiento Multi-Tenant Completo**:
-   - Cada usuario (`user_id`) posee un contexto completamente aislado en la base de datos: su propio backlog de tareas, proyectos, plantillas, logs diarios y configuración operacional (`app_settings`).
-2. **Geolocalización y Cálculo Dinámico de Zona Horaria**:
+1. **Entorno de Ejecución Moderno**:
+   - Ejecución sobre **Node.js 22 (Web Runtime)** utilizando **Express 4** para la API REST, renderizado de plantillas modulares **EJS** y empaquetado optimizado con **`esbuild`** (`dist/server.cjs`) escuchando en el **puerto 3000**.
+2. **Aislamiento Multi-Tenant Completo**:
+   - Cada usuario (`user_id`) posee un contexto completamente aislado en la base de datos: su propio backlog de tareas, proyectos, plantillas, materiales/insumos, logs diarios y configuración operacional (`app_settings`).
+3. **Geolocalización y Cálculo Dinámico de Zona Horaria**:
    - El usuario configura la latitud y longitud exactas de su taller (mediante un mapa interactivo Leaflet/OpenStreetMap).
    - El backend utiliza `tz-lookup` para determinar automáticamente la zona horaria IANA correspondiente (ej. `America/Santiago`, `America/Buenos_Aires`).
    - La aplicación sincroniza y presenta la **hora local exacta del taller** (`local_time_info`), garantizando que la evaluación matutina, las notificaciones y los eventos de Google Calendar coincidan con el huso horario real del sitio de trabajo.
@@ -49,9 +51,9 @@ AGENDAPP implementa una arquitectura de **sincronización espejo flotante** proy
 
 ---
 
-## 📲 3. Sistema de Notificaciones Puntuales en Telegram
+## 📲 3. Sistema de Notificaciones y Módulo de Telegram (`src/telegramBot.ts`)
 
-AGENDAPP rediseñó su motor de mensajería para eliminar el "spam" de reportes matutinos rutinarios y enfocar la comunicación en momentos operacionales críticos.
+AGENDAPP cuenta con un motor de mensajería altamente interactivo y resiliente diseñado para la gestión en tiempo real de operaciones de taller.
 
 ```
                     +---------------------------------------+
@@ -75,21 +77,30 @@ AGENDAPP rediseñó su motor de mensajería para eliminar el "spam" de reportes 
                     +---------------------------------------+
 ```
 
-1. **Eliminación de Spam Matutino**: Ya no se envían mensajes genéricos al despertar. Las alertas se disparan con precisión cuando hay una acción requerida.
-2. **Notificación al Inicio Exacto del Trabajo (`sendWorkStartNotification`)**:
-   - Se dispara automáticamente en el minuto exacto en que comienza la primera tarea agendada del día.
-   - Informa al operario sobre la preparación requerida (tiempo de setup/limpieza), la secuencia de tareas activas y los tiempos de curado/secado necesarios.
-3. **Check-in Nocturno Interactivo**:
-   - Se envía a la hora configurada (`checkin_hour`, ej. 19:00 hrs) mediante teclados inline de Telegram.
-   - Permite al operario marcar cada tarea como `Completada ✅` o `Reagendar 🔁` con un solo toque, actualizando el estado en la base de datos SQLite sin abrir el navegador.
+### Principales Capacidades del Módulo de Telegram:
+1. **Long Polling Robusto y Prevención de Conflictos 404/409**:
+   - Sistema de reconexión adaptativa en `src/telegramBot.ts` con respaldo exponencial.
+   - Limpieza automática de webhooks previos (`deleteWebhook?drop_pending_updates=true`) ante detecciones de conflicto HTTP 409, garantizando un flujo constante de polling en contenedores o reinicios.
+2. **Atención Inmediata de Comandos `/start` y `/help`**:
+   - Los comandos `/start` y `/help` responden inmediatamente a cualquier usuario, entregando su `Telegram Chat ID` e instrucciones de vinculación incluso si la cuenta aún no ha sido registrada o enlazada en la plataforma.
+3. **Consulta de Materiales e Insumos con `/materiales`**:
+   - El comando `/materiales` permite consultar desde Telegram los materiales e insumos pendientes por comprar (`to_buy`) o en stock (`in_stock`) agrupados por proyecto activo.
+4. **Alertas de Emergencia e Intradía con Silenciador Interactivo**:
+   - Notificaciones inmediatas ante cambios climáticos intempestivos o riesgos de lluvia no previstos durante la jornada.
+   - Incluyen un botón inline interactivo de **Silenciador / Snooze** para pausar avisos secundarios sin interrumpir la labor en el taller.
+5. **Cierre de Jornada Nocturno (Check-in Interactivo)**:
+   - Se envía a la hora configurada (`checkin_hour`, ej. 19:00 hrs) con teclados inline de Telegram.
+   - Permite al operario marcar cada tarea agendada como `Completada ✅` o `Reagendar 🔁` con un solo toque.
+   - El backend procesa las respuestas callback en tiempo real (`handleCallbackQuery`), actualizando de inmediato la base de datos y reordenando el backlog sin necesidad de abrir la aplicación web.
+6. **Notificación al Inicio Exacto del Trabajo (`sendWorkStartNotification`)**:
+   - Disparo automático en el minuto exacto del primer bloque agendado, detallando tiempos de setup, tareas activas y requisitos de curado.
 
 ---
 
 ## 📋 4. Backlog de Tareas y Autocompletado Inteligente
 
-### Eliminación del Módulo de "Favoritas"
-- Se eliminó completamente la sección visual de tarjetas y botones de estrella ("Tareas Favoritas") para simplificar la interfaz y evitar la duplicidad de datos.
-- Se removieron los controladores y endpoints obsoletos (`/tasks/:id/favorite`, `/favorites/*`), concentrando el flujo de trabajo en la entrada principal del backlog.
+### Eliminación de Módulos Innecesarios
+- Simplificación visual y arquitectónica: se eliminó la sección redundante de "Favoritas" y los endpoints obsoletos, concentrando la operativa en el backlog unificado.
 
 ### Motor de Autocompletado Dinámico de Tareas
 Para acelerar el registro de tareas frecuentes (ej. *Lijado de cubiertas*, *Encolado de bastidores*, *Barnizado final*), el campo "TÍTULO DE LA TAREA" incorpora autocompletado dinámico basado en el historial del usuario:
@@ -123,7 +134,7 @@ Jornada Operativa (09:00 - 18:00)             Extensión de Curado Pasivo Noctur
 ┌───────────────────────────────────────────┬─────────────────────────────────────────────┐
 │ 09:00 Setup │ 10:00 - 15:00 Trabajo Activo │ 15:00 - 21:00 Curado PVA / Epoxi (Pasivo)   │
 └─────────────┴─────────────────────────────┴─────────────────────────────────────────────┘
-                                             ▲ Si a las 20:00 Lllueve o Humedad > 80% ────┤
+                                             ▲ Si a las 20:00 Llueve o Humedad > 80% ────┤
                                                --> DÍA RECHAZADO / DAY_BLOCKED PREVENTIVO
 ```
 
@@ -421,56 +432,66 @@ Actualiza la ubicación del taller, horas operativas y credenciales de Telegram.
 
 ---
 
-## 🛡️ 7. Resiliencia, Caché y Tolerancia a Fallos
+## 🛡️ 8. Resiliencia, Caché, Sistema de Tipos y Tolerancia a Fallos
 
-AGENDAPP implementa una capa de resiliencia distribuida para garantizar la disponibilidad continua del taller frente a fallos de servicios externos:
+AGENDAPP implementa una capa de resiliencia distribuida y verificación estricta de tipos para garantizar la disponibilidad continua y estabilidad del código:
 
 ```
 +-----------------------------------------------------------------------------------+
-|                            CAPA DE RESILIENCIA Y CACHÉ                            |
+|                        CAPA DE RESILIENCIA Y SISTEMA DE TIPOS                     |
 +-------------------+-------------------------------+-------------------------------+
-|  OPEN-METEO API   |       TELEGRAM BOT API        |   GOOGLE CALENDAR API v3      |
+|  OPEN-METEO API   |       TELEGRAM BOT API        |   TYPESCRIPT & STACK STRICT   |
 +-------------------+-------------------------------+-------------------------------+
-| • Timeout de 8s   | • Ejecución asíncrona         | • Manejo de cuotas (429)      |
-| • Snapshot SQLite | • Silenciamiento de errores   | • Reintento en 5xx            |
-| • Fallback local  |   400/403 sin frenar daemon   | • Recreación limpia en 404    |
+| • Timeout de 8s   | • Long Polling sin conflictos | • 100% libre de errores lint  |
+| • Snapshot SQLite | • Auto-clean de Webhooks      | • Tipado completo en DAO/Types|
+| • Fallback local  | • Aislamiento 400/403         | • esbuild a dist/server.cjs   |
 +-------------------+-------------------------------+-------------------------------+
 ```
 
-### 1. Ingesta Meteorológica (Open-Meteo API)
+### 1. Sistema de Tipos y Compilación Estricta (TypeScript Clean)
+- **Cero Errores de Linter y Compilación**: Todo el proyecto compila estrictamente bajo TypeScript sin advertencias ni errores (0 errores con `npm run lint` y `npm run build`).
+- **Tipado Completo de Módulos**:
+  - `src/types.ts`: Definición de modelos de dominio (`Task`, `Project`, `AppSettings`, `DailyLog`, `Material`, `DayEvaluation`, etc.).
+  - `src/db.ts`: Operaciones relacionales SQLite con verificación rigurosa de tipos.
+  - `src/calendarService.ts`: Autenticación segura con Google OAuth JWT y manejo estructurado de la API de Google Calendar.
+  - `src/scheduler.ts`: Tipado estricto en el procesamiento de tickers climáticos, ventanas operativas y notificaciones de inicio de jornada.
+  - `server.ts`: Manejo limpio de tipos de Express, middleware de autenticación y controladores.
+
+### 2. Ingesta Meteorológica (Open-Meteo API)
 - **Timeout y Reintentos**: Las solicitudes HTTP de pronóstico se ejecutan con timeout estricto de 8 segundos y reintentos automáticos.
 - **Persistencia de Snapshot**: Cada pronóstico obtenido con éxito se guarda en la columna `morning_climate_snapshot` de `daily_logs` en formato JSON.
 - **Fallback Transparente**: Si la API de Open-Meteo se encuentra fuera de servicio o inalcanzable, el evaluador utiliza el último snapshot almacenado en SQLite para continuar agendando el día sin interrumpir al operario.
 
-### 2. Mensajería Distribuida (Telegram Bot API)
+### 3. Mensajería Distribuida (Telegram Bot API)
+- **Long Polling sin Conflictos 409**: Detección inteligente de sesiones concurrentes y eliminación automática de webhooks residuales (`deleteWebhook?drop_pending_updates=true`).
 - **Ejecución Asíncrona Non-Blocking**: Los ticks de notificación (`runWorkStartTick`, `runCheckinTick`) se ejecutan dentro de bloques `try/catch` aislados en el daemon (`scheduler.ts`).
 - **Aislamiento de Errores**: Si un usuario tiene un `telegram_chat_id` inválido, o bloqueó el bot (`403 Forbidden`), la falla es capturada y registrada en los logs del servidor sin detener los procesos de otros usuarios ni bloquear el hilo principal de Node.js.
 
-### 3. Sincronización de Calendario (Google Calendar API v3)
+### 4. Sincronización de Calendario (Google Calendar API v3)
 - **Manejo de Errores 404 (Eventos Eliminados)**: Si un evento espejo es eliminado manualmente en la app de Google Calendar, el servicio detecta la respuesta `404 Not Found`, limpia la columna `google_event_id` en SQLite y vuelve a crear el evento si la jornada sigue siendo viable.
 - **Tolerancia a Errores 5xx**: Errores temporales de red o indisponibilidad de la API de Google son manejados con reintentos exponenciales en el siguiente tick del daemon (cada 15 minutos).
 
 ---
 
-## 🛠️ 8. Tech Stack & Matriz Técnica
+## 🛠️ 9. Tech Stack & Matriz Técnica
 
 ### Tech Stack Principal
 | Capa | Tecnología | Descripción |
 | :--- | :--- | :--- |
-| **Entorno de Ejecución** | Node.js (v18+) & Express | Servidor HTTP, middleware de sesiones REST API. |
-| **Lenguaje** | TypeScript | Tipado estricto para modelos de dominio y motores de evaluación. |
-| **Compilador / Empaquetador**| `esbuild` | Compilación ultra-rápida a CommonJS (`dist/server.cjs`). |
+| **Entorno de Ejecución** | Node.js 22 (Web Runtime) & Express 4 | Servidor HTTP en puerto 3000, middleware REST API y gestión de sesiones. |
+| **Lenguaje** | TypeScript | Tipado estricto 100% limpio en todo el proyecto (`tsc --noEmit`). |
+| **Compilador / Empaquetador**| `esbuild` | Bundling optimizado a CommonJS en `dist/server.cjs`. |
 | **Base de Datos** | SQLite vía `better-sqlite3` | Motor relacional en disco con modo WAL (`journal_mode = WAL`). |
 | **Zona Horaria** | `tz-lookup` | Identificación dinámica de huso horario IANA según lat/lon. |
-| **Calendario** | `googleapis` (API v3) | Sincronización espejo con Google Calendar API. |
-| **Mensajería** | Telegram Bot API | Notificaciones operacionales e interacciones inline. |
-| **Motor Meteorológico** | Open-Meteo API | Pronósticos horarias de temperatura, humedad y precipitaciones. |
+| **Calendario** | `googleapis` (API v3) | Sincronización espejo con Google Calendar API vía Service Account JWT. |
+| **Mensajería** | Telegram Bot API | Notificaciones operacionales, comandos intermedios y callbacks inline. |
+| **Motor Meteorológico** | Open-Meteo API | Pronósticos horarios de temperatura, humedad y precipitaciones. |
 | **Renderizado Frontend** | EJS (Embedded JavaScript) | Vistas SSR modulares y reactivas. |
 | **Diseño y Estilos** | Tailwind CSS | Interfaz oscura de alta precisión para ambientes de taller. |
 
 ---
 
-## 📂 9. Árbol de Archivos del Proyecto
+## 📂 10. Árbol de Archivos del Proyecto
 
 ```
 AGENDAPP/
@@ -479,7 +500,7 @@ AGENDAPP/
 ├── Dockerfile                    # Receta de construcción de contenedor Docker
 ├── README.md                     # Documentación técnica y arquitectura (Single Source of Truth)
 ├── metadata.json                 # Metadatos del applet e intenciones de la plataforma
-├── package.json                  # Dependencias NPM, scripts de compilación y ejecución
+├── package.json                  # Dependencias NPM, scripts de compilación, linter y ejecución
 ├── tsconfig.json                 # Configuración del compilador TypeScript
 ├── server.ts                     # Punto de entrada de Express y definición de rutas REST
 ├── data/                         # Directorio de persistencia de SQLite
@@ -513,12 +534,13 @@ AGENDAPP/
     └── components/               # Componentes EJS modulares
         ├── agenda.ejs            # Componente de línea de tiempo y resumen diario
         ├── backlog.ejs           # Componente de backlog de tareas y plantillas
+        ├── materials.ejs         # Componente de materiales e insumos
         └── settings_modal.ejs    # Modal de configuración de parámetros operacionales
 ```
 
 ---
 
-## 📑 10. Matriz Técnica Detallada Archivo por Archivo
+## 📑 11. Matriz Técnica Detallada Archivo por Archivo
 
 | Archivo | Responsabilidad Principal | Exportaciones / Métodos Clave | Dependencias |
 | :--- | :--- | :--- | :--- |
@@ -526,12 +548,12 @@ AGENDAPP/
 | `src/auth.ts` | Seguridad de contraseñas y tokens HMAC de sesión. | `hashPassword`, `verifyPassword`, `signToken`, `verifyToken`, `requireAuth` | Node `crypto`, `express`, `src/db.ts` |
 | `src/calendarService.ts` | Integración con Google Calendar API v3. | `GoogleCalendarService`, `createWorkshopEvent` | `googleapis`, Node `fs`, `src/db.ts` |
 | `src/dateUtils.ts` | Formateo de fechas y textos en español. | `formatDateShortEs`, `formatDateLongEs` | JavaScript Standard Date API |
-| `src/db.ts` | Capa DAO de SQLite, migraciones y persistencia en disco. | `initDatabase`, `store` (CRUD de tareas, proyectos, configuraciones, logs) | `better-sqlite3`, Node `fs`, `src/types.ts` |
+| `src/db.ts` | Capa DAO de SQLite, migraciones y persistencia en disco. | `initDatabase`, `store` (CRUD de tareas, proyectos, configuraciones, logs, materiales) | `better-sqlite3`, Node `fs`, `src/types.ts` |
 | `src/evaluator.ts` | Motor de evaluación climática y calce de tiempos de curado. | `evaluator.evaluateDay` | `src/types.ts`, `src/holidaysService.ts` |
 | `src/holidaysService.ts` | Identificación de feriados legales. | `getHolidayDatesForRange`, `isHoliday` | `src/types.ts` |
 | `src/scheduler.ts` | Daemon en segundo plano para tickers meteorológicos y notificaciones. | `startDaemon`, `runMorningEvaluation`, `runCheckinTick`, `processWorkStartNotificationsForUser` | `src/db.ts`, `src/evaluator.ts`, `src/weatherService.ts`, `src/telegramBot.ts` |
-| `src/telegramBot.ts` | Bot de Telegram, recepción de webhooks y botones inline. | `TelegramBotService`, handlers de callback | `src/db.ts`, HTTP fetch API |
-| `src/types.ts` | Interfaces de dominio y tipos de datos en TypeScript. | `Task`, `Project`, `AppSettings`, `DailyLog`, `TaskStatus`, `TaskCategory` | TypeScript Pure Types |
+| `src/telegramBot.ts` | Bot de Telegram, recepción de webhooks, Long Polling robusto y callbacks inline. | `TelegramBotService`, handlers de comandos e interacciones callback | `src/db.ts`, HTTP fetch API |
+| `src/types.ts` | Interfaces de dominio y tipos de datos en TypeScript. | `Task`, `Project`, `AppSettings`, `DailyLog`, `Material`, `TaskStatus`, `TaskCategory` | TypeScript Pure Types |
 | `src/weatherService.ts` | Ingesta de pronósticos meteorológicos de Open-Meteo. | `getHourlyForecast`, `computeHourlyClimateMap` | HTTP fetch API, `src/types.ts` |
 | `views/index.ejs` | Vista principal SSR que integra Agenda, Backlog y Configuración. | Estructura HTML del Dashboard | EJS Engine, Tailwind CSS |
 | `views/components/backlog.ejs` | Componente de backlog con formulario de creación y autocompletado. | Parcial EJS del Backlog | EJS Engine |
@@ -539,7 +561,7 @@ AGENDAPP/
 
 ---
 
-## 🔄 11. Diagrama de Flujo de Datos End-to-End
+## 🔄 12. Diagrama de Flujo de Datos End-to-End
 
 ```
 +-----------------------------------------------------------------------------------+
@@ -583,7 +605,7 @@ AGENDAPP/
 
 ---
 
-## 🗄️ 12. Esquema de Base de Datos SQLite (`data/workshop.db`)
+## 🗄️ 13. Esquema de Base de Datos SQLite (`data/workshop.db`)
 
 ### Tabla `users`
 | Columna | Tipo | Restricciones | Descripción |
@@ -679,24 +701,56 @@ AGENDAPP/
 
 ---
 
-## 🚀 13. Guía de Instalación, Desarrollo y Despliegue
+## 🚀 14. Guía de Instalación, Configuración de Entorno (`.env`) y Despliegue
 
-### 1. Instalación de Dependencias y Compilación
+### 1. Configuración de Variables de Entorno (`.env`)
+Crea un archivo `.env` basado en `.env.example` definiendo las credenciales operacionales clave:
+
+```env
+# Servidor y Sesiones
+ADMIN_EMAIL=admin@taller.cl
+ADMIN_PASSWORD=PasswordSeguro123!
+SESSION_SECRET=un_secreto_muy_seguro_para_firmar_cookies
+DATA_DIR=./data
+TIMEZONE=America/Santiago
+
+# Bot de Telegram
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+TELEGRAM_CHAT_ID=987654321
+TELEGRAM_WEBHOOK_SECRET=secreto_webhook_opcional
+
+# Google Calendar API v3 (Service Account / Credenciales)
+GOOGLE_CLIENT_EMAIL=agendapp-sa@project.iam.gserviceaccount.com
+GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQC...\n-----END PRIVATE KEY-----\n"
+GOOGLE_CALENDAR_ID=primary_or_calendar_id@group.calendar.google.com
+GOOGLE_CREDENTIALS_JSON=
+```
+
+### 2. Instalación de Dependencias, Verificación y Compilación
 ```bash
-# Instalar dependencias del proyecto
+# 1. Instalar dependencias del proyecto
 npm install
 
-# Compilar TypeScript a producción (dist/server.cjs) usando esbuild
+# 2. Verificar estricta conformidad de tipos (Linting de TypeScript)
+npm run lint
+
+# 3. Compilar paquete optimizado para producción con esbuild (dist/server.cjs)
 npm run build
 ```
 
-### 2. Entorno de Desarrollo Local
+### 3. Ejecución en Entorno de Desarrollo Local
 ```bash
-# Iniciar servidor con recarga en vivo mediante tsx
+# Iniciar servidor con hot-reload dinámico mediante tsx
 npm run dev
 ```
 
-### 3. Despliegue en Producción con PM2
+### 4. Ejecución en Producción
+```bash
+# Iniciar la versión empaquetada de producción
+npm start
+```
+
+### 5. Despliegue en Producción con PM2
 ```bash
 # Compilar el empaquetado de producción
 npm run build
@@ -705,16 +759,16 @@ npm run build
 pm2 start dist/server.cjs --name "agendapp" --update-env
 ```
 
-### 4. Despliegue Contenerizado con Docker
+### 6. Despliegue Contenerizado con Docker
 ```bash
 # Construir imagen Docker
 docker build -t agendapp:latest .
 
-# Ejecutar contenedor con volumen de persistencia
+# Ejecutar contenedor con volumen de persistencia en el puerto 3000
 docker run -d -p 3000:3000 --env-file .env -v $(pwd)/data:/app/data --name agendapp_container agendapp:latest
 ```
 
-### 5. Respaldos en Caliente de SQLite (Modo WAL)
+### 7. Respaldos en Caliente de SQLite (Modo WAL)
 AGENDAPP opera SQLite configurado en modo **Write-Ahead Logging (WAL)** (`journal_mode = WAL`), garantizando un rendimiento óptimo de lectura/escritura concurrente.
 
 Para realizar respaldos seguros sin detener el servidor en ejecución, utiliza la API de respaldo en caliente o comandos nativos `VACUUM INTO`:
@@ -729,7 +783,7 @@ sqlite3 data/workshop.db "VACUUM INTO 'data/backup-live.db';"
 
 ---
 
-## 🛡️ 14. Guardagujas de Desarrollo e Integración
+## 🛡️ 15. Guardagujas de Desarrollo e Integración
 
 1. **Evaluación Centralizada en `evaluator.ts`**: Toda modificación de horarios o viabilidad de tareas debe pasar por el motor de evaluación para asegurar los umbrales climáticos y de curado.
 2. **Cookies `SameSite=None; Secure`**: Mantener las banderas de cookies para soportar la ejecución en entornos incrustados (iframes) e interfaces móviles.

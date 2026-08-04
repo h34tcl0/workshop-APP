@@ -55,12 +55,11 @@ export class GoogleCalendarService {
         const clientEmail = process.env.GOOGLE_CLIENT_EMAIL.trim();
         const privateKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n").trim();
         this.serviceAccountEmail = clientEmail;
-        auth = new google.auth.JWT(
-          clientEmail,
-          undefined,
-          privateKey,
-          ["https://www.googleapis.com/auth/calendar"]
-        );
+        auth = new google.auth.JWT({
+          email: clientEmail,
+          key: privateKey,
+          scopes: ["https://www.googleapis.com/auth/calendar"]
+        });
         console.log(`[GoogleCalendarService] Initialized successfully using GOOGLE_CLIENT_EMAIL (${clientEmail}) & GOOGLE_PRIVATE_KEY.`);
       }
 

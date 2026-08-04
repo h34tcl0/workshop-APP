@@ -45,6 +45,7 @@ export interface AppSettings {
   google_calendar_id?: string | null;
   google_calendar_enabled?: boolean;
   timezone?: string | null;
+  forecast_days?: number;
 }
 
 export interface Project {
@@ -56,6 +57,7 @@ export interface Project {
 
 export interface Task {
   id: number;
+  user_id?: number;
   project_id: number;
   project_name?: string;
   title: string;
@@ -178,7 +180,7 @@ export interface WeatherSummary {
 
 export interface DayEvaluation {
   eval_date: string; // YYYY-MM-DD
-  date_str: string;
+  date_str?: string;
   status: DayStatus;
   window?: TimeWindow | null;
   scheduled_tasks?: Task[];
@@ -187,10 +189,10 @@ export interface DayEvaluation {
   timeline?: TimelineItem[];
   cutoff_reason?: string;
   bar_segments?: BarSegments | null;
-  weather_summary: WeatherSummary;
-  climate_segments: ClimateSegment[];
-  free_windows: FreeWindow[];
-  climate_only_status: "clear" | "blocked";
+  weather_summary?: WeatherSummary;
+  climate_segments?: ClimateSegment[];
+  free_windows?: FreeWindow[];
+  climate_only_status?: "clear" | "blocked";
   is_manually_blocked?: boolean;
   forced_tasks?: ForcedTaskWithDetails[];
   day_override?: DayOverride | null;
@@ -198,6 +200,7 @@ export interface DayEvaluation {
 
 export interface DailyLog {
   id: number;
+  user_id?: number;
   eval_date: string; // YYYY-MM-DD
   status: DayStatus;
   block_reason?: string | null;

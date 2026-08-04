@@ -183,10 +183,13 @@ export async function processWorkStartNotificationsForUser(
     status: DayStatus.DAY_VIABLE,
     reason: dailyLog.block_reason || "Día viable con tareas agendadas",
     window: {
-      start_time: dailyLog.window_start,
-      end_time: dailyLog.window_end,
+      start_time: dailyLog.window_start || "09:00",
+      end_time: dailyLog.window_end || "18:00",
+      start_hour: 9,
+      end_hour: 18,
       total_duration_hours: (dailyLog.net_work_hours || 0) + 2,
-      net_work_hours: dailyLog.net_work_hours || 0
+      net_work_hours: dailyLog.net_work_hours || 0,
+      is_viable: true
     },
     scheduled_tasks: tasks,
     climate_segments: climateSegments
