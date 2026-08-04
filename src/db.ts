@@ -238,6 +238,18 @@ export async function initDatabase(): Promise<Database.Database> {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS tools (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'Herramientas Manuales',
+      status TEXT NOT NULL DEFAULT 'available',
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
     CREATE TABLE IF NOT EXISTS calculator_offsets (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -1793,9 +1805,9 @@ export class SQLiteStore {
 
   getMaterials(userId: number, projectId?: number): Material[] {
     let sql = `
-      SELECT m.*, p.name as project_name
+      SELECT m.*, COALESCE(p.name, 'General / Taller') as project_name
       FROM materials m
-      JOIN projects p ON p.id = m.project_id
+      LEFT JOIN projects p ON p.id = m.project_id
       WHERE m.user_id = ?
     `;
     const params: any[] = [userId];
@@ -1811,9 +1823,9 @@ export class SQLiteStore {
 
   getMaterial(userId: number, id: number): Material | null {
     const row = this.db.prepare(`
-      SELECT m.*, p.name as project_name
+      SELECT m.*, COALESCE(p.name, 'General / Taller') as project_name
       FROM materials m
-      JOIN projects p ON p.id = m.project_id
+      LEFT JOIN projects p ON p.id = m.project_id
       WHERE m.id = ? AND m.user_id = ?
     `).get(id, userId) as any;
     if (!row) return null;
@@ -1830,7 +1842,10 @@ export class SQLiteStore {
   }): Material {
     const pId = data.project_id || this.getActiveProject(userId).id;
     const nowIso = new Date().toISOString();
-    const statusVal = data.status === MaterialStatus.IN_STOCK ? MaterialStatus.IN_STOCK : MaterialStatus.TO_BUY;
+    let statusVal = data.status || MaterialStatus.TO_BUY;
+    if (statusVal !== MaterialStatus.IN_STOCK && statusVal !== MaterialStatus.OUT_OF_STOCK) {
+      statusVal = MaterialStatus.TO_BUY;
+    }
 
     const info = this.db.prepare(`
       INSERT INTO materials (user_id, project_id, name, quantity, unit, category, status, created_at, updated_at)
@@ -1885,12 +1900,109 @@ export class SQLiteStore {
   toggleMaterialStatus(userId: number, id: number): Material | null {
     const mat = this.getMaterial(userId, id);
     if (!mat) return null;
-    const newStatus = mat.status === MaterialStatus.TO_BUY ? MaterialStatus.IN_STOCK : MaterialStatus.TO_BUY;
+    let newStatus: string;
+    if (mat.status === MaterialStatus.TO_BUY) {
+      newStatus = MaterialStatus.IN_STOCK;
+    } else if (mat.status === MaterialStatus.IN_STOCK) {
+      newStatus = MaterialStatus.OUT_OF_STOCK;
+    } else {
+      newStatus = MaterialStatus.TO_BUY;
+    }
     return this.updateMaterial(userId, id, { status: newStatus });
+  }
+
+  setMaterialStatus(userId: number, id: number, status: string): Material | null {
+    return this.updateMaterial(userId, id, { status });
   }
 
   deleteMaterial(userId: number, id: number): boolean {
     const res = this.db.prepare("DELETE FROM materials WHERE id = ? AND user_id = ?").run(id, userId);
+    return res.changes > 0;
+  }
+
+  // --- TOOLS MANAGEMENT ---
+  private rowToTool(row: any): Tool {
+    return {
+      id: Number(row.id),
+      user_id: Number(row.user_id),
+      name: String(row.name),
+      category: String(row.category || "Herramientas Manuales"),
+      status: String(row.status || ToolStatus.AVAILABLE),
+      notes: row.notes ? String(row.notes) : null,
+      created_at: String(row.created_at || ""),
+      updated_at: String(row.updated_at || "")
+    };
+  }
+
+  getTools(userId: number, category?: string): Tool[] {
+    let sql = `SELECT * FROM tools WHERE user_id = ?`;
+    const params: any[] = [userId];
+    if (category) {
+      sql += ` AND category = ?`;
+      params.push(category);
+    }
+    sql += ` ORDER BY category ASC, name ASC`;
+    const rows = this.db.prepare(sql).all(...params) as any[];
+    return rows.map(r => this.rowToTool(r));
+  }
+
+  getTool(userId: number, id: number): Tool | null {
+    const row = this.db.prepare(`SELECT * FROM tools WHERE id = ? AND user_id = ?`).get(id, userId) as any;
+    if (!row) return null;
+    return this.rowToTool(row);
+  }
+
+  addTool(userId: number, data: { name: string; category?: string; status?: string; notes?: string }): Tool {
+    const nowIso = new Date().toISOString();
+    const info = this.db.prepare(`
+      INSERT INTO tools (user_id, name, category, status, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      userId,
+      data.name.trim(),
+      (data.category || "Herramientas Manuales").trim(),
+      data.status || ToolStatus.AVAILABLE,
+      data.notes ? data.notes.trim() : null,
+      nowIso,
+      nowIso
+    );
+    return this.getTool(userId, Number(info.lastInsertRowid))!;
+  }
+
+  updateTool(userId: number, id: number, data: Partial<Tool>): Tool | null {
+    const existing = this.getTool(userId, id);
+    if (!existing) return null;
+
+    const updated = { ...existing, ...data };
+    const nowIso = new Date().toISOString();
+
+    this.db.prepare(`
+      UPDATE tools SET
+        name = ?,
+        category = ?,
+        status = ?,
+        notes = ?,
+        updated_at = ?
+      WHERE id = ? AND user_id = ?
+    `).run(
+      updated.name.trim(),
+      updated.category.trim(),
+      updated.status,
+      updated.notes ? updated.notes.trim() : null,
+      nowIso,
+      id,
+      userId
+    );
+
+    return this.getTool(userId, id);
+  }
+
+  setToolStatus(userId: number, id: number, status: string): Tool | null {
+    return this.updateTool(userId, id, { status });
+  }
+
+  deleteTool(userId: number, id: number): boolean {
+    const res = this.db.prepare("DELETE FROM tools WHERE id = ? AND user_id = ?").run(id, userId);
     return res.changes > 0;
   }
 

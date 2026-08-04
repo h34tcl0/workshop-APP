@@ -1,50 +1,69 @@
-<!-- MÓDULO DE GESTIÓN DE MATERIALES -->
+<!-- MÓDULO DE GESTIÓN DE MATERIALES E INVENTARIO DE TALLER -->
 <div id="materials-module-container" class="space-y-6">
-    <!-- HEADER DE MATERIALES Y MÉTRICAS -->
-    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-surface border border-hairline rounded-2xl p-5 shadow-panel">
+    <%
+      const allMats = locals.materials || [];
+      const allTools = locals.tools || [];
+      const toBuyCount = allMats.filter(m => m.status === 'to_buy').length;
+      const inStockCount = allMats.filter(m => m.status === 'in_stock').length;
+      const outOfStockCount = allMats.filter(m => m.status === 'out_of_stock').length;
+      const toolsAvailable = allTools.filter(t => t.status === 'available').length;
+      const toolsInUse = allTools.filter(t => t.status === 'in_use').length;
+      const toolsBroken = allTools.filter(t => t.status === 'broken').length;
+    %>
+
+    <!-- HEADER DE INVENTARIO Y BARRAS DE ACCIÓN -->
+    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-surface border border-hairline rounded-2xl p-5 shadow-panel">
         <div>
             <div class="flex items-center gap-2">
-                <span class="text-[11px] font-mono font-semibold tracking-widest text-brass uppercase">LOGÍSTICA E INSUMOS</span>
+                <span class="text-[11px] font-mono font-semibold tracking-widest text-brass uppercase">LOGÍSTICA E INVENTARIO OS</span>
             </div>
             <h2 class="font-display text-xl font-bold text-ink mt-1 flex items-center gap-2">
                 <svg class="w-5 h-5 text-brass"><use href="#i-box"/></svg>
-                Gestión de Materiales e Insumos
+                Inventario de Taller y Herramientas
             </h2>
-            <p class="text-xs text-ink2 mt-0.5">Control de inventario, lista de compras y checklist por proyecto</p>
+            <p class="text-xs text-ink2 mt-0.5">Control global de insumos, stock de materiales, herramental y contexto formateado para IA</p>
         </div>
 
-        <div class="flex items-center gap-2 shrink-0">
-            <button type="button" onclick="openImportMaterialsModal()" class="flex items-center gap-1.5 bg-surface2 hover:bg-hairline text-ink border border-hairline px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
-                <svg class="w-4 h-4 text-chalk"><use href="#i-import"/></svg> Importar JSON
+        <div class="flex items-center gap-2 flex-wrap shrink-0">
+            <button type="button" onclick="openAiExportModal()" class="flex items-center gap-1.5 bg-brass/10 hover:bg-brass/20 text-brass border border-brass/30 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm">
+                <svg class="w-4 h-4"><use href="#i-terminal"/></svg>
+                📋 Exportar Contexto para IA
+            </button>
+            <button type="button" onclick="toggleAddToolForm()" class="flex items-center gap-1.5 bg-surface2 hover:bg-hairline text-ink border border-hairline px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
+                <svg class="w-4 h-4 text-chalk"><use href="#i-plus"/></svg> Nueva Herramienta
             </button>
             <button type="button" onclick="toggleAddMaterialForm()" class="flex items-center gap-1.5 bg-brass hover:bg-brassdim text-canvas px-4 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm">
                 <svg class="w-4 h-4"><use href="#i-plus"/></svg> Nuevo Material
             </button>
+            <button type="button" onclick="openImportMaterialsModal()" title="Importar JSON" class="p-2 bg-surface2 hover:bg-hairline text-ink border border-hairline rounded-xl text-xs font-semibold transition-colors">
+                <svg class="w-4 h-4 text-chalk"><use href="#i-import"/></svg>
+            </button>
         </div>
     </div>
 
-    <!-- MÉTRICAS DE MATERIALES -->
-    <%
-      const allMats = locals.materials || [];
-      const toBuyCount = allMats.filter(m => m.status === 'to_buy').length;
-      const inStockCount = allMats.filter(m => m.status === 'in_stock').length;
-    %>
-    <div class="grid grid-cols-3 gap-3">
-        <div class="bg-surface border border-hairline rounded-xl p-3.5 sm:p-4 text-center">
-            <span class="block text-[10px] sm:text-xs font-semibold text-ink3 uppercase tracking-wider">Total Registrados</span>
-            <span class="block text-xl sm:text-2xl font-bold font-mono text-ink mt-0.5"><%= allMats.length %></span>
+    <!-- MÉTRICAS DE INVENTARIO -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div class="bg-surface border border-hairline rounded-xl p-3.5 text-center shadow-panel">
+            <span class="block text-[10px] font-semibold text-ink3 uppercase tracking-wider">Insumos Registrados</span>
+            <span class="block text-2xl font-bold font-mono text-ink mt-0.5"><%= allMats.length %></span>
         </div>
-        <div class="bg-surface border border-rust/30 bg-rust/5 rounded-xl p-3.5 sm:p-4 text-center">
-            <span class="block text-[10px] sm:text-xs font-semibold text-rust uppercase tracking-wider flex items-center justify-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-rust"></span> Por Comprar
+        <div class="bg-surface border border-moss/30 bg-moss/5 rounded-xl p-3.5 text-center shadow-panel">
+            <span class="block text-[10px] font-semibold text-moss uppercase tracking-wider flex items-center justify-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-moss"></span> En Taller / Stock
             </span>
-            <span class="block text-xl sm:text-2xl font-bold font-mono text-rust mt-0.5" id="mat-to-buy-count"><%= toBuyCount %></span>
+            <span class="block text-2xl font-bold font-mono text-moss mt-0.5" id="mat-in-stock-count"><%= inStockCount %></span>
         </div>
-        <div class="bg-surface border border-moss/30 bg-moss/5 rounded-xl p-3.5 sm:p-4 text-center">
-            <span class="block text-[10px] sm:text-xs font-semibold text-moss uppercase tracking-wider flex items-center justify-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-moss"></span> En Taller
+        <div class="bg-surface border border-rust/30 bg-rust/5 rounded-xl p-3.5 text-center shadow-panel">
+            <span class="block text-[10px] font-semibold text-rust uppercase tracking-wider flex items-center justify-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-rust"></span> Por Comprar / Agotados
             </span>
-            <span class="block text-xl sm:text-2xl font-bold font-mono text-moss mt-0.5" id="mat-in-stock-count"><%= inStockCount %></span>
+            <span class="block text-2xl font-bold font-mono text-rust mt-0.5" id="mat-to-buy-count"><%= toBuyCount + outOfStockCount %></span>
+        </div>
+        <div class="bg-surface border border-brass/30 bg-brass/5 rounded-xl p-3.5 text-center shadow-panel">
+            <span class="block text-[10px] font-semibold text-brass uppercase tracking-wider flex items-center justify-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-brass"></span> Herramientas (<%= toolsAvailable %> Avail)
+            </span>
+            <span class="block text-2xl font-bold font-mono text-brass mt-0.5"><%= allTools.length %></span>
         </div>
     </div>
 
@@ -52,7 +71,7 @@
     <div id="add-material-form-card" class="hidden bg-surface border border-brass/40 rounded-2xl p-5 shadow-panel space-y-4">
         <div class="flex items-center justify-between border-b border-hairline pb-3">
             <h3 class="font-display text-base font-semibold text-ink flex items-center gap-2">
-                <svg class="w-4 h-4 text-brass"><use href="#i-plus"/></svg> Agregar Material al Proyecto
+                <svg class="w-4 h-4 text-brass"><use href="#i-plus"/></svg> Agregar Insumo / Material al Taller
             </h3>
             <button type="button" onclick="toggleAddMaterialForm()" class="text-ink3 hover:text-ink">
                 <svg class="w-5 h-5"><use href="#i-close"/></svg>
@@ -62,7 +81,7 @@
         <form action="/materials/add" method="post" id="add-material-form" class="space-y-4">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Proyecto</label>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Proyecto Asociado</label>
                     <select name="project_id" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
                         <% (locals.all_projects || []).forEach(p => { %>
                             <option value="<%= p.id %>" <%= p.is_active ? 'selected' : '' %>><%= p.name %></option>
@@ -99,112 +118,436 @@
                     <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Categoría</label>
                     <select name="category" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
                         <option value="Madera">Madera</option>
+                        <option value="Placas/Tableros">Placas / Tableros</option>
                         <option value="Tornillería">Tornillería</option>
                         <option value="Adhesivos/Barniz">Adhesivos / Barniz</option>
                         <option value="Insumos">Insumos</option>
                         <option value="Herrajes">Herrajes</option>
-                        <option value="Placas/Tableros">Placas / Tableros</option>
                         <option value="General">General</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Estado Inicial</label>
                     <select name="status" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass font-semibold">
-                        <option value="to_buy" selected class="text-rust">Por Comprar</option>
-                        <option value="in_stock" class="text-moss">En Taller</option>
+                        <option value="in_stock" selected class="text-moss">🟢 En Taller</option>
+                        <option value="to_buy" class="text-rust">🔴 Por Comprar</option>
+                        <option value="out_of_stock" class="text-amber-500">⚠️ Agotado</option>
                     </select>
                 </div>
             </div>
 
             <div class="flex justify-end gap-2 pt-2">
                 <button type="button" onclick="toggleAddMaterialForm()" class="px-4 py-2 text-xs font-semibold text-ink2 hover:text-ink">Cancelar</button>
-                <button type="submit" class="bg-brass hover:bg-brassdim text-canvas px-5 py-2 rounded-xl text-xs font-bold transition-colors">Guardar Material</button>
+                <button type="submit" class="bg-brass hover:bg-brassdim text-canvas px-5 py-2 rounded-xl text-xs font-bold transition-colors">Guardar Insumo</button>
             </div>
         </form>
     </div>
 
-    <!-- BARRA DE FILTROS Y CONTROLES -->
-    <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-surface border border-hairline rounded-xl p-3">
-        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-            <button type="button" onclick="filterMaterials('all')" id="mat-filter-all" class="mat-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-brass text-canvas">
-                Todos (<%= allMats.length %>)
-            </button>
-            <button type="button" onclick="filterMaterials('to_buy')" id="mat-filter-to_buy" class="mat-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface2 text-ink2 hover:text-ink border border-hairline flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-rust"></span> Por Comprar (<%= toBuyCount %>)
-            </button>
-            <button type="button" onclick="filterMaterials('in_stock')" id="mat-filter-in_stock" class="mat-filter-btn px-3 py-1.5 rounded-lg text-xs font-semibold bg-surface2 text-ink2 hover:text-ink border border-hairline flex items-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-moss"></span> En Taller (<%= inStockCount %>)
+    <!-- FORMULARIO NUEVA HERRAMIENTA (OCULTO POR DEFECTO) -->
+    <div id="add-tool-form-card" class="hidden bg-surface border border-brass/40 rounded-2xl p-5 shadow-panel space-y-4">
+        <div class="flex items-center justify-between border-b border-hairline pb-3">
+            <h3 class="font-display text-base font-semibold text-ink flex items-center gap-2">
+                <svg class="w-4 h-4 text-brass"><use href="#i-plus"/></svg> Registrar Nueva Herramienta
+            </h3>
+            <button type="button" onclick="toggleAddToolForm()" class="text-ink3 hover:text-ink">
+                <svg class="w-5 h-5"><use href="#i-close"/></svg>
             </button>
         </div>
 
-        <div class="relative min-w-[200px]">
-            <svg class="w-4 h-4 absolute left-3 top-2.5 text-ink3"><use href="#i-search"/></svg>
-            <input type="text" id="material-search-input" onkeyup="searchMaterials()" placeholder="Buscar material o categoría..." class="w-full bg-surface2 border border-hairline text-ink rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-brass">
+        <form action="/tools/add" method="post" id="add-tool-form" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="sm:col-span-1">
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Nombre Herramienta</label>
+                    <input type="text" name="name" required placeholder="Ej. Sierra de Inmersión Makita SP6000, Formón 18mm" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Categoría</label>
+                    <select name="category" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
+                        <option value="Herramientas Eléctricas">Herramientas Eléctricas</option>
+                        <option value="Herramientas Manuales" selected>Herramientas Manuales</option>
+                        <option value="Medición y Trazado">Medición y Trazado</option>
+                        <option value="Prensas y Sujeción">Prensas y Sujeción</option>
+                        <option value="Accesorios y Plantillas">Accesorios y Plantillas</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Estado</label>
+                    <select name="status" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass font-semibold">
+                        <option value="available" selected class="text-moss">🟢 Disponible en Taller</option>
+                        <option value="in_use" class="text-amber-500">🟡 En Uso / Mantención</option>
+                        <option value="broken" class="text-rust">🔴 Dañada / Reemplazar</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Notas / Ubicación / Especificaciones</label>
+                <input type="text" name="notes" placeholder="Ej. Estante A, requiere afilado de hoja, disco 56T" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brass">
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+                <button type="button" onclick="toggleAddToolForm()" class="px-4 py-2 text-xs font-semibold text-ink2 hover:text-ink">Cancelar</button>
+                <button type="submit" class="bg-brass hover:bg-brassdim text-canvas px-5 py-2 rounded-xl text-xs font-bold transition-colors">Guardar Herramienta</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- PESTAÑAS SUB-MÓDULOS Y NAVEGACIÓN -->
+    <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-surface border border-hairline rounded-2xl p-3 shadow-panel">
+        <div class="flex items-center gap-1 bg-surface2/60 p-1 rounded-xl border border-hairline/60">
+            <button type="button" onclick="switchInventoryTab('materials')" id="inv-tab-materials" class="inv-tab-btn px-4 py-2 rounded-lg text-xs font-bold transition-all bg-brass text-canvas shadow-sm">
+                📦 Insumos y Materiales (<%= allMats.length %>)
+            </button>
+            <button type="button" onclick="switchInventoryTab('tools')" id="inv-tab-tools" class="inv-tab-btn px-4 py-2 rounded-lg text-xs font-bold transition-all text-ink2 hover:text-ink">
+                🛠️ Herramientas (<%= allTools.length %>)
+            </button>
+            <button type="button" onclick="switchInventoryTab('all')" id="inv-tab-all" class="inv-tab-btn px-4 py-2 rounded-lg text-xs font-bold transition-all text-ink2 hover:text-ink">
+                🌐 Vista Unificada
+            </button>
+        </div>
+
+        <div class="flex items-center gap-2 flex-wrap">
+            <!-- FILTRO DE CATEGORÍA DE TALLER -->
+            <select id="inventory-category-filter" onchange="filterInventory()" class="bg-surface2 border border-hairline text-ink rounded-xl px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-brass">
+                <option value="all">Todas las Categorías</option>
+                <optgroup label="Materiales e Insumos">
+                    <option value="madera">Madera</option>
+                    <option value="placas/tableros">Placas / Tableros</option>
+                    <option value="tornillería">Tornillería</option>
+                    <option value="adhesivos/barniz">Adhesivos / Barniz</option>
+                    <option value="herrajes">Herrajes</option>
+                    <option value="insumos">Insumos</option>
+                </optgroup>
+                <optgroup label="Herramientas">
+                    <option value="herramientas eléctricas">Herramientas Eléctricas</option>
+                    <option value="herramientas manuales">Herramientas Manuales</option>
+                    <option value="medición y trazado">Medición y Trazado</option>
+                    <option value="prensas y sujeción">Prensas y Sujeción</option>
+                    <option value="accesorios y plantillas">Accesorios y Plantillas</option>
+                </optgroup>
+            </select>
+
+            <!-- BÚSQUEDA RÁPIDA -->
+            <div class="relative min-w-[180px]">
+                <svg class="w-4 h-4 absolute left-3 top-2.5 text-ink3"><use href="#i-search"/></svg>
+                <input type="text" id="inventory-search-input" onkeyup="filterInventory()" placeholder="Buscar en inventario..." class="w-full bg-surface2 border border-hairline text-ink rounded-xl pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-brass">
+            </div>
         </div>
     </div>
 
-    <!-- LISTA CHECKLIST DE MATERIALES -->
-    <div class="space-y-3" id="materials-list-container">
+    <!-- VISTA 1: LISTA DE MATERIALES E INSUMOS -->
+    <div id="materials-subpanel" class="space-y-3">
         <% if (allMats.length === 0) { %>
             <div class="bg-surface border border-dashed border-hairline rounded-2xl p-8 text-center">
                 <div class="w-12 h-12 rounded-full bg-surface2 border border-hairline flex items-center justify-center text-ink3 mx-auto mb-3">
                     <svg class="w-6 h-6"><use href="#i-box"/></svg>
                 </div>
-                <h3 class="font-display text-base font-semibold text-ink">No hay materiales registrados</h3>
-                <p class="text-xs text-ink3 mt-1 max-w-md mx-auto">Agrega tus insumos manualmente o importa una lista en formato JSON para llevar el control de compras de tu taller.</p>
+                <h3 class="font-display text-base font-semibold text-ink">No hay insumos o materiales registrados</h3>
+                <p class="text-xs text-ink3 mt-1 max-w-md mx-auto">Agrega tus insumos manualmente o importa una lista en JSON para sincronizar tu taller.</p>
                 <div class="flex items-center justify-center gap-3 mt-4">
                     <button type="button" onclick="toggleAddMaterialForm()" class="bg-brass text-canvas px-4 py-2 rounded-xl text-xs font-bold">Agregar Material</button>
-                    <button type="button" onclick="openImportMaterialsModal()" class="bg-surface2 text-ink border border-hairline px-4 py-2 rounded-xl text-xs font-semibold">Importar JSON</button>
                 </div>
             </div>
         <% } else { %>
-            <% allMats.forEach(mat => { %>
-                <div class="material-item-card bg-surface hover:bg-surface2/60 border border-hairline rounded-xl p-4 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-panel"
-                     data-status="<%= mat.status %>"
-                     data-category="<%= mat.category.toLowerCase() %>"
-                     data-name="<%= mat.name.toLowerCase() %>">
-                    
-                    <div class="flex items-start sm:items-center gap-3 min-w-0">
-                        <!-- TOGGLE STATUS BUTTON -->
-                        <button type="button" onclick="toggleMaterialStatus(<%= mat.id %>)" 
-                                title="Cambiar estado"
-                                class="shrink-0 transition-transform active:scale-95 text-xs font-bold px-3 py-2 rounded-xl border flex items-center gap-1.5 shadow-sm min-h-[44px] min-w-[130px] justify-center <%= mat.status === 'to_buy' ? 'bg-rust/10 border-rust/40 text-rust hover:bg-rust/20' : 'bg-moss/10 border-moss/40 text-moss hover:bg-moss/20' %>">
-                            <% if (mat.status === 'to_buy') { %>
-                                <span class="w-2.5 h-2.5 rounded-full bg-rust animate-pulse"></span>
-                                Por Comprar
-                            <% } else { %>
-                                <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg>
-                                En Taller
-                            <% } %>
-                        </button>
-
-                        <div class="min-w-0">
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <h4 class="font-semibold text-sm text-ink <%= mat.status === 'in_stock' ? 'line-through text-ink2' : '' %>">
-                                    <%= mat.name %>
-                                </h4>
-                                <span class="text-[10px] font-mono bg-surface2 border border-hairline text-chalk px-2 py-0.5 rounded-md font-semibold">
-                                    <%= mat.quantity %> <%= mat.unit %>
-                                </span>
+            <div class="grid grid-cols-1 gap-2.5">
+                <% allMats.forEach(mat => { %>
+                    <div class="inventory-card material-card bg-surface hover:bg-surface2/60 border border-hairline rounded-xl p-3.5 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-panel"
+                         data-type="material"
+                         data-status="<%= mat.status %>"
+                         data-category="<%= (mat.category || '').toLowerCase() %>"
+                         data-name="<%= (mat.name || '').toLowerCase() %>"
+                         data-project="<%= (mat.project_name || '').toLowerCase() %>">
+                        
+                        <div class="flex items-start sm:items-center gap-3 min-w-0">
+                            <!-- ESTADO DE MATERIAL CON MENU RÁPIDO -->
+                            <div class="relative shrink-0">
+                                <select onchange="updateMaterialStatusDirect(<%= mat.id %>, this.value)" 
+                                        class="text-xs font-bold px-3 py-1.5 rounded-xl border appearance-none pr-7 cursor-pointer shadow-sm focus:outline-none <%= mat.status === 'in_stock' ? 'bg-moss/10 border-moss/40 text-moss' : mat.status === 'out_of_stock' ? 'bg-amber-500/10 border-amber-500/40 text-amber-500' : 'bg-rust/10 border-rust/40 text-rust' %>">
+                                    <option value="in_stock" <%= mat.status === 'in_stock' ? 'selected' : '' %>>🟢 En Taller</option>
+                                    <option value="to_buy" <%= mat.status === 'to_buy' ? 'selected' : '' %>>🔴 Por Comprar</option>
+                                    <option value="out_of_stock" <%= mat.status === 'out_of_stock' ? 'selected' : '' %>>⚠️ Agotado</option>
+                                </select>
                             </div>
-                            <div class="flex items-center gap-2 mt-1 text-[11px] text-ink3">
-                                <span class="font-medium bg-surface2/80 px-2 py-0.5 rounded border border-hairline/60"><%= mat.category %></span>
-                                <% if (mat.project_name) { %>
-                                    <span>• Proyecto: <strong class="text-ink2"><%= mat.project_name %></strong></span>
-                                <% } %>
+
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <h4 class="font-semibold text-sm text-ink <%= mat.status === 'in_stock' ? '' : 'text-ink' %>">
+                                        <%= mat.name %>
+                                    </h4>
+                                    <span class="text-[11px] font-mono bg-surface2 border border-hairline text-chalk px-2 py-0.5 rounded-md font-semibold">
+                                        <%= mat.quantity %> <%= mat.unit %>
+                                    </span>
+                                </div>
+                                <div class="flex items-center gap-2 mt-1 text-[11px] text-ink3 flex-wrap">
+                                    <span class="font-medium bg-surface2/80 px-2 py-0.5 rounded border border-hairline/60 text-ink2"><%= mat.category %></span>
+                                    <span>• Proyecto: <strong class="text-ink2"><%= mat.project_name || 'General' %></strong></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ACCIONES MATERIAL -->
+                        <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
+                            <button type="button" onclick='openEditMaterialModal(<%= JSON.stringify(mat) %>)' title="Editar material" class="p-2 text-ink3 hover:text-brass rounded-lg hover:bg-surface2 transition-colors">
+                                <svg class="w-4 h-4"><use href="#i-edit"/></svg>
+                            </button>
+                            <button type="button" onclick="deleteMaterial(<%= mat.id %>)" title="Eliminar material" class="p-2 text-ink3 hover:text-rust rounded-lg hover:bg-surface2 transition-colors">
+                                <svg class="w-4 h-4"><use href="#i-close"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                <% }); %>
+            </div>
+        <% } %>
+    </div>
+
+    <!-- VISTA 2: LISTA DE HERRAMIENTAS -->
+    <div id="tools-subpanel" class="space-y-3 hidden">
+        <% if (allTools.length === 0) { %>
+            <div class="bg-surface border border-dashed border-hairline rounded-2xl p-8 text-center">
+                <div class="w-12 h-12 rounded-full bg-surface2 border border-hairline flex items-center justify-center text-brass mx-auto mb-3">
+                    <svg class="w-6 h-6"><use href="#i-terminal"/></svg>
+                </div>
+                <h3 class="font-display text-base font-semibold text-ink">No hay herramientas registradas</h3>
+                <p class="text-xs text-ink3 mt-1 max-w-md mx-auto">Registra tus sierras, formones, prensas y herramientas para un control seguro de taller.</p>
+                <div class="flex items-center justify-center gap-3 mt-4">
+                    <button type="button" onclick="toggleAddToolForm()" class="bg-brass text-canvas px-4 py-2 rounded-xl text-xs font-bold">Registrar Herramienta</button>
+                </div>
+            </div>
+        <% } else { %>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <% allTools.forEach(tool => { %>
+                    <div class="inventory-card tool-card bg-surface hover:bg-surface2/60 border border-hairline rounded-xl p-4 transition-all flex flex-col justify-between gap-3 shadow-panel"
+                         data-type="tool"
+                         data-status="<%= tool.status %>"
+                         data-category="<%= (tool.category || '').toLowerCase() %>"
+                         data-name="<%= (tool.name || '').toLowerCase() %>"
+                         data-notes="<%= (tool.notes || '').toLowerCase() %>">
+                        
+                        <div>
+                            <div class="flex items-start justify-between gap-2">
+                                <div>
+                                    <span class="text-[10px] font-semibold uppercase tracking-wider text-brass bg-brass/10 px-2 py-0.5 rounded border border-brass/20"><%= tool.category %></span>
+                                    <h4 class="font-semibold text-sm text-ink mt-1.5"><%= tool.name %></h4>
+                                </div>
+
+                                <!-- SELECTOR ESTADO HERRAMIENTA -->
+                                <select onchange="updateToolStatusDirect(<%= tool.id %>, this.value)"
+                                        class="text-[11px] font-bold px-2.5 py-1 rounded-lg border appearance-none pr-6 cursor-pointer focus:outline-none <%= tool.status === 'available' ? 'bg-moss/10 border-moss/40 text-moss' : tool.status === 'in_use' ? 'bg-amber-500/10 border-amber-500/40 text-amber-500' : 'bg-rust/10 border-rust/40 text-rust' %>">
+                                    <option value="available" <%= tool.status === 'available' ? 'selected' : '' %>>🟢 Disponible</option>
+                                    <option value="in_use" <%= tool.status === 'in_use' ? 'selected' : '' %>>🟡 En Uso</option>
+                                    <option value="broken" <%= tool.status === 'broken' ? 'selected' : '' %>>🔴 Dañada</option>
+                                </select>
+                            </div>
+
+                            <% if (tool.notes) { %>
+                                <p class="text-xs text-ink2 mt-2 bg-surface2/80 p-2 rounded-lg border border-hairline/60 flex items-center gap-1.5">
+                                    <span class="text-ink3">📌</span> <%= tool.notes %>
+                                </p>
+                            <% } %>
+                        </div>
+
+                        <div class="flex items-center justify-between border-t border-hairline/60 pt-2.5 text-[11px] text-ink3">
+                            <span>Registrado: <%= tool.created_at ? tool.created_at.split('T')[0] : 'Taller' %></span>
+                            <div class="flex items-center gap-1">
+                                <button type="button" onclick='openEditToolModal(<%= JSON.stringify(tool) %>)' title="Editar herramienta" class="p-1.5 text-ink3 hover:text-brass rounded-lg hover:bg-surface2 transition-colors">
+                                    <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg>
+                                </button>
+                                <button type="button" onclick="deleteTool(<%= tool.id %>)" title="Eliminar herramienta" class="p-1.5 text-ink3 hover:text-rust rounded-lg hover:bg-surface2 transition-colors">
+                                    <svg class="w-3.5 h-3.5"><use href="#i-close"/></svg>
+                                </button>
                             </div>
                         </div>
                     </div>
-
-                    <!-- ACCIONES DE MATERIAL -->
-                    <div class="flex items-center gap-2 self-end sm:self-center shrink-0">
-                        <button type="button" onclick="deleteMaterial(<%= mat.id %>)" title="Eliminar material" class="p-2 text-ink3 hover:text-rust rounded-lg hover:bg-surface2 transition-colors">
-                            <svg class="w-4 h-4"><use href="#i-close"/></svg>
-                        </button>
-                    </div>
-                </div>
-            <% }); %>
+                <% }); %>
+            </div>
         <% } %>
+    </div>
+</div>
+
+<!-- MODAL: EDITAR MATERIAL -->
+<div id="edit-material-modal" class="fixed inset-0 bg-canvas/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-surface border border-hairline rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between border-b border-hairline pb-3">
+            <h3 class="font-display text-lg font-bold text-ink flex items-center gap-2">
+                <svg class="w-5 h-5 text-brass"><use href="#i-edit"/></svg>
+                Editar Insumo / Material
+            </h3>
+            <button type="button" onclick="closeEditMaterialModal()" class="text-ink3 hover:text-ink">
+                <svg class="w-5 h-5"><use href="#i-close"/></svg>
+            </button>
+        </div>
+
+        <form id="edit-material-form" onsubmit="submitEditMaterialForm(event)" class="space-y-4">
+            <input type="hidden" id="edit-mat-id">
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Nombre del Material</label>
+                <input type="text" id="edit-mat-name" required class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Cantidad</label>
+                    <input type="number" step="0.1" min="0.1" id="edit-mat-quantity" required class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass font-mono">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Unidad</label>
+                    <select id="edit-mat-unit" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
+                        <option value="unidades">unidades</option>
+                        <option value="piezas">piezas</option>
+                        <option value="mm">mm</option>
+                        <option value="mts">mts</option>
+                        <option value="m2">m²</option>
+                        <option value="kg">kg</option>
+                        <option value="litros">litros</option>
+                        <option value="kits">kits</option>
+                        <option value="pares">pares</option>
+                        <option value="cajas">cajas</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Categoría</label>
+                    <select id="edit-mat-category" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
+                        <option value="Madera">Madera</option>
+                        <option value="Placas/Tableros">Placas / Tableros</option>
+                        <option value="Tornillería">Tornillería</option>
+                        <option value="Adhesivos/Barniz">Adhesivos / Barniz</option>
+                        <option value="Insumos">Insumos</option>
+                        <option value="Herrajes">Herrajes</option>
+                        <option value="General">General</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Estado</label>
+                    <select id="edit-mat-status" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass font-semibold">
+                        <option value="in_stock">🟢 En Taller</option>
+                        <option value="to_buy">🔴 Por Comprar</option>
+                        <option value="out_of_stock">⚠️ Agotado</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Proyecto Asociado</label>
+                <select id="edit-mat-project" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
+                    <% (locals.all_projects || []).forEach(p => { %>
+                        <option value="<%= p.id %>"><%= p.name %></option>
+                    <% }); %>
+                </select>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-hairline">
+                <button type="button" onclick="closeEditMaterialModal()" class="px-4 py-2 text-xs font-semibold text-ink2">Cancelar</button>
+                <button type="submit" class="bg-brass hover:bg-brassdim text-canvas px-5 py-2 rounded-xl text-xs font-bold transition-colors">Guardar Cambios</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL: EDITAR HERRAMIENTA -->
+<div id="edit-tool-modal" class="fixed inset-0 bg-canvas/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-surface border border-hairline rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between border-b border-hairline pb-3">
+            <h3 class="font-display text-lg font-bold text-ink flex items-center gap-2">
+                <svg class="w-5 h-5 text-brass"><use href="#i-edit"/></svg>
+                Editar Herramienta
+            </h3>
+            <button type="button" onclick="closeEditToolModal()" class="text-ink3 hover:text-ink">
+                <svg class="w-5 h-5"><use href="#i-close"/></svg>
+            </button>
+        </div>
+
+        <form id="edit-tool-form" onsubmit="submitEditToolForm(event)" class="space-y-4">
+            <input type="hidden" id="edit-tool-id">
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Nombre Herramienta</label>
+                <input type="text" id="edit-tool-name" required class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Categoría</label>
+                    <select id="edit-tool-category" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass">
+                        <option value="Herramientas Eléctricas">Herramientas Eléctricas</option>
+                        <option value="Herramientas Manuales">Herramientas Manuales</option>
+                        <option value="Medición y Trazado">Medición y Trazado</option>
+                        <option value="Prensas y Sujeción">Prensas y Sujeción</option>
+                        <option value="Accesorios y Plantillas">Accesorios y Plantillas</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Estado</label>
+                    <select id="edit-tool-status" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass font-semibold">
+                        <option value="available">🟢 Disponible</option>
+                        <option value="in_use">🟡 En Uso / Mantención</option>
+                        <option value="broken">🔴 Dañada / Reemplazar</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Notas / Especificaciones</label>
+                <input type="text" id="edit-tool-notes" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brass">
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-hairline">
+                <button type="button" onclick="closeEditToolModal()" class="px-4 py-2 text-xs font-semibold text-ink2">Cancelar</button>
+                <button type="submit" class="bg-brass hover:bg-brassdim text-canvas px-5 py-2 rounded-xl text-xs font-bold transition-colors">Guardar Cambios</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- MODAL: EXPORTAR CONTEXTO PARA PROMPTS DE IA -->
+<div id="ai-export-modal" class="fixed inset-0 bg-canvas/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-surface border border-hairline rounded-2xl w-full max-w-2xl p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between border-b border-hairline pb-3">
+            <div>
+                <h3 class="font-display text-lg font-bold text-ink flex items-center gap-2">
+                    <svg class="w-5 h-5 text-brass"><use href="#i-terminal"/></svg>
+                    Exportar Contexto para IA (Prompt Markdown)
+                </h3>
+                <p class="text-xs text-ink2 mt-0.5">Formato optimizado para copiar a ChatGPT, Gemini o Claude</p>
+            </div>
+            <button type="button" onclick="closeAiExportModal()" class="text-ink3 hover:text-ink">
+                <svg class="w-5 h-5"><use href="#i-close"/></svg>
+            </button>
+        </div>
+
+        <div class="space-y-3">
+            <div class="flex items-center gap-4 text-xs font-semibold text-ink2 bg-surface2/80 p-3 rounded-xl border border-hairline/60 flex-wrap">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="ai-opt-tools" checked onchange="generateAiExportText()" class="accent-brass rounded">
+                    <span>Herramientas Taller</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="ai-opt-stock" checked onchange="generateAiExportText()" class="accent-brass rounded">
+                    <span>Materiales en Stock</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" id="ai-opt-tobuy" checked onchange="generateAiExportText()" class="accent-brass rounded">
+                    <span>Lista Por Comprar / Agotados</span>
+                </label>
+            </div>
+
+            <div>
+                <textarea id="ai-export-textarea" readonly rows="12" class="w-full bg-surface2 border border-hairline font-mono text-xs text-ink rounded-xl p-3.5 focus:outline-none focus:border-brass leading-relaxed select-all"></textarea>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-2 border-t border-hairline">
+            <span id="ai-copy-toast" class="text-xs font-bold text-moss hidden flex items-center gap-1.5">
+                <svg class="w-4 h-4"><use href="#i-check"/></svg> ¡Copiado al portapapeles exitosamente!
+            </span>
+            <div class="flex items-center gap-2 ml-auto">
+                <button type="button" onclick="closeAiExportModal()" class="px-4 py-2 text-xs font-semibold text-ink2">Cerrar</button>
+                <button type="button" onclick="copyAiExportToClipboard()" class="bg-brass hover:bg-brassdim text-canvas px-5 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm">
+                    <svg class="w-4 h-4"><use href="#i-copy"/></svg> Copiar Contexto
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -253,8 +596,47 @@
 </div>
 
 <script>
+// RAW DATA FOR CLIENT-SIDE FILTERING & AI EXPORT
+const rawMaterialsData = <%- JSON.stringify(locals.materials || []) %>;
+const rawToolsData = <%- JSON.stringify(locals.tools || []) %>;
+
+// TABS SWITCHING
+function switchInventoryTab(tab) {
+    const matPanel = document.getElementById('materials-subpanel');
+    const toolPanel = document.getElementById('tools-subpanel');
+    const buttons = document.querySelectorAll('.inv-tab-btn');
+
+    buttons.forEach(b => {
+        b.classList.remove('bg-brass', 'text-canvas', 'shadow-sm');
+        b.classList.add('text-ink2');
+    });
+
+    const activeBtn = document.getElementById(`inv-tab-${tab}`);
+    if (activeBtn) {
+        activeBtn.classList.remove('text-ink2');
+        activeBtn.classList.add('bg-brass', 'text-canvas', 'shadow-sm');
+    }
+
+    if (tab === 'materials') {
+        if (matPanel) matPanel.classList.remove('hidden');
+        if (toolPanel) toolPanel.classList.add('hidden');
+    } else if (tab === 'tools') {
+        if (matPanel) matPanel.classList.add('hidden');
+        if (toolPanel) toolPanel.classList.remove('hidden');
+    } else {
+        if (matPanel) matPanel.classList.remove('hidden');
+        if (toolPanel) toolPanel.classList.remove('hidden');
+    }
+}
+
+// TOGGLE FORM CARDS
 function toggleAddMaterialForm() {
     const card = document.getElementById('add-material-form-card');
+    if (card) card.classList.toggle('hidden');
+}
+
+function toggleAddToolForm() {
+    const card = document.getElementById('add-tool-form-card');
     if (card) card.classList.toggle('hidden');
 }
 
@@ -273,24 +655,37 @@ function loadExampleMaterialsJson() {
     if (textarea) {
         textarea.value = JSON.stringify([
             { "name": "Plancha Terciado Estructural 18mm", "quantity": 3, "unit": "piezas", "category": "Placas/Tableros", "status": "to_buy" },
-            { "name": "Cola Fría Titebond II 500ml", "quantity": 1, "unit": "botella", category: "Adhesivos/Barniz", "status": "in_stock" },
+            { "name": "Cola Fría Titebond II 500ml", "quantity": 1, "unit": "botella", "category": "Adhesivos/Barniz", "status": "in_stock" },
             { "name": "Tornillos Drywall 1 5/8", "quantity": 200, "unit": "unidades", "category": "Tornillería", "status": "to_buy" },
             { "name": "Lijas Grano 80 / 120 / 220", "quantity": 6, "unit": "piezas", "category": "Insumos", "status": "to_buy" }
         ], null, 2);
     }
 }
 
-async function toggleMaterialStatus(id) {
+// DIRECT STATUS UPDATES
+async function updateMaterialStatusDirect(id, status) {
     try {
-        const res = await fetch(`/materials/${id}/toggle`, {
+        const res = await fetch(`/materials/${id}/set-status`, {
             method: 'POST',
-            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            body: JSON.stringify({ status })
         });
-        if (res.ok) {
-            window.location.reload();
-        }
+        if (res.ok) window.location.reload();
     } catch (e) {
-        console.error('Error toggling status:', e);
+        console.error('Error setting material status:', e);
+    }
+}
+
+async function updateToolStatusDirect(id, status) {
+    try {
+        const res = await fetch(`/tools/${id}/set-status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+        if (res.ok) window.location.reload();
+    } catch (e) {
+        console.error('Error setting tool status:', e);
     }
 }
 
@@ -301,49 +696,196 @@ async function deleteMaterial(id) {
             method: 'POST',
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
         });
-        if (res.ok) {
-            window.location.reload();
-        }
+        if (res.ok) window.location.reload();
     } catch (e) {
         console.error('Error deleting material:', e);
     }
 }
 
-function filterMaterials(status) {
-    const items = document.querySelectorAll('.material-item-card');
-    document.querySelectorAll('.mat-filter-btn').forEach(btn => {
-        btn.classList.remove('bg-brass', 'text-canvas');
-        btn.classList.add('bg-surface2', 'text-ink2');
-    });
-
-    const activeBtn = document.getElementById(`mat-filter-${status}`);
-    if (activeBtn) {
-        activeBtn.classList.remove('bg-surface2', 'text-ink2');
-        activeBtn.classList.add('bg-brass', 'text-canvas');
+async function deleteTool(id) {
+    if (!confirm('¿Seguro que deseas eliminar esta herramienta del registro?')) return;
+    try {
+        const res = await fetch(`/tools/${id}/delete`, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        });
+        if (res.ok) window.location.reload();
+    } catch (e) {
+        console.error('Error deleting tool:', e);
     }
+}
 
-    items.forEach(item => {
-        const itemStatus = item.getAttribute('data-status');
-        if (status === 'all' || itemStatus === status) {
-            item.style.display = 'flex';
+// EDIT MATERIAL MODAL
+function openEditMaterialModal(mat) {
+    document.getElementById('edit-mat-id').value = mat.id;
+    document.getElementById('edit-mat-name').value = mat.name;
+    document.getElementById('edit-mat-quantity').value = mat.quantity;
+    document.getElementById('edit-mat-unit').value = mat.unit || 'unidades';
+    document.getElementById('edit-mat-category').value = mat.category || 'General';
+    document.getElementById('edit-mat-status').value = mat.status || 'to_buy';
+    if (mat.project_id) {
+        document.getElementById('edit-mat-project').value = mat.project_id;
+    }
+    document.getElementById('edit-material-modal').classList.remove('hidden');
+}
+
+function closeEditMaterialModal() {
+    document.getElementById('edit-material-modal').classList.add('hidden');
+}
+
+async function submitEditMaterialForm(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-mat-id').value;
+    const data = {
+        name: document.getElementById('edit-mat-name').value,
+        quantity: document.getElementById('edit-mat-quantity').value,
+        unit: document.getElementById('edit-mat-unit').value,
+        category: document.getElementById('edit-mat-category').value,
+        status: document.getElementById('edit-mat-status').value,
+        project_id: document.getElementById('edit-mat-project').value
+    };
+
+    try {
+        const res = await fetch(`/materials/${id}/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) window.location.reload();
+    } catch (err) {
+        console.error('Error editing material:', err);
+    }
+}
+
+// EDIT TOOL MODAL
+function openEditToolModal(tool) {
+    document.getElementById('edit-tool-id').value = tool.id;
+    document.getElementById('edit-tool-name').value = tool.name;
+    document.getElementById('edit-tool-category').value = tool.category || 'Herramientas Manuales';
+    document.getElementById('edit-tool-status').value = tool.status || 'available';
+    document.getElementById('edit-tool-notes').value = tool.notes || '';
+    document.getElementById('edit-tool-modal').classList.remove('hidden');
+}
+
+function closeEditToolModal() {
+    document.getElementById('edit-tool-modal').classList.add('hidden');
+}
+
+async function submitEditToolForm(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-tool-id').value;
+    const data = {
+        name: document.getElementById('edit-tool-name').value,
+        category: document.getElementById('edit-tool-category').value,
+        status: document.getElementById('edit-tool-status').value,
+        notes: document.getElementById('edit-tool-notes').value
+    };
+
+    try {
+        const res = await fetch(`/tools/${id}/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) window.location.reload();
+    } catch (err) {
+        console.error('Error editing tool:', err);
+    }
+}
+
+// FILTERING
+function filterInventory() {
+    const cat = document.getElementById('inventory-category-filter').value.toLowerCase();
+    const query = document.getElementById('inventory-search-input').value.toLowerCase().trim();
+    const cards = document.querySelectorAll('.inventory-card');
+
+    cards.forEach(card => {
+        const cardCat = card.getAttribute('data-category') || '';
+        const cardName = card.getAttribute('data-name') || '';
+        const cardNotes = card.getAttribute('data-notes') || '';
+        const cardProj = card.getAttribute('data-project') || '';
+
+        const catMatches = cat === 'all' || cardCat.includes(cat);
+        const searchMatches = !query || cardName.includes(query) || cardCat.includes(query) || cardNotes.includes(query) || cardProj.includes(query);
+
+        if (catMatches && searchMatches) {
+            card.style.display = 'flex';
         } else {
-            item.style.display = 'none';
+            card.style.display = 'none';
         }
     });
 }
 
-function searchMaterials() {
-    const query = document.getElementById('material-search-input').value.toLowerCase().trim();
-    const items = document.querySelectorAll('.material-item-card');
+// AI EXPORT MODAL
+function openAiExportModal() {
+    generateAiExportText();
+    document.getElementById('ai-export-modal').classList.remove('hidden');
+}
 
-    items.forEach(item => {
-        const name = item.getAttribute('data-name') || '';
-        const cat = item.getAttribute('data-category') || '';
-        if (name.includes(query) || cat.includes(query)) {
-            item.style.display = 'flex';
+function closeAiExportModal() {
+    document.getElementById('ai-export-modal').classList.add('hidden');
+}
+
+function generateAiExportText() {
+    const incTools = document.getElementById('ai-opt-tools')?.checked ?? true;
+    const incStock = document.getElementById('ai-opt-stock')?.checked ?? true;
+    const incToBuy = document.getElementById('ai-opt-tobuy')?.checked ?? true;
+
+    let txt = `### INVENTARIO TALLER - CONTEXTO PARA PROMPTS IA (WORKSHOP OS)\n\n`;
+
+    if (incTools) {
+        txt += `**HERRAMIENTAS EN TALLER (${rawToolsData.length} total):**\n`;
+        if (rawToolsData.length > 0) {
+            rawToolsData.forEach(t => {
+                const st = t.status === 'available' ? '🟢 Disponible' : t.status === 'in_use' ? '🟡 En Uso' : '🔴 Dañada';
+                txt += `• ${t.name} [${t.category}] - ${st}${t.notes ? ` (Notas: ${t.notes})` : ''}\n`;
+            });
         } else {
-            item.style.display = 'none';
+            txt += `• Sin herramientas registradas.\n`;
         }
-    });
+        txt += `\n`;
+    }
+
+    if (incStock) {
+        const stockMats = rawMaterialsData.filter(m => m.status === 'in_stock');
+        txt += `**MATERIALES Y INSUMOS EN STOCK (EN TALLER - ${stockMats.length}):**\n`;
+        if (stockMats.length > 0) {
+            stockMats.forEach(m => {
+                txt += `• ${m.name}: ${m.quantity} ${m.unit} [${m.category}] - 🟢 En Taller (Proyecto: ${m.project_name || 'General'})\n`;
+            });
+        } else {
+            txt += `• Sin materiales en stock.\n`;
+        }
+        txt += `\n`;
+    }
+
+    if (incToBuy) {
+        const toBuyMats = rawMaterialsData.filter(m => m.status === 'to_buy' || m.status === 'out_of_stock');
+        txt += `**MATERIALES POR COMPRAR / AGOTADOS (${toBuyMats.length}):**\n`;
+        if (toBuyMats.length > 0) {
+            toBuyMats.forEach(m => {
+                const tag = m.status === 'out_of_stock' ? '⚠️ Agotado' : '🔴 Por Comprar';
+                txt += `• ${m.name}: ${m.quantity} ${m.unit} [${m.category}] - ${tag}\n`;
+            });
+        } else {
+            txt += `• Sin insumos pendientes por comprar.\n`;
+        }
+    }
+
+    const textarea = document.getElementById('ai-export-textarea');
+    if (textarea) textarea.value = txt;
+}
+
+function copyAiExportToClipboard() {
+    const textarea = document.getElementById('ai-export-textarea');
+    if (!textarea) return;
+    textarea.select();
+    navigator.clipboard.writeText(textarea.value).then(() => {
+        const toast = document.getElementById('ai-copy-toast');
+        if (toast) {
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3000);
+        }
+    }).catch(e => console.error('Error copying:', e));
 }
 </script>

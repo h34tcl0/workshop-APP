@@ -245,7 +245,8 @@ export interface ProjectTemplate {
 
 export enum MaterialStatus {
   TO_BUY = "to_buy",
-  IN_STOCK = "in_stock"
+  IN_STOCK = "in_stock",
+  OUT_OF_STOCK = "out_of_stock"
 }
 
 export interface Material {
@@ -260,6 +261,23 @@ export interface Material {
   created_at: string;
   updated_at: string;
   project_name?: string;
+}
+
+export enum ToolStatus {
+  AVAILABLE = "available",
+  IN_USE = "in_use",
+  BROKEN = "broken"
+}
+
+export interface Tool {
+  id: number;
+  user_id: number;
+  name: string;
+  category: string;
+  status: ToolStatus | string;
+  notes?: string | null;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface CalculatorOffset {
