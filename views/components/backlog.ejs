@@ -230,7 +230,10 @@
                             <svg id="proj-chevron-<%= p.id %>" class="w-4 h-4 text-ink3 transition-transform duration-200 shrink-0"><use href="#i-chevron-down-sm"/></svg>
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-2 flex-wrap">
-                                    <h5 class="text-xs font-bold text-ink truncate"><%= p.name %></h5>
+                                    <h5 id="proj-name-display-<%= p.id %>" class="text-xs font-bold text-ink truncate"><%= p.name %></h5>
+                                    <button type="button" onclick="event.stopPropagation(); toggleProjectNameEdit('<%= p.id %>')" title="Editar nombre del proyecto" class="text-ink3 hover:text-brass shrink-0 p-0.5">
+                                        <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg>
+                                    </button>
                                     <span class="text-[10px] font-mono px-2 py-0.5 rounded-full border <%= isProjActive ? 'bg-moss/10 text-moss border-moss/30 font-semibold' : 'bg-surface2 text-ink3 border-hairline' %> shrink-0">
                                         <%= isProjActive ? '⚡ Agendable' : 'Pausado' %>
                                     </span>
@@ -238,6 +241,15 @@
                                         <%= projTasks.length %> tareas
                                     </span>
                                 </div>
+                                <form id="proj-name-edit-<%= p.id %>" action="/projects/<%= p.id %>/update" method="post" class="hidden items-center gap-1.5 mt-1" onclick="event.stopPropagation()">
+                                    <input type="text" name="name" value="<%= p.name %>" required class="flex-1 min-w-0 bg-surface2 border border-hairline text-ink text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-brass">
+                                    <button type="submit" title="Guardar" class="text-moss hover:text-moss/80 shrink-0 p-1">
+                                        <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg>
+                                    </button>
+                                    <button type="button" onclick="event.stopPropagation(); toggleProjectNameEdit('<%= p.id %>')" title="Cancelar" class="text-ink3 hover:text-ink shrink-0 p-1">
+                                        <svg class="w-3.5 h-3.5"><use href="#i-close"/></svg>
+                                    </button>
+                                </form>
                                 <% if (p.description) { %>
                                 <p class="text-[11px] text-ink3 truncate mt-0.5"><%= p.description %></p>
                                 <% } %>
@@ -380,3 +392,23 @@
         </div>
     </div>
 </div>
+
+<script>
+function toggleProjectNameEdit(id) {
+    const display = document.getElementById('proj-name-display-' + id);
+    const editForm = document.getElementById('proj-name-edit-' + id);
+    if (!display || !editForm) return;
+    const isHidden = editForm.classList.contains('hidden');
+    if (isHidden) {
+        display.classList.add('hidden');
+        editForm.classList.remove('hidden');
+        editForm.classList.add('flex');
+        const input = editForm.querySelector('input[name="name"]');
+        if (input) { input.focus(); input.select(); }
+    } else {
+        display.classList.remove('hidden');
+        editForm.classList.add('hidden');
+        editForm.classList.remove('flex');
+    }
+}
+</script>

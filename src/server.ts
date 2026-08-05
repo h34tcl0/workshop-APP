@@ -372,6 +372,30 @@ app.post('/projects/:id/toggle', (req: AuthenticatedRequest, res) => {
   res.redirect(303, '/');
 });
 
+app.post('/projects/:id/update', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const id = parseInt(req.params.id, 10);
+  const { name, description } = req.body;
+
+  if (name !== undefined && !String(name).trim()) {
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(400).json({ success: false, error: 'El nombre del proyecto no puede estar vacío' });
+    }
+    return res.redirect(303, '/');
+  }
+
+  const updated = store.updateProject(userId, id, {
+    name: name !== undefined ? String(name) : undefined,
+    description: description !== undefined ? String(description) : undefined
+  });
+
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    if (!updated) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+    return res.json({ success: true, project: updated });
+  }
+  res.redirect(303, '/');
+});
+
 // Helper for parsing float numbers flexible with commas and strings
 function parseFlexibleFloat(val: any): number | undefined {
   if (val === null || val === undefined || val === '') return undefined;

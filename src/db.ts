@@ -984,6 +984,19 @@ export class SQLiteStore {
     return { id: Number(proj.id), name: String(proj.name), description: proj.description || "", is_active: Boolean(newActive) };
   }
 
+  updateProject(userId: number, projectId: number, data: { name?: string; description?: string }): Project | null {
+    const proj = this.db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").get(projectId, userId) as any;
+    if (!proj) return null;
+
+    const newName = data.name !== undefined && data.name.trim() ? data.name.trim() : String(proj.name);
+    const newDescription = data.description !== undefined ? data.description : (proj.description || "");
+
+    this.db.prepare("UPDATE projects SET name = ?, description = ? WHERE id = ? AND user_id = ?")
+      .run(newName, newDescription, projectId, userId);
+
+    return { id: Number(proj.id), name: newName, description: newDescription, is_active: Boolean(proj.is_active) };
+  }
+
   // --- TASKS ---
   private rowToTask(row: any): Task {
     const cat = (row.category || TaskCategory.CARPENTRY) as TaskCategory;
