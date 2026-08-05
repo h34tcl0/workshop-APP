@@ -27,75 +27,35 @@ export async function syncMultiDayCalendar(
     const evalRes = item.evaluation;
 
     const dailyLog = store.getDailyLogByDate(userId, evalDate);
-    if (!dailyLog) {
-      // No debería pasar (runMorningEvaluation ya crea/actualiza el log antes de llamar acá),
-      // pero si pasa, no hay ID de fila para reservar el lock: saltamos este día con seguridad.
-      continue;
-    }
+    const existingEventId = dailyLog?.google_event_id || null;
 
-    // Reserva atómica: si otra corrida (Tier 1 solapado) ya está sincronizando este mismo día,
-    // no la pisamos ni duplicamos el trabajo. Se libera siempre en el finally, pase lo que pase.
-    const claimed = store.claimCalendarSync(userId, dailyLog.id);
-    if (!claimed) {
-      console.log(`[Calendar Mirror Sync] Día ${evalDate} ya está siendo sincronizado por otra corrida en curso. Se omite esta vez para evitar duplicados.`);
-      continue;
-    }
+    const isViable = evalRes.status === DayStatus.DAY_VIABLE &&
+      Boolean(evalRes.window) &&
+      Boolean(evalRes.scheduled_tasks && evalRes.scheduled_tasks.length > 0);
 
-    try {
-      const existingEventId = dailyLog?.google_event_id || null;
+    if (isViable && evalRes.window) {
+      const tasksForCal = (evalRes.scheduled_tasks || []).map(t => ({
+        title: t.title,
+        estimated_hours: t.estimated_hours
+      }));
 
-      const isViable = evalRes.status === DayStatus.DAY_VIABLE &&
-        Boolean(evalRes.window) &&
-        Boolean(evalRes.scheduled_tasks && evalRes.scheduled_tasks.length > 0);
+      if (existingEventId) {
+        // Update existing event on Google Calendar
+        const updateRes = await calendarService.updateWorkshopEvent(
+          userId,
+          existingEventId,
+          evalDate,
+          evalRes.window.start_time,
+          evalRes.window.end_time,
+          tasksForCal
+        );
 
-      if (isViable && evalRes.window) {
-        const tasksForCal = (evalRes.scheduled_tasks || []).map(t => ({
-          title: t.title,
-          estimated_hours: t.estimated_hours
-        }));
-
-        if (existingEventId) {
-          // Update existing event on Google Calendar
-          const updateRes = await calendarService.updateWorkshopEvent(
-            userId,
-            existingEventId,
-            evalDate,
-            evalRes.window.start_time,
-            evalRes.window.end_time,
-            tasksForCal
-          );
-
-          if (updateRes.notFound) {
-            // Event was deleted externally (404/410). Clear reference and reconstruct!
-            console.log(`[Calendar Mirror Sync] Event ${existingEventId} on ${evalDate} returned 404. Re-creating event...`);
-            if (dailyLog) {
-              store.updateDailyLog(userId, dailyLog.id, { google_event_id: null, calendar_created: false });
-            }
-            const createRes = await calendarService.createWorkshopEvent(
-              userId,
-              evalDate,
-              evalRes.window.start_time,
-              evalRes.window.end_time,
-              tasksForCal
-            );
-            if (createRes.success && createRes.eventId) {
-              if (dailyLog) {
-                store.updateDailyLog(userId, dailyLog.id, { google_event_id: createRes.eventId, calendar_created: true });
-              }
-              successCount++;
-            } else {
-              failCount++;
-            }
-          } else if (updateRes.success) {
-            if (dailyLog) {
-              store.updateDailyLog(userId, dailyLog.id, { calendar_created: true });
-            }
-            successCount++;
-          } else {
-            failCount++;
+        if (updateRes.notFound) {
+          // Event was deleted externally (404/410). Clear reference and reconstruct!
+          console.log(`[Calendar Mirror Sync] Event ${existingEventId} on ${evalDate} returned 404. Re-creating event...`);
+          if (dailyLog) {
+            store.updateDailyLog(userId, dailyLog.id, { google_event_id: null, calendar_created: false });
           }
-        } else {
-          // Create new event on Google Calendar
           const createRes = await calendarService.createWorkshopEvent(
             userId,
             evalDate,
@@ -111,20 +71,42 @@ export async function syncMultiDayCalendar(
           } else {
             failCount++;
           }
-        }
-      } else {
-        // Day is inviable or has no tasks -> Delete event from Google Calendar if reference exists
-        if (existingEventId) {
-          console.log(`[Calendar Mirror Sync] Day ${evalDate} is no longer viable with tasks (${evalRes.status}). Deleting event ${existingEventId}...`);
-          await calendarService.deleteWorkshopEvent(userId, existingEventId);
+        } else if (updateRes.success) {
           if (dailyLog) {
-            store.updateDailyLog(userId, dailyLog.id, { google_event_id: null, calendar_created: false });
+            store.updateDailyLog(userId, dailyLog.id, { calendar_created: true });
           }
           successCount++;
+        } else {
+          failCount++;
+        }
+      } else {
+        // Create new event on Google Calendar
+        const createRes = await calendarService.createWorkshopEvent(
+          userId,
+          evalDate,
+          evalRes.window.start_time,
+          evalRes.window.end_time,
+          tasksForCal
+        );
+        if (createRes.success && createRes.eventId) {
+          if (dailyLog) {
+            store.updateDailyLog(userId, dailyLog.id, { google_event_id: createRes.eventId, calendar_created: true });
+          }
+          successCount++;
+        } else {
+          failCount++;
         }
       }
-    } finally {
-      store.releaseCalendarSync(userId, dailyLog.id);
+    } else {
+      // Day is inviable or has no tasks -> Delete event from Google Calendar if reference exists
+      if (existingEventId) {
+        console.log(`[Calendar Mirror Sync] Day ${evalDate} is no longer viable with tasks (${evalRes.status}). Deleting event ${existingEventId}...`);
+        await calendarService.deleteWorkshopEvent(userId, existingEventId);
+        if (dailyLog) {
+          store.updateDailyLog(userId, dailyLog.id, { google_event_id: null, calendar_created: false });
+        }
+        successCount++;
+      }
     }
   }
 

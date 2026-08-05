@@ -197,7 +197,6 @@ export async function initDatabase(): Promise<Database.Database> {
       intraday_alert_acknowledged INTEGER NOT NULL DEFAULT 0,
       intraday_alert_last_sent_at TEXT,
       intraday_alert_burst_count INTEGER NOT NULL DEFAULT 0,
-      calendar_sync_claimed_at TEXT,
       updated_at TEXT NOT NULL,
       UNIQUE(user_id, eval_date),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -359,13 +358,6 @@ export async function initDatabase(): Promise<Database.Database> {
   }
   if (!currentDailyLogCols.some(c => c.name === 'intraday_alert_burst_count')) {
     dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN intraday_alert_burst_count INTEGER NOT NULL DEFAULT 0;");
-  }
-  // calendar_sync_claimed_at: lock optimista para evitar eventos duplicados en Google Calendar
-  // si dos evaluaciones (Tier 1) llegan a solaparse en el tiempo (bug detectado en producción, ago 2026:
-  // entre leer daily_logs.google_event_id y guardar el ID del evento creado hay una llamada HTTP a Google
-  // de por medio; si dos corridas leen "sin evento" al mismo tiempo, ambas crean uno cada una).
-  if (!currentDailyLogCols.some(c => c.name === 'calendar_sync_claimed_at')) {
-    dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN calendar_sync_claimed_at TEXT;");
   }
 
   // Special migration for day_overrides (recreate for per-user UNIQUE constraint)
@@ -1601,39 +1593,6 @@ export class SQLiteStore {
     );
 
     return this.getDailyLogById(userId, id);
-  }
-
-  /**
-   * Reserva atómica antes de crear/actualizar/borrar un evento en Google Calendar.
-   * Evita eventos duplicados si dos evaluaciones (Tier 1) llegan a solaparse en el tiempo:
-   * sin esto, ambas leerían "sin evento" y crearían uno cada una, porque entre leer
-   * google_event_id y guardarlo hay una llamada HTTP a Google de por medio (bug detectado
-   * en producción, ago 2026).
-   *
-   * El lock expira solo a los LOCK_TTL_MS (por si el proceso crashea justo con el lock
-   * tomado y nunca llega a liberarlo) para no dejar el día bloqueado para siempre.
-   *
-   * Devuelve true si esta llamada ganó la reserva, false si ya estaba tomada por otra
-   * corrida que sigue vigente.
-   */
-  claimCalendarSync(userId: number, dailyLogId: number): boolean {
-    const LOCK_TTL_MS = 2 * 60 * 1000; // 2 minutos: de sobra para una llamada HTTP a Google
-    const nowIso = new Date().toISOString();
-    const staleThresholdIso = new Date(Date.now() - LOCK_TTL_MS).toISOString();
-
-    const result = this.db.prepare(
-      `UPDATE daily_logs SET calendar_sync_claimed_at = ?
-       WHERE id = ? AND user_id = ?
-         AND (calendar_sync_claimed_at IS NULL OR calendar_sync_claimed_at < ?)`
-    ).run(nowIso, dailyLogId, userId, staleThresholdIso);
-
-    return result.changes === 1;
-  }
-
-  releaseCalendarSync(userId: number, dailyLogId: number): void {
-    this.db.prepare(
-      "UPDATE daily_logs SET calendar_sync_claimed_at = NULL WHERE id = ? AND user_id = ?"
-    ).run(dailyLogId, userId);
   }
 
   updateDailyLogGlobal(id: number, data: Partial<DailyLog>): DailyLog | null {
