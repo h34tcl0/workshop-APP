@@ -372,6 +372,30 @@ app.post('/projects/:id/toggle', (req: AuthenticatedRequest, res) => {
   res.redirect(303, '/');
 });
 
+app.post('/projects/:id/update', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const id = parseInt(req.params.id, 10);
+  const { name, description } = req.body;
+
+  if (name !== undefined && !String(name).trim()) {
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(400).json({ success: false, error: 'El nombre del proyecto no puede estar vacío' });
+    }
+    return res.redirect(303, '/');
+  }
+
+  const updated = store.updateProject(userId, id, {
+    name: name !== undefined ? String(name) : undefined,
+    description: description !== undefined ? String(description) : undefined
+  });
+
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    if (!updated) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
+    return res.json({ success: true, project: updated });
+  }
+  res.redirect(303, '/');
+});
+
 // Helper for parsing float numbers flexible with commas and strings
 function parseFlexibleFloat(val: any): number | undefined {
   if (val === null || val === undefined || val === '') return undefined;
@@ -1215,10 +1239,31 @@ app.post('/settings/update', (req: AuthenticatedRequest, res) => {
     exclude_sundays: body.exclude_sundays === 'true' || body.exclude_sundays === 'on',
     exclude_holidays: body.exclude_holidays === 'true' || body.exclude_holidays === 'on',
     require_curing_before_cutoff: body.require_curing_before_cutoff === 'true' || body.require_curing_before_cutoff === 'on',
-    telegram_chat_id: body.telegram_chat_id !== undefined ? String(body.telegram_chat_id).trim() : undefined,
+    // telegram_chat_id ya NO se acepta acá: se vincula exclusivamente vía código OTP
+    // (ver /settings/telegram/generate-code y /settings/telegram/unlink). Aceptarlo
+    // directo desde este formulario permitía que cualquier usuario le robara la
+    // vinculación de Telegram a otro con solo conocer/adivinar su chat_id (hallazgo
+    // de auditoría, ago 2026).
     google_calendar_id: body.google_calendar_id !== undefined ? String(body.google_calendar_id).trim() : undefined,
     google_calendar_enabled: body.google_calendar_enabled === 'true' || body.google_calendar_enabled === 'on' || body.google_calendar_enabled === '1'
   });
+  res.redirect(303, '/');
+});
+
+// Genera un código de un solo uso (10 min) para vincular Telegram vía /vincular en el bot.
+// No toca telegram_chat_id todavía: eso solo pasa si el usuario prueba posesión real
+// del chat mandando este código desde Telegram.
+app.post('/settings/telegram/generate-code', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const { code, expiresAt } = store.generateTelegramLinkCode(userId);
+  res.json({ status: 'ok', code, expiresAt });
+});
+
+// Desvincular el PROPIO chat_id no requiere OTP: no es un vector de ataque contra
+// otros usuarios, solo afecta la propia cuenta de quien lo pide.
+app.post('/settings/telegram/unlink', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  store.updateAppSettings(userId, { telegram_chat_id: null as any });
   res.redirect(303, '/');
 });
 
