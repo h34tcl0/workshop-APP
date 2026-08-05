@@ -535,6 +535,9 @@ app.post('/tasks/:id/update_status', (req: AuthenticatedRequest, res) => {
   if (!updated) {
     return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });
   }
+  if (req.xhr || req.headers.accept?.includes('application/json') || req.headers['x-requested-with'] === 'XMLHttpRequest') {
+    return res.json({ success: true, task: updated });
+  }
   res.redirect(303, '/');
 });
 

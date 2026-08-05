@@ -241,15 +241,15 @@
                                         <%= projTasks.length %> tareas
                                     </span>
                                 </div>
-                                <form id="proj-name-edit-<%= p.id %>" action="/projects/<%= p.id %>/update" method="post" class="hidden items-center gap-1.5 mt-1" onclick="event.stopPropagation()">
-                                    <input type="text" name="name" value="<%= p.name %>" required class="flex-1 min-w-0 bg-surface2 border border-hairline text-ink text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-brass">
-                                    <button type="submit" title="Guardar" class="text-moss hover:text-moss/80 shrink-0 p-1">
+                                <div id="proj-name-edit-<%= p.id %>" class="hidden items-center gap-1.5 mt-1" onclick="event.stopPropagation()">
+                                    <input type="text" id="proj-name-input-<%= p.id %>" value="<%= p.name %>" required class="flex-1 min-w-0 bg-surface2 border border-hairline text-ink text-xs rounded-lg px-2 py-1 focus:outline-none focus:border-brass" onkeydown="if(event.key==='Enter'){event.preventDefault(); saveProjectName('<%= p.id %>');} if(event.key==='Escape'){toggleProjectNameEdit('<%= p.id %>');}">
+                                    <button type="button" onclick="saveProjectName('<%= p.id %>')" title="Guardar" class="text-moss hover:text-moss/80 shrink-0 p-1">
                                         <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg>
                                     </button>
-                                    <button type="button" onclick="event.stopPropagation(); toggleProjectNameEdit('<%= p.id %>')" title="Cancelar" class="text-ink3 hover:text-ink shrink-0 p-1">
+                                    <button type="button" onclick="toggleProjectNameEdit('<%= p.id %>')" title="Cancelar" class="text-ink3 hover:text-ink shrink-0 p-1">
                                         <svg class="w-3.5 h-3.5"><use href="#i-close"/></svg>
                                     </button>
-                                </form>
+                                </div>
                                 <% if (p.description) { %>
                                 <p class="text-[11px] text-ink3 truncate mt-0.5"><%= p.description %></p>
                                 <% } %>
@@ -403,12 +403,43 @@ function toggleProjectNameEdit(id) {
         display.classList.add('hidden');
         editForm.classList.remove('hidden');
         editForm.classList.add('flex');
-        const input = editForm.querySelector('input[name="name"]');
+        const input = editForm.querySelector('input[name="name"], input[id^="proj-name-input-"]');
         if (input) { input.focus(); input.select(); }
     } else {
         display.classList.remove('hidden');
         editForm.classList.add('hidden');
         editForm.classList.remove('flex');
+    }
+}
+
+async function saveProjectName(id) {
+    const input = document.getElementById('proj-name-input-' + id);
+    const display = document.getElementById('proj-name-display-' + id);
+    if (!input || !display) return;
+
+    const newName = input.value.trim();
+    if (!newName) {
+        alert('El nombre del proyecto no puede estar vacío.');
+        return;
+    }
+
+    input.disabled = true;
+    try {
+        const res = await fetch('/projects/' + id + '/update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+            body: 'name=' + encodeURIComponent(newName)
+        });
+        if (!res.ok) throw new Error('Request failed');
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Error desconocido');
+
+        display.textContent = data.project.name;
+        toggleProjectNameEdit(id);
+    } catch (err) {
+        alert('No se pudo guardar el nombre. Intentá de nuevo.');
+    } finally {
+        input.disabled = false;
     }
 }
 </script>

@@ -336,18 +336,14 @@
                         <p class="text-xs text-ink3 py-4 text-center">¡No hay tareas pendientes en la cola del proyecto!</p>
                     <% } else { %>
                         <% (locals.tasks || []).forEach(t => { %>
-                            <div class="flex items-center justify-between p-3.5 bg-surface2 border border-hairline rounded-2xl gap-3">
+                            <div class="flex items-center justify-between p-3.5 bg-surface2 border border-hairline rounded-2xl gap-3 transition-all duration-300" id="task-row-<%= t.id %>">
                                 <div class="min-w-0">
                                     <h4 class="font-bold text-sm text-ink truncate"><%= t.title %></h4>
                                     <p class="text-xs text-ink3 mt-0.5"><%= t.estimated_hours %>h activas • <%= t.curing_hours %>h curado</p>
                                 </div>
-                                <form action="/tasks/<%= t.id %>/update_status" method="post">
-                                    <input type="hidden" name="status" value="completed">
-                                    <input type="hidden" name="progress" value="100">
-                                    <button type="submit" class="bg-moss/20 hover:bg-moss text-moss hover:text-canvas border border-moss/40 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors min-h-[44px] flex items-center gap-1.5 shrink-0">
-                                        <svg class="w-4 h-4"><use href="#i-check"/></svg> Completar
-                                    </button>
-                                </form>
+                                <button type="button" onclick="completeTaskInline(<%= t.id %>)" id="complete-btn-<%= t.id %>" class="bg-moss/20 hover:bg-moss text-moss hover:text-canvas border border-moss/40 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors min-h-[44px] flex items-center gap-1.5 shrink-0">
+                                    <svg class="w-4 h-4"><use href="#i-check"/></svg> Completar
+                                </button>
                             </div>
                         <% }); %>
                     <% } %>
@@ -487,6 +483,39 @@
                 navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration error:', err));
             }
         });
+
+        async function completeTaskInline(taskId) {
+            const row = document.getElementById('task-row-' + taskId);
+            const btn = document.getElementById('complete-btn-' + taskId);
+            if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+
+            try {
+                const res = await fetch('/tasks/' + taskId + '/update_status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+                    body: 'status=completed&progress=100'
+                });
+                if (!res.ok) throw new Error('Request failed');
+
+                if (row) {
+                    row.style.maxHeight = row.offsetHeight + 'px';
+                    row.style.overflow = 'hidden';
+                    requestAnimationFrame(() => {
+                        row.style.opacity = '0';
+                        row.style.transform = 'scale(0.97)';
+                        row.style.maxHeight = '0px';
+                        row.style.marginTop = '0px';
+                        row.style.marginBottom = '0px';
+                        row.style.paddingTop = '0px';
+                        row.style.paddingBottom = '0px';
+                    });
+                    setTimeout(() => row.remove(), 320);
+                }
+            } catch (err) {
+                alert('No se pudo completar la tarea. Intentá de nuevo.');
+                if (btn) { btn.disabled = false; btn.style.opacity = '1'; }
+            }
+        }
     </script>
 </body>
 
