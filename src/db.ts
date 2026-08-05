@@ -1387,6 +1387,7 @@ export class SQLiteStore {
 
     return {
       id: Number(row.id),
+      user_id: Number(row.user_id),
       eval_date: String(row.eval_date),
       status: row.status as DayStatus,
       block_reason: row.block_reason || null,
@@ -1420,6 +1421,7 @@ export class SQLiteStore {
 
     return {
       id: Number(row.id),
+      user_id: Number(row.user_id),
       eval_date: String(row.eval_date),
       status: row.status as DayStatus,
       block_reason: row.block_reason || null,
