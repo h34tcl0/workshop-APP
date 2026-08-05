@@ -443,10 +443,13 @@ export function evaluateDayFeasibility(
     for (let i = 0; i < bestScheduledTasks.length; i++) {
       const task = bestScheduledTasks[i];
       const tEnd = currH + task.estimated_hours;
-      const projPrefix = task.project_name ? `[${task.project_name}] ` : "";
+      // project_name va como campo separado (no concatenado en title) para que la vista
+      // pueda truncarlo de forma independiente sin que se coma el título de la tarea
+      // cuando el nombre del proyecto es largo (bug de UI detectado ago 2026).
       timeline.push({
         time_range: `${formatHour(currH)} — ${formatHour(tEnd)}`,
-        title: `${projPrefix}#${task.order || (i + 1)} ${task.title}`,
+        title: `#${task.order || (i + 1)} ${task.title}`,
+        project_name: task.project_name || null,
         duration: `${task.estimated_hours.toFixed(1)}h`
       });
       currH = tEnd;

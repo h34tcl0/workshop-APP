@@ -131,10 +131,13 @@
                 <p class="text-[11px] text-ink3 font-semibold uppercase tracking-wider mb-2">Cronograma</p>
                 <div class="space-y-1 bg-canvas/40 rounded-lg p-2.5 border border-hairline">
                     <% eval.timeline.forEach(function(act) { %>
-                    <div class="flex items-center justify-between text-xs py-1 px-1.5 rounded-md hover:bg-surface2 transition-colors">
+                    <div class="flex items-center justify-between text-xs py-1 px-1.5 rounded-md hover:bg-surface2 transition-colors gap-2">
                         <span class="font-mono text-brass font-semibold w-24 shrink-0"><%= act.time_range %></span>
-                        <span class="text-ink2 font-medium truncate flex-1 px-2 min-w-0">
-                            <%= act.title %>
+                        <span class="text-ink2 font-medium flex-1 min-w-0 flex items-center gap-1">
+                            <% if (act.project_name) { %>
+                                <span class="text-brass font-bold text-[10px] bg-brass/10 border border-brass/20 px-1 py-0.5 rounded shrink-0 max-w-[35%] truncate" title="<%= act.project_name %>">[<%= act.project_name %>]</span>
+                            <% } %>
+                            <span class="truncate" title="<%= act.title %>"><%= act.title %></span>
                         </span>
                         <span class="text-[10px] font-mono font-medium text-ink3 bg-surface2 border border-hairline px-1.5 py-0.5 rounded-full shrink-0"><%= act.duration %></span>
                     </div>
