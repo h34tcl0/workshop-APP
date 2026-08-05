@@ -992,6 +992,7 @@ export class SQLiteStore {
 
     return {
       id: Number(row.id),
+      user_id: Number(row.user_id),
       project_id: Number(row.project_id),
       project_name: row.project_name ? String(row.project_name) : undefined,
       title: String(row.title),
