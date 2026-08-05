@@ -492,10 +492,43 @@ export class TelegramBotService {
       return { status: "ok", message: "Responded to /start" };
     }
 
+    // /vincular <código> tiene que poder ejecutarse ANTES de la verificación de usuario,
+    // porque justamente un chat todavía no vinculado necesita poder mandar este comando.
+    if (cleanText.startsWith("/vincular") || cleanText.startsWith("vincular")) {
+      const parts = text.trim().split(/\s+/);
+      const code = parts.length > 1 ? parts[1] : "";
+
+      if (!code) {
+        await replyBot.sendRequest("sendMessage", {
+          chat_id: chatStr,
+          text: `⚠️ Escribí el código junto al comando, por ejemplo:\n\`/vincular 123456\`\n\nGenerá tu código desde Ajustes en la app web.`,
+          parse_mode: "Markdown"
+        });
+        return { status: "ok", message: "Missing code for /vincular" };
+      }
+
+      const result = store.consumeTelegramLinkCode(code, chatStr);
+
+      if (result.success) {
+        await replyBot.sendRequest("sendMessage", {
+          chat_id: chatStr,
+          text: `✅ *¡Vinculación exitosa!*\nEste chat quedó conectado a AGENDAPP con el correo *${result.email}*.\n\n*Comandos disponibles:*\n• \`/materiales\` - Ver insumos pendientes por comprar (🔴)`,
+          parse_mode: "Markdown"
+        });
+      } else {
+        await replyBot.sendRequest("sendMessage", {
+          chat_id: chatStr,
+          text: `⚠️ ${result.error || "Código inválido o expirado. Generá uno nuevo desde la app."}`,
+          parse_mode: "Markdown"
+        });
+      }
+      return { status: result.success ? "ok" : "invalid_code", message: result.success ? "Telegram linked" : "Invalid or expired code" };
+    }
+
     if (!user) {
       await replyBot.sendRequest("sendMessage", {
         chat_id: chatStr,
-        text: `⚠️ Este chat de Telegram no está vinculado a ninguna cuenta en AGENDAPP.\n\nTu Chat ID es: \`${chatStr}\`.\nCopiar e ingresar este ID en la sección de Ajustes en la aplicación web.`,
+        text: `⚠️ Este chat de Telegram no está vinculado a ninguna cuenta en AGENDAPP.\n\nTu Chat ID es: \`${chatStr}\`.\nPara vincularlo: generá un código desde *Ajustes* en la app web, y mandalo acá como \`/vincular 123456\`.`,
         parse_mode: "Markdown"
       });
       return {

@@ -171,6 +171,22 @@ export async function initDatabase(): Promise<Database.Database> {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
+    -- Códigos de un solo uso para vincular telegram_chat_id de forma segura.
+    -- Reemplaza el flujo anterior (pegar el chat_id a mano en Ajustes), que permitía
+    -- que cualquier usuario autenticado le robara la vinculación de Telegram a otro
+    -- con solo conocer/adivinar su chat_id numérico (hallazgo de auditoría, ago 2026).
+    -- Ahora hay que probar posesión real del chat mandando el código al bot.
+    CREATE TABLE IF NOT EXISTS telegram_link_codes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      code TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_code ON telegram_link_codes(code);
+
     CREATE TABLE IF NOT EXISTS daily_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -857,6 +873,68 @@ export class SQLiteStore {
     }
 
     return undefined;
+  }
+
+  /**
+   * Genera un código de vinculación de un solo uso para Telegram (flujo OTP).
+   * Invalida cualquier código previo sin usar de ese mismo usuario, para que solo
+   * el más reciente sea válido.
+   */
+  generateTelegramLinkCode(userId: number): { code: string; expiresAt: string } {
+    // Invalidar códigos previos no usados de este usuario (borrado directo, más simple
+    // que marcarlos "usados" ya que de todas formas van a expirar solos).
+    this.db.prepare("DELETE FROM telegram_link_codes WHERE user_id = ? AND used_at IS NULL").run(userId);
+
+    const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 dígitos, 100000-999999
+    const nowIso = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutos
+
+    this.db.prepare(
+      "INSERT INTO telegram_link_codes (user_id, code, expires_at, created_at) VALUES (?, ?, ?, ?)"
+    ).run(userId, code, expiresAt, nowIso);
+
+    return { code, expiresAt };
+  }
+
+  /**
+   * Consume un código de vinculación: si es válido y no expiró, vincula el chatId
+   * al usuario dueño del código (reusando la misma lógica de unicidad de siempre)
+   * y marca el código como usado para que no se pueda reintentar.
+   * Devuelve success:false con mensaje genérico si el código no existe o expiró,
+   * sin distinguir esos dos casos hacia afuera (para no dar pistas de fuerza bruta).
+   */
+  consumeTelegramLinkCode(code: string, chatId: string): { success: boolean; userId?: number; email?: string; error?: string } {
+    const trimmedCode = String(code).trim();
+    if (!trimmedCode) return { success: false, error: "Código inválido o expirado. Generá uno nuevo desde la app." };
+
+    const row = this.db.prepare(
+      "SELECT id, user_id, expires_at FROM telegram_link_codes WHERE code = ? AND used_at IS NULL"
+    ).get(trimmedCode) as any;
+
+    if (!row) {
+      return { success: false, error: "Código inválido o expirado. Generá uno nuevo desde la app." };
+    }
+
+    if (new Date(row.expires_at).getTime() < Date.now()) {
+      return { success: false, error: "Código inválido o expirado. Generá uno nuevo desde la app." };
+    }
+
+    const userId = Number(row.user_id);
+    const chatStr = String(chatId).trim();
+
+    // Misma lógica de unicidad que ya existía: desvincula ese chat_id de cualquier
+    // otro usuario antes de asignarlo, para garantizar 1 chat = 1 usuario.
+    this.db.prepare(
+      "UPDATE app_settings SET telegram_chat_id = NULL WHERE CAST(telegram_chat_id AS TEXT) = ? AND user_id != ?"
+    ).run(chatStr, userId);
+
+    this.db.prepare("UPDATE app_settings SET telegram_chat_id = ? WHERE user_id = ?").run(chatStr, userId);
+
+    this.db.prepare("UPDATE telegram_link_codes SET used_at = ? WHERE id = ?").run(new Date().toISOString(), row.id);
+
+    const userRow = this.db.prepare("SELECT email FROM users WHERE id = ?").get(userId) as any;
+
+    return { success: true, userId, email: userRow ? String(userRow.email) : undefined };
   }
 
   // --- PROJECTS ---

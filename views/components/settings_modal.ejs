@@ -236,9 +236,29 @@
                 <p class="text-[11px] font-semibold text-ink3 uppercase tracking-wide mb-2">Integraciones (Telegram y Google Calendar)</p>
                 <div class="space-y-3">
                     <div>
-                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3 mb-1">Telegram Chat ID</label>
-                        <input type="text" name="telegram_chat_id" placeholder="Ej: 123456789" value="<%= app_settings && app_settings.telegram_chat_id ? app_settings.telegram_chat_id : '' %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
-                        <p class="text-[10px] text-ink3 mt-1">ID de tu chat personal con el bot de Telegram. Tus notificaciones de aviso y check-in llegarán exclusivamente aquí.</p>
+                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3 mb-1">Telegram</label>
+                        <% if (app_settings && app_settings.telegram_chat_id) { %>
+                            <div class="flex items-center justify-between gap-2 bg-surface2 border border-hairline rounded-lg px-3 py-2.5">
+                                <span class="text-sm text-ink">✅ Vinculado (Chat ID: <%= app_settings.telegram_chat_id %>)</span>
+                                <form action="/settings/telegram/unlink" method="post" onsubmit="return confirm('¿Desvincular este chat de Telegram? Dejarás de recibir notificaciones hasta volver a vincularlo.');">
+                                    <button type="submit" class="text-xs font-semibold text-red-400 hover:text-red-300 shrink-0 min-h-[36px] px-2">Desvincular</button>
+                                </form>
+                            </div>
+                            <p class="text-[10px] text-ink3 mt-1">Tus notificaciones de aviso y check-in llegan exclusivamente a este chat.</p>
+                        <% } else { %>
+                            <div id="telegram-link-box">
+                                <button type="button" onclick="generateTelegramLinkCode()" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm hover:border-brass min-h-[44px] sm:min-h-0">
+                                    🔗 Generar código de vinculación
+                                </button>
+                            </div>
+                            <div id="telegram-link-result" class="hidden mt-2 bg-surface2 border border-hairline rounded-lg px-3 py-2.5 text-sm text-ink">
+                                <p>Mandá este código a tu bot de Telegram:</p>
+                                <p class="font-mono text-lg font-bold text-brass tracking-wider mt-1"><code id="telegram-link-code"></code></p>
+                                <p class="text-[10px] text-ink3 mt-1"><code>/vincular <span id="telegram-link-code-inline"></span></code></p>
+                                <p class="text-[10px] text-ink3 mt-1" id="telegram-link-expiry"></p>
+                            </div>
+                            <p class="text-[10px] text-ink3 mt-1">Generá un código desde acá y mandalo al bot de Telegram para vincular tu cuenta de forma segura.</p>
+                        <% } %>
                     </div>
 
                     <div>
