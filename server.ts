@@ -1278,6 +1278,153 @@ app.post('/evaluation/force_checkin', async (req: AuthenticatedRequest, res) => 
   res.redirect(303, '/');
 });
 
+// Endpoint Término de la Jornada -> Fuerza check-in inmediato
+app.post('/api/checkin/end_shift', async (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  try {
+    const appSettings = store.getAppSettings(userId);
+    const userTz = appSettings?.timezone || process.env.TIMEZONE || "America/Santiago";
+    const now = new Date();
+    const todayIso = getLocalDateIso(now, userTz);
+
+    // Obtener log diario de hoy o evaluar el día
+    let dailyLog = store.getDailyLogByDate(userId, todayIso);
+    if (!dailyLog) {
+      await runMorningEvaluation(userId, todayIso);
+      dailyLog = store.getDailyLogByDate(userId, todayIso);
+    }
+
+    // Obtener tareas agendadas para hoy
+    let taskIds: number[] = [];
+    if (dailyLog && dailyLog.scheduled_task_ids) {
+      try {
+        taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
+      } catch (_) {}
+    }
+
+    let scheduledTasks = taskIds
+      .map(tid => store.getTask(userId, tid))
+      .filter((t): t is Task => t != null && t.user_id === userId);
+
+    // Fallback: Si no hay tareas agendadas registradas en el log, obtener las tareas pendientes del proyecto activo o globales
+    if (scheduledTasks.length === 0) {
+      const activeProject = store.getActiveProject(userId);
+      scheduledTasks = store.getPendingTasks(userId, activeProject?.id);
+
+      if (dailyLog && scheduledTasks.length > 0) {
+        store.updateDailyLog(userId, dailyLog.id, {
+          scheduled_task_ids: JSON.stringify(scheduledTasks.map(t => t.id))
+        });
+      }
+    }
+
+    // Intentar check-in vía Telegram
+    let targetChatId = appSettings.telegram_chat_id ? appSettings.telegram_chat_id.trim() : "";
+    if (!targetChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
+      targetChatId = process.env.TELEGRAM_CHAT_ID.trim();
+    }
+
+    let telegramSent = false;
+    let telegramError = "";
+
+    if (targetChatId && process.env.TELEGRAM_BOT_TOKEN) {
+      try {
+        const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, targetChatId);
+        const uncompletedTasks = scheduledTasks.filter(t => t.status !== TaskStatus.COMPLETED);
+        if (uncompletedTasks.length > 0 && dailyLog) {
+          telegramSent = await telegramSvc.sendCheckinPrompt(dailyLog.id, uncompletedTasks);
+          if (telegramSent) {
+            store.updateDailyLog(userId, dailyLog.id, { checkin_sent: true });
+          } else {
+            telegramError = "El bot de Telegram no pudo entregar el mensaje (bloqueado o desvinculado).";
+          }
+        } else if (uncompletedTasks.length === 0) {
+          telegramError = "No hay tareas pendientes sin completar para la jornada de hoy.";
+        }
+      } catch (err: any) {
+        telegramError = err?.message || "Error al comunicarse con la API de Telegram";
+      }
+    } else {
+      telegramError = "No hay una cuenta de Telegram vinculada en la configuración.";
+    }
+
+    return res.json({
+      success: true,
+      telegramSent,
+      telegramError: telegramSent ? undefined : telegramError,
+      dailyLogId: dailyLog ? dailyLog.id : null,
+      dateIso: todayIso,
+      tasks: scheduledTasks.map(t => ({
+        id: t.id,
+        title: t.title,
+        project_name: t.project_name || '',
+        estimated_hours: t.estimated_hours,
+        status: t.status,
+        completed: t.status === TaskStatus.COMPLETED
+      }))
+    });
+  } catch (err: any) {
+    console.error('Error en término de jornada / check-in:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Error al procesar el término de jornada' });
+  }
+});
+
+// Endpoint para guardar resolución manual de check-in cuando falla Telegram
+app.post('/api/checkin/resolve', async (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const { dailyLogId, completedTaskIds } = req.body;
+
+  try {
+    const completedSet = new Set<number>(Array.isArray(completedTaskIds) ? completedTaskIds.map(Number) : []);
+    let dailyLog = dailyLogId ? store.getDailyLogById(userId, Number(dailyLogId)) : null;
+
+    let taskIds: number[] = [];
+    if (dailyLog && dailyLog.scheduled_task_ids) {
+      try {
+        taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
+      } catch (_) {}
+    }
+
+    if (taskIds.length === 0) {
+      const allTasks = store.getTasks(userId);
+      taskIds = allTasks.map(t => t.id);
+    }
+
+    const nowIso = new Date().toISOString();
+    for (const tid of taskIds) {
+      const t = store.getTask(userId, tid);
+      if (!t || t.user_id !== userId) continue;
+
+      if (completedSet.has(tid)) {
+        store.updateTask(userId, t.id, {
+          status: TaskStatus.COMPLETED,
+          progress_percentage: 100,
+          completed_at: nowIso
+        });
+      } else {
+        if (t.status === TaskStatus.COMPLETED) {
+          store.updateTask(userId, t.id, {
+            status: TaskStatus.PENDING,
+            completed_at: null
+          });
+        }
+      }
+    }
+
+    if (dailyLog) {
+      store.updateDailyLog(userId, dailyLog.id, {
+        checkin_sent: true,
+        checkin_resolved: true
+      });
+    }
+
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error('Error al resolver checkin:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Error al guardar check-in' });
+  }
+});
+
 app.get('/api/timezone', (req: AuthenticatedRequest, res) => {
   const lat = parseFloat(req.query.lat as string);
   const lon = parseFloat(req.query.lon as string);
