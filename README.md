@@ -799,33 +799,3 @@ sqlite3 data/workshop.db "VACUUM INTO 'data/backup-live.db';"
 2. **Unicidad Estricta de Chat ID**: Nunca omitir la verificación de unicidad de `telegram_chat_id` para garantizar el aislamiento multi-tenant y prevenir notificaciones cruzadas entre usuarios.
 3. **Cookies `SameSite=None; Secure`**: Mantener las banderas de cookies para soportar la ejecución en entornos incrustados (iframes) e interfaces móviles.
 4. **Persistencia Directa**: Toda escritura en SQLite debe reflejarse en `data/workshop.db` para asegurar la durabilidad tras reinicios del contenedor.
-
----
-
-## 🔧 16. Correcciones y Optimizaciones Arquitectónicas Recientes
-
-### 1. Mapeo de Atributos en Vistas (`ft.id` / `ft.forced_id`)
-- **Problema de Dominio**: Existía una incoherencia menor de nombres entre los objetos devueltos por la capa de consulta (`ft.id`) y los renderizados por la plantilla EJS (`ft.forced_id`).
-- **Solución Aplicada**: Se actualizó la vista `views/components/agenda.ejs` y el mapeador en `server.ts` para resolver dinámicamente `ft.id || ft.forced_id`. Esto garantiza que la acción de eliminación de tareas forzadas (`/day-override/forced-task/:forced_id/delete`) funcione sin interrupciones ni IDs nulos.
-
-### 2. Aislamiento Atómico contra Condiciones de Carrera TOCTOU (`SQLiteStore.getAppSettings`)
-- **Prevención de TOCTOU**: El flujo anterior ejecutaba una comprobación previa (`SELECT`) seguida de un `INSERT`, introduciendo un riesgo de condición de carrera si ocurrían peticiones simultáneas.
-- **Solución Aplicada**: Se sustituyó el bloque secuencial en `src/db.ts` por una operación de inserción atómica `INSERT INTO app_settings ... ON CONFLICT(user_id) DO NOTHING;` a nivel de SQLite, seguida inmediatamente por el `SELECT`. Esto elimina ventanas de tiempo vulnerables y previene excepciones de clave duplicada.
-
-### 3. Exposición Explícita de Funciones Client-Side al Ámbito Global (`window.*`)
-- **Acoplamiento de Controladores Inline**: Las plantillas EJS utilizan controladores de eventos inline (`onclick`, `onsubmit`). En entornos de empaquetado o módulos encapsulados, estas funciones pueden quedar fuera del alcance del objeto global `window`.
-- **Solución Aplicada**: En `static/js/backlog.js`, `static/js/agenda.js` y `static/js/settings.js`, se expusieron explícitamente todos los controladores client-side (`switchWorkspaceMode`, `activateTaskToBacklog`, `handleTaskDelete`, `openSettingsModal`, etc.) adjuntándolos al objeto global mediante `Object.assign(window, { ... })`.
-
-### 4. Normalización de Zona Horaria y Validación Fail-Fast para Códigos OTP (`consumeTelegramLinkCode`)
-- **Almacenamiento Numérico Unix Epoch**: Se optimizó la persistencia de expiración de los códigos de vinculación de Telegram (`generateTelegramLinkCode` y `consumeTelegramLinkCode` en `src/db.ts`), almacenando marcas de tiempo numéricas Unix en milisegundos (`INTEGER` / `Date.now()`). Esto elimina ciclos innecesarios de conversión a cadenas ISO.
-- **Inspección Fail-Fast en Cadenas ISO Legadas**: Para garantizar la compatibilidad con registros históricos en formato ISO, el sistema valida que las cadenas contengan explícitamente el sufijo UTC `'Z'`. Cualquier registro que carezca de dicho indicador es rechazado inmediatamente como corrupto o inválido, impidiendo desfasajes de expiración provocados por el huso horario local del servidor.
-
-### 5. Sincronización y Visibilidad del Conmutador de Modos (`mode_switcher.ejs`)
-- **Control de Vistas en Pantalla**: Se sincronizaron las transiciones entre el modo **Planificación** (Agenda y Materiales) y el modo **Taller**.
-- **Limpieza de Superposiciones**: Se incorporó el ocultamiento explícito del contenedor de materiales (`materials-view-wrapper`) al cambiar al modo Taller, evitando que quede visible en el fondo. Además, la visibilidad del botón de Modo Enfoque (`#toggle-backlog-btn`) se gestiona dinámicamente para que solo aparezca en el contexto de Planificación + Agenda.
-
-### 6. Auditoría e Implementación de Seguridad — Fase 2: Autenticación, Sesión y CSRF
-- **Protección CSRF Unificada (`verifySameOrigin`)**: Se integró middleware global que valida las cabeceras `Origin` y `Referer` en todas las peticiones de mutación de estado (`POST`, `PUT`, `DELETE`, `PATCH`). Rechaza con HTTP 403 peticiones de orígenes no permitidos o faltantes, manteniendo compatibilidad transparente dentro del iFrame de AI Studio y llamadas AJAX internas (`/settings/update`, `/tasks/*`, `/projects/*`, `/day-override/*`, `/materials/*`).
-- **Limitación de Tasa (`checkAuthRateLimit`)**: Se implementó un limitador de tasa en memoria por IP para los endpoints `/login` y `/register` (máximo 5 intentos fallidos en una ventana de 15 minutos). Los inicios de sesión exitosos limpian el contador automáticamente.
-- **Fortalecimiento de PBKDF2 (210.000 Iteraciones + Migración Transparente)**: Se elevó la complejidad de derivación de claves a 210.000 iteraciones SHA-512 con el prefijo estructurado `pbkdf2:<iteraciones>:<salt>:<hash>`. Se conservó retrocompatibilidad total con hashes legados (10.000 iteraciones, formato `salt:hash`), actualizando automáticamente el hash en la base de datos al siguiente inicio de sesión del usuario.
-

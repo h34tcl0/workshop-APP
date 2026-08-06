@@ -1,8 +1,6 @@
 import express from 'express';
 import path from 'path';
-import { z } from 'zod';
 import { initDatabase, store, closeDatabase } from './src/db.js';
-import { importPayloadSchema, reorderPayloadSchema } from './src/schemas.js';
 import { evaluateDayWithOverrides } from './src/evaluator.js';
 import { getHourlyForecast, getWeeklyForecast, MockWeatherService } from './src/weatherService.js';
 import { getHolidayDatesForRange } from './src/holidaysService.js';
@@ -11,20 +9,7 @@ import { TaskCategory, TaskStatus, Task } from './src/types.js';
 import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick } from './src/scheduler.js';
 import { TelegramBotService } from './src/telegramBot.js';
 import { calendarService } from './src/calendarService.js';
-import {
-  requireAuth,
-  verifySameOrigin,
-  checkAuthRateLimit,
-  recordAuthFailure,
-  resetAuthRateLimit,
-  getClientIp,
-  hashPassword,
-  verifyPasswordDetailed,
-  signToken,
-  createSessionCookie,
-  createClearSessionCookie,
-  AuthenticatedRequest
-} from './src/auth.js';
+import { requireAuth, hashPassword, verifyPassword, signToken, createSessionCookie, createClearSessionCookie, AuthenticatedRequest } from './src/auth.js';
 
 const app = express();
 const PORT = 3000;
@@ -59,7 +44,6 @@ app.set('view engine', 'ejs');
 // Middleware & Static Assets
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use(verifySameOrigin);
 app.use('/static', express.static(path.join(process.cwd(), 'static')));
 
 // Public Health Check Endpoint
@@ -116,43 +100,17 @@ app.get('/login', (req: AuthenticatedRequest, res) => {
 });
 
 app.post('/login', (req, res) => {
-  const ip = getClientIp(req);
-  const limitCheck = checkAuthRateLimit(ip);
-  if (!limitCheck.allowed) {
-    console.warn(`[RATE LIMIT] Blocked login attempt from IP ${ip}. Retry in ${limitCheck.retryAfterSec}s.`);
-    return res.status(429).render('login', {
-      error: `Demasiados intentos fallidos. Por favor espera ${Math.ceil(limitCheck.retryAfterSec / 60)} minutos antes de reintentar.`,
-      email: req.body?.email || ''
-    });
-  }
-
   const { email, password } = req.body;
 
   if (!email || !password) {
-    recordAuthFailure(ip);
     return res.status(400).render('login', { error: 'Por favor ingresa correo y contraseña', email });
   }
 
   const user = store.getUserByEmail(email);
-  const authRes = user ? verifyPasswordDetailed(password, user.password_hash) : { isValid: false, needsRehash: false };
+  const isValid = user ? verifyPassword(password, user.password_hash) : false;
 
-  if (!user || !authRes.isValid) {
-    recordAuthFailure(ip);
+  if (!user || !isValid) {
     return res.status(401).render('login', { error: 'Credenciales inválidas', email });
-  }
-
-  // Successful login resets failure counter
-  resetAuthRateLimit(ip);
-
-  // Transparently upgrade hash to 210,000 PBKDF2 iterations if needed
-  if (authRes.needsRehash) {
-    try {
-      const newHash = hashPassword(password);
-      store.updateUserPassword(user.id, newHash);
-      console.log(`[AUTH] Upgraded password hash for user #${user.id} (${user.email}) to 210,000 PBKDF2 iterations.`);
-    } catch (err) {
-      console.error(`[AUTH] Error upgrading password hash for user #${user.id}:`, err);
-    }
   }
 
   const token = signToken({ userId: user.id, email: user.email });
@@ -166,36 +124,20 @@ app.get('/register', (req: AuthenticatedRequest, res) => {
 });
 
 app.post('/register', (req, res) => {
-  const ip = getClientIp(req);
-  const limitCheck = checkAuthRateLimit(ip);
-  if (!limitCheck.allowed) {
-    console.warn(`[RATE LIMIT] Blocked register attempt from IP ${ip}. Retry in ${limitCheck.retryAfterSec}s.`);
-    return res.status(429).render('register', {
-      error: `Demasiados intentos fallidos. Por favor espera ${Math.ceil(limitCheck.retryAfterSec / 60)} minutos antes de reintentar.`,
-      email: req.body?.email || ''
-    });
-  }
-
   const { email, password, password_confirm } = req.body;
   if (!email || !password) {
-    recordAuthFailure(ip);
     return res.status(400).render('register', { error: 'Todos los campos son obligatorios', email });
   }
   if (password !== password_confirm) {
-    recordAuthFailure(ip);
     return res.status(400).render('register', { error: 'Las contraseñas no coinciden', email });
   }
   if (password.length < 6) {
-    recordAuthFailure(ip);
     return res.status(400).render('register', { error: 'La contraseña debe tener al menos 6 caracteres', email });
   }
   const existing = store.getUserByEmail(email);
   if (existing) {
-    recordAuthFailure(ip);
     return res.status(400).render('register', { error: 'El correo electrónico ya está registrado', email });
   }
-
-  resetAuthRateLimit(ip);
   const hash = hashPassword(password);
   const user = store.createUser(email, hash);
   const token = signToken({ userId: user.id, email: user.email });
@@ -431,33 +373,6 @@ app.post('/projects/:id/toggle', (req: AuthenticatedRequest, res) => {
   res.redirect(303, '/');
 });
 
-// POST /projects/:id/update - Update project details (e.g. rename)
-app.post('/projects/:id/update', (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.id;
-  const id = parseInt(req.params.id, 10);
-  const { name, description } = req.body;
-  if (!name || !String(name).trim()) {
-    if (req.xhr || req.headers.accept?.includes('application/json')) {
-      return res.status(400).json({ error: 'El nombre del proyecto no puede estar vacío' });
-    }
-    return res.redirect(303, '/');
-  }
-  const updated = store.updateProject(userId, id, {
-    name: String(name).trim(),
-    description: description ? String(description).trim() : undefined
-  });
-  if (!updated) {
-    if (req.xhr || req.headers.accept?.includes('application/json')) {
-      return res.status(404).json({ error: 'Proyecto no encontrado' });
-    }
-    return res.redirect(303, '/');
-  }
-  if (req.xhr || req.headers.accept?.includes('application/json')) {
-    return res.json({ success: true, project: updated });
-  }
-  res.redirect(303, '/');
-});
-
 // Helper for parsing float numbers flexible with commas and strings
 function parseFlexibleFloat(val: any): number | undefined {
   if (val === null || val === undefined || val === '') return undefined;
@@ -630,54 +545,40 @@ app.post('/tasks/:id/move-down', (req: AuthenticatedRequest, res) => {
 // POST /tasks/reorder
 app.post('/tasks/reorder', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  const parseResult = reorderPayloadSchema.safeParse(req.body);
-
-  if (!parseResult.success) {
-    const formattedErrors = parseResult.error.issues.map(
-      issue => `${issue.path.join('.')}: ${issue.message}`
-    );
-    return res.status(400).json({
-      status: 'error',
-      detail: `Payload inválido: ${formattedErrors.join('; ')}`,
-      issues: parseResult.error.format()
-    });
-  }
-
-  store.reorderTasks(userId, parseResult.data.task_ids);
+  const taskIds: number[] = req.body.task_ids || [];
+  store.reorderTasks(userId, taskIds);
   res.json({ status: 'ok' });
 });
 
 // POST /tasks/import
 app.post('/tasks/import', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  const parseResult = importPayloadSchema.safeParse(req.body);
+  const payload = req.body;
+  const projectName = payload.project_name || 'Proyecto Importado IA';
+  const taskList = payload.tasks || [];
 
-  if (!parseResult.success) {
-    const formattedErrors = parseResult.error.issues.map(
-      issue => `${issue.path.join('.')}: ${issue.message}`
-    );
-    return res.status(400).json({
-      status: 'error',
-      detail: `Payload de importación inválido: ${formattedErrors.join('; ')}`,
-      issues: parseResult.error.format()
-    });
+  if (!Array.isArray(taskList) || taskList.length === 0) {
+    res.status(400).json({ detail: 'La lista tasks es requerida y no puede estar vacía.' });
+    return;
   }
-
-  const { project_name: projectName, tasks: taskList } = parseResult.data;
 
   let project = store.getProjects(userId).find(p => p.name === projectName);
   if (!project) {
     project = store.addProject(userId, projectName, 'Proyecto creado vía Importación IA');
   }
 
-  taskList.forEach((tdata) => {
+  taskList.forEach((tdata: any, idx: number) => {
+    let cat = tdata.category;
+    if (!Object.values(TaskCategory).includes(cat)) {
+      cat = TaskCategory.CARPENTRY;
+    }
     store.addTask(userId, {
       project_id: project!.id,
-      title: tdata.title,
-      description: tdata.description,
-      category: tdata.category as TaskCategory,
-      estimated_hours: tdata.estimated_hours,
-      curing_hours: tdata.curing_hours,
+      title: tdata.title || `Tarea ${idx + 1}`,
+      description: tdata.description || '',
+      category: cat,
+      estimated_hours: parseFloat(tdata.estimated_hours) || 1.0,
+      curing_hours: parseFloat(tdata.curing_hours) || 0.0,
       order: store.getTasks(userId).length + 1
     });
   });

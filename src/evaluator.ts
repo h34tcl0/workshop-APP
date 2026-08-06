@@ -443,11 +443,11 @@ export function evaluateDayFeasibility(
     for (let i = 0; i < bestScheduledTasks.length; i++) {
       const task = bestScheduledTasks[i];
       const tEnd = currH + task.estimated_hours;
+      const projPrefix = task.project_name ? `[${task.project_name}] ` : "";
       timeline.push({
         time_range: `${formatHour(currH)} — ${formatHour(tEnd)}`,
-        title: `#${task.order || (i + 1)} ${task.title}`,
-        duration: `${task.estimated_hours.toFixed(1)}h`,
-        project_name: task.project_name || undefined
+        title: `${projPrefix}#${task.order || (i + 1)} ${task.title}`,
+        duration: `${task.estimated_hours.toFixed(1)}h`
       });
       currH = tEnd;
 

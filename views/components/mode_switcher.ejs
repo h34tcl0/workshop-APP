@@ -17,24 +17,12 @@
 </div>
 
 <script>
-// Modo Enfoque (#toggle-backlog-btn, lógica en backlog.js) solo tiene sentido cuando
-// el backlog está en pantalla — es decir, modo Planificación + subtab Agenda. Se oculta
-// en cualquier otro contexto (Taller, o subtab Materiales) para no confundir, ya que
-// ahí no tiene ningún efecto visible (bug de UX reportado ago 2026).
-function updateFocusModeButtonVisibility(mode, subtab) {
-    const focusBtn = document.getElementById('toggle-backlog-btn');
-    if (!focusBtn) return;
-    const shouldShow = mode === 'planning' && subtab !== 'materials';
-    focusBtn.classList.toggle('hidden', !shouldShow);
-}
-
 function switchWorkspaceMode(mode) {
     const planningBtn = document.getElementById('mode-btn-planning');
     const workshopBtn = document.getElementById('mode-btn-workshop');
     const planningSubtabs = document.getElementById('planning-subtabs-bar');
     const planningContainer = document.getElementById('main-layout-grid');
     const workshopContainer = document.getElementById('workshop-mode-view');
-    const materialsView = document.getElementById('materials-view-wrapper');
 
     if (!planningBtn || !workshopBtn) return;
 
@@ -46,13 +34,8 @@ function switchWorkspaceMode(mode) {
 
         if (planningSubtabs) planningSubtabs.classList.add('hidden');
         if (planningContainer) planningContainer.classList.add('hidden');
-        // materials-view-wrapper es hermano de main-layout-grid, no hijo: hay que
-        // ocultarlo explícitamente o queda visible "sangrando" arriba de Taller si la
-        // subtab Materiales había quedado activa antes de cambiar de modo.
-        if (materialsView) materialsView.classList.add('hidden');
         if (workshopContainer) workshopContainer.classList.remove('hidden');
 
-        updateFocusModeButtonVisibility('workshop', null);
         localStorage.setItem('agendapp_workspace_mode', 'workshop');
     } else {
         workshopBtn.classList.remove('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
@@ -61,13 +44,8 @@ function switchWorkspaceMode(mode) {
         planningBtn.classList.remove('text-ink2', 'font-medium');
 
         if (planningSubtabs) planningSubtabs.classList.remove('hidden');
+        if (planningContainer) planningContainer.classList.remove('hidden');
         if (workshopContainer) workshopContainer.classList.add('hidden');
-
-        // Delegamos la visibilidad de backlog/agenda vs materiales a switchPlanningSubtab,
-        // que ya sabe restaurar el estado correcto según la última subtab guardada —
-        // evita duplicar esa lógica acá y mantiene todo consistente.
-        const savedSubtab = localStorage.getItem('agendapp_planning_subtab') || 'agenda';
-        switchPlanningSubtab(savedSubtab);
 
         localStorage.setItem('agendapp_workspace_mode', 'planning');
     }
@@ -76,11 +54,9 @@ function switchWorkspaceMode(mode) {
 function switchPlanningSubtab(subtab) {
     const agendaBtn = document.getElementById('plan-tab-btn-agenda');
     const materialsBtn = document.getElementById('plan-tab-btn-materials');
-    // Nota: backlog-container y agenda-container no se tocan acá — Modo Enfoque
-    // (backlog.js) maneja su propio estado de colapso de forma independiente, y
-    // ambos son hijos de main-layout-grid, que se oculta/muestra como bloque entero.
+    const backlogCol = document.getElementById('backlog-container');
+    const agendaCol = document.getElementById('agenda-container');
     const materialsView = document.getElementById('materials-view-wrapper');
-    const planningContainer = document.getElementById('main-layout-grid');
 
     if (!agendaBtn || !materialsBtn) return;
 
@@ -90,10 +66,10 @@ function switchPlanningSubtab(subtab) {
         materialsBtn.classList.add('border-brass', 'text-brass');
         materialsBtn.classList.remove('border-hairline', 'text-ink2');
 
-        if (planningContainer) planningContainer.classList.add('hidden');
+        if (backlogCol) backlogCol.classList.add('hidden');
+        if (agendaCol) agendaCol.classList.add('hidden');
         if (materialsView) materialsView.classList.remove('hidden');
 
-        updateFocusModeButtonVisibility('planning', 'materials');
         localStorage.setItem('agendapp_planning_subtab', 'materials');
     } else {
         materialsBtn.classList.remove('border-brass', 'text-brass');
@@ -101,10 +77,10 @@ function switchPlanningSubtab(subtab) {
         agendaBtn.classList.add('border-brass', 'text-brass');
         agendaBtn.classList.remove('border-hairline', 'text-ink2');
 
-        if (planningContainer) planningContainer.classList.remove('hidden');
+        if (backlogCol) backlogCol.classList.remove('hidden');
+        if (agendaCol) agendaCol.classList.remove('hidden');
         if (materialsView) materialsView.classList.add('hidden');
 
-        updateFocusModeButtonVisibility('planning', 'agenda');
         localStorage.setItem('agendapp_planning_subtab', 'agenda');
     }
 }

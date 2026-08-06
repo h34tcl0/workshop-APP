@@ -6,189 +6,26 @@ function getSessionSecret(): string {
   return process.env.SESSION_SECRET || 'workshop-os-secure-session-key-2026';
 }
 
-export const DEFAULT_PBKDF2_ITERATIONS = 210000;
-
-/**
- * Generates a PBKDF2 password hash with a configurable iteration count.
- * Format stored: `pbkdf2:<iterations>:<salt>:<hash>`
- */
-export function hashPassword(password: string, iterations: number = DEFAULT_PBKDF2_ITERATIONS): string {
+export function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex');
-  return `pbkdf2:${iterations}:${salt}:${hash}`;
+  const hash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
+  return `${salt}:${hash}`;
 }
 
-export interface VerifyPasswordResult {
-  isValid: boolean;
-  needsRehash: boolean;
-}
-
-/**
- * Detailed password verification supporting legacy hashes (10,000 iterations, 2-part format)
- * and new hashes (210,000 iterations, 4-part format).
- */
-export function verifyPasswordDetailed(password: string, storedHash: string): VerifyPasswordResult {
+export function verifyPassword(password: string, storedHash: string): boolean {
   try {
-    if (!storedHash) return { isValid: false, needsRehash: false };
-
-    const parts = storedHash.split(':');
-    let iterations = 10000;
-    let salt = '';
-    let hash = '';
-
-    if (parts.length === 4 && parts[0] === 'pbkdf2') {
-      iterations = parseInt(parts[1], 10) || DEFAULT_PBKDF2_ITERATIONS;
-      salt = parts[2];
-      hash = parts[3];
-    } else if (parts.length === 3) {
-      iterations = parseInt(parts[0], 10) || 10000;
-      salt = parts[1];
-      hash = parts[2];
-    } else if (parts.length === 2) {
-      // Legacy format: salt:hash (10,000 iterations)
-      salt = parts[0];
-      hash = parts[1];
-      iterations = 10000;
-    } else {
-      return { isValid: false, needsRehash: false };
-    }
-
-    if (!salt || !hash) return { isValid: false, needsRehash: false };
-
-    const verifyHash = crypto.pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex');
+    if (!storedHash || !storedHash.includes(':')) return false;
+    const [salt, hash] = storedHash.split(':');
+    if (!salt || !hash) return false;
+    const verifyHash = crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
     const hashBuf = Buffer.from(hash, 'hex');
     const verifyBuf = Buffer.from(verifyHash, 'hex');
-
-    if (hashBuf.length !== verifyBuf.length) return { isValid: false, needsRehash: false };
-
-    const isValid = crypto.timingSafeEqual(hashBuf, verifyBuf);
-    const needsRehash = isValid && iterations < DEFAULT_PBKDF2_ITERATIONS;
-
-    return { isValid, needsRehash };
+    if (hashBuf.length !== verifyBuf.length) return false;
+    return crypto.timingSafeEqual(hashBuf, verifyBuf);
   } catch (err) {
     console.error('[AUTH] verifyPassword error:', err);
-    return { isValid: false, needsRehash: false };
+    return false;
   }
-}
-
-/**
- * Backward-compatible boolean wrapper for verifyPassword
- */
-export function verifyPassword(password: string, storedHash: string): boolean {
-  return verifyPasswordDetailed(password, storedHash).isValid;
-}
-
-/**
- * In-Memory Rate Limiting for Auth (/login & /register)
- * Max 5 failed attempts per 15-minute window per IP.
- */
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
-}
-
-const authRateLimitMap = new Map<string, RateLimitEntry>();
-const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const MAX_FAILED_ATTEMPTS = 5;
-
-export function checkAuthRateLimit(ip: string): { allowed: boolean; remaining: number; retryAfterSec: number } {
-  const now = Date.now();
-  const entry = authRateLimitMap.get(ip);
-
-  if (!entry || now > entry.resetAt) {
-    return { allowed: true, remaining: MAX_FAILED_ATTEMPTS, retryAfterSec: 0 };
-  }
-
-  if (entry.count >= MAX_FAILED_ATTEMPTS) {
-    const retryAfterSec = Math.ceil((entry.resetAt - now) / 1000);
-    return { allowed: false, remaining: 0, retryAfterSec };
-  }
-
-  return { allowed: true, remaining: MAX_FAILED_ATTEMPTS - entry.count, retryAfterSec: 0 };
-}
-
-export function recordAuthFailure(ip: string): void {
-  const now = Date.now();
-  const entry = authRateLimitMap.get(ip);
-
-  if (!entry || now > entry.resetAt) {
-    authRateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-  } else {
-    entry.count += 1;
-  }
-}
-
-export function resetAuthRateLimit(ip: string): void {
-  authRateLimitMap.delete(ip);
-}
-
-export function getClientIp(req: Request): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.length > 0) {
-    return forwarded.split(',')[0].trim();
-  }
-  return req.ip || req.socket.remoteAddress || '127.0.0.1';
-}
-
-/**
- * Same-Origin CSRF Protection Middleware
- * Validates Origin / Referer header on state-changing HTTP requests (POST, PUT, DELETE, PATCH).
- */
-export function verifySameOrigin(req: Request, res: Response, next: NextFunction) {
-  if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-    return next();
-  }
-
-  const originHeader = (req.headers.origin as string) || (req.headers.referer as string);
-  if (!originHeader) {
-    console.warn(`[CSRF] Rejected ${req.method} ${req.path}: Missing Origin/Referer header`);
-    if (req.xhr || req.path.startsWith('/api/') || (req.headers.accept && req.headers.accept.includes('json'))) {
-      return res.status(403).json({ error: 'Acceso denegado: cabecera de origen no proporcionada (protección CSRF)' });
-    }
-    return res.status(403).send('Acceso denegado: protección CSRF activa (cabecera de origen no proporcionada)');
-  }
-
-  try {
-    const originUrl = new URL(originHeader);
-    const originHost = originUrl.host.toLowerCase();
-    const originHostname = originUrl.hostname.toLowerCase();
-
-    const rawReqHost = (req.headers.host as string) || '';
-    const rawForwardedHost = (req.headers['x-forwarded-host'] as string) || '';
-
-    const allowedHosts = new Set<string>();
-    if (rawReqHost) {
-      allowedHosts.add(rawReqHost.toLowerCase());
-      allowedHosts.add(rawReqHost.split(':')[0].toLowerCase());
-    }
-    if (rawForwardedHost) {
-      const fHosts = rawForwardedHost.split(',').map(h => h.trim().toLowerCase());
-      for (const fh of fHosts) {
-        allowedHosts.add(fh);
-        allowedHosts.add(fh.split(':')[0]);
-      }
-    }
-    if (req.hostname) {
-      allowedHosts.add(req.hostname.toLowerCase());
-    }
-    allowedHosts.add('localhost');
-    allowedHosts.add('127.0.0.1');
-
-    const isAllowed = allowedHosts.has(originHost) || allowedHosts.has(originHostname);
-
-    if (!isAllowed) {
-      console.warn(`[CSRF] Rejected ${req.method} ${req.path}: Origin '${originHeader}' (host: ${originHost}) not in allowed set [${Array.from(allowedHosts).join(', ')}]`);
-      if (req.xhr || req.path.startsWith('/api/') || (req.headers.accept && req.headers.accept.includes('json'))) {
-        return res.status(403).json({ error: 'Acceso denegado: origen no permitido (protección CSRF)' });
-      }
-      return res.status(403).send('Acceso denegado: origen no permitido');
-    }
-  } catch (err) {
-    console.warn(`[CSRF] Invalid origin URL '${originHeader}':`, err);
-    return res.status(403).send('Acceso denegado: origen inválido');
-  }
-
-  next();
 }
 
 export function signToken(data: { userId: number; email: string }): string {
