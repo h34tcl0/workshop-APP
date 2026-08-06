@@ -484,7 +484,7 @@
                         <% eval.forced_tasks.forEach(function(ft) { %>
                         <div class="flex items-center justify-between gap-2 bg-brass/5 border border-brassdim/30 rounded-lg px-3 py-2">
                             <span class="text-xs text-ink2">⚡ <strong class="text-ink font-medium"><%= ft.task.title %></strong> a las <%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
-                            <form action="/day-override/forced-task/<%= ft.forced_id %>/delete" method="post">
+                            <form action="/day-override/forced-task/<%= ft.id || ft.forced_id %>/delete" method="post">
                                 <button type="submit" aria-label="Quitar forzada" class="w-9 h-9 sm:w-6 sm:h-6 rounded-md text-rust hover:bg-rust/10 flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0"><svg class="w-3.5 h-3.5"><use href="#i-close"/></svg></button>
                             </form>
                         </div>

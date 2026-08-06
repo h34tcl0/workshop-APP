@@ -542,3 +542,26 @@ document.addEventListener('DOMContentLoaded', function () {
     initSortable();
     initTaskAutocomplete();
 });
+
+// Exponer explícitamente funciones al ámbito global (window)
+Object.assign(window, {
+    showToast,
+    switchTab,
+    copyAiPrompt,
+    importJsonTasks,
+    toggleEditTask,
+    toggleHistory,
+    toggleProjectAccordion,
+    restoreProjectAccordions,
+    activateTaskToBacklog,
+    handleTaskDelete,
+    handleTaskUpdate,
+    toggleTaskInlineEdit,
+    quickAddTaskToProject,
+    toggleProjects,
+    toggleTemplates,
+    handleProjectSelectChange,
+    cancelInlineProject,
+    createInlineProject,
+    toggleFocusMode
+});

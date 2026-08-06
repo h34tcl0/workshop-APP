@@ -128,6 +128,7 @@ export interface TimelineItem {
   time_range: string;
   title: string;
   duration: string;
+  project_name?: string;
 }
 
 export interface ClimateSegment {

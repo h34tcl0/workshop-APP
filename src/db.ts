@@ -720,22 +720,22 @@ export class SQLiteStore {
 
   // --- APP SETTINGS ---
   getAppSettings(userId: number): AppSettings {
-    let row = this.db.prepare("SELECT * FROM app_settings WHERE user_id = ?").get(userId) as any;
-    if (!row) {
-      const defaultCalId = userId === 1 ? (process.env.GOOGLE_CALENDAR_ID || null) : null;
-      const defaultCalEnabled = userId === 1 && Boolean(process.env.GOOGLE_CALENDAR_ID) ? 1 : 0;
+    const defaultCalId = userId === 1 ? (process.env.GOOGLE_CALENDAR_ID || null) : null;
+    const defaultCalEnabled = userId === 1 && Boolean(process.env.GOOGLE_CALENDAR_ID) ? 1 : 0;
 
-      this.db.prepare(`
-        INSERT INTO app_settings (
-          user_id, operational_start_hour, operational_end_hour, max_humidity_percent,
-          latitude, longitude, setup_hours, teardown_hours, min_work_hours,
-          min_work_hours_unless_final, min_rain_precipitation_mm, checkin_hour,
-          morning_eval_lead_hours, exclude_saturdays, exclude_sundays, exclude_holidays,
-          require_curing_before_cutoff, telegram_chat_id, google_calendar_id, google_calendar_enabled
-        ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.2, 19, 1, 1, 1, 1, 1, NULL, ?, ?);
-      `).run(userId, defaultCalId, defaultCalEnabled);
-      row = this.db.prepare("SELECT * FROM app_settings WHERE user_id = ?").get(userId) as any;
-    }
+    // Insertar atómicamente si no existe para evitar la condición de carrera (TOCTOU)
+    this.db.prepare(`
+      INSERT INTO app_settings (
+        user_id, operational_start_hour, operational_end_hour, max_humidity_percent,
+        latitude, longitude, setup_hours, teardown_hours, min_work_hours,
+        min_work_hours_unless_final, min_rain_precipitation_mm, checkin_hour,
+        morning_eval_lead_hours, exclude_saturdays, exclude_sundays, exclude_holidays,
+        require_curing_before_cutoff, telegram_chat_id, google_calendar_id, google_calendar_enabled
+      ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.2, 19, 1, 1, 1, 1, 1, NULL, ?, ?)
+      ON CONFLICT(user_id) DO NOTHING;
+    `).run(userId, defaultCalId, defaultCalEnabled);
+
+    const row = this.db.prepare("SELECT * FROM app_settings WHERE user_id = ?").get(userId) as any;
 
     const telegramChatId = row.telegram_chat_id ? String(row.telegram_chat_id).trim() : null;
 
@@ -887,13 +887,13 @@ export class SQLiteStore {
 
     const code = String(Math.floor(100000 + Math.random() * 900000)); // 6 dígitos, 100000-999999
     const nowIso = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutos
+    const expiresAtMs = Date.now() + 10 * 60 * 1000; // 10 minutos (milisegundos Unix)
 
     this.db.prepare(
       "INSERT INTO telegram_link_codes (user_id, code, expires_at, created_at) VALUES (?, ?, ?, ?)"
-    ).run(userId, code, expiresAt, nowIso);
+    ).run(userId, code, expiresAtMs, nowIso);
 
-    return { code, expiresAt };
+    return { code, expiresAt: new Date(expiresAtMs).toISOString() };
   }
 
   /**
@@ -915,7 +915,24 @@ export class SQLiteStore {
       return { success: false, error: "Código inválido o expirado. Generá uno nuevo desde la app." };
     }
 
-    if (new Date(row.expires_at).getTime() < Date.now()) {
+    let expiryMs: number;
+    const rawExpires = row.expires_at;
+
+    if (typeof rawExpires === 'number' || (typeof rawExpires === 'string' && /^\d+$/.test(rawExpires.trim()))) {
+      // Almacenamiento numérico directo (Unix Epoch timestamp)
+      expiryMs = Number(rawExpires);
+    } else {
+      // Compatibilidad con registros legados ISO string: validación estricta fail-fast.
+      // Si la cadena ISO no finaliza explícitamente en 'Z', se considera inválida/corrupta.
+      const isoStr = String(rawExpires || '').trim();
+      if (!isoStr.endsWith('Z')) {
+        console.warn(`[OTP] Código de vinculación ID #${row.id} con formato ISO no-UTC sin sufijo 'Z': ${isoStr}. Rechazado por fail-fast.`);
+        return { success: false, error: "Código inválido o expirado. Generá uno nuevo desde la app." };
+      }
+      expiryMs = Date.parse(isoStr);
+    }
+
+    if (isNaN(expiryMs) || expiryMs < Date.now()) {
       return { success: false, error: "Código inválido o expirado. Generá uno nuevo desde la app." };
     }
 
@@ -2025,7 +2042,7 @@ export class SQLiteStore {
 
     const info = this.db.prepare(`
       INSERT INTO materials (user_id, project_id, name, quantity, unit, category, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
     `).run(
       userId,
       pId,

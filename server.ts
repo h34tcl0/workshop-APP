@@ -1,6 +1,8 @@
 import express from 'express';
 import path from 'path';
+import { z } from 'zod';
 import { initDatabase, store, closeDatabase } from './src/db.js';
+import { importPayloadSchema, reorderPayloadSchema } from './src/schemas.js';
 import { evaluateDayWithOverrides } from './src/evaluator.js';
 import { getHourlyForecast, getWeeklyForecast, MockWeatherService } from './src/weatherService.js';
 import { getHolidayDatesForRange } from './src/holidaysService.js';
@@ -9,7 +11,20 @@ import { TaskCategory, TaskStatus, Task } from './src/types.js';
 import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick } from './src/scheduler.js';
 import { TelegramBotService } from './src/telegramBot.js';
 import { calendarService } from './src/calendarService.js';
-import { requireAuth, hashPassword, verifyPassword, signToken, createSessionCookie, createClearSessionCookie, AuthenticatedRequest } from './src/auth.js';
+import {
+  requireAuth,
+  verifySameOrigin,
+  checkAuthRateLimit,
+  recordAuthFailure,
+  resetAuthRateLimit,
+  getClientIp,
+  hashPassword,
+  verifyPasswordDetailed,
+  signToken,
+  createSessionCookie,
+  createClearSessionCookie,
+  AuthenticatedRequest
+} from './src/auth.js';
 
 const app = express();
 const PORT = 3000;
@@ -44,6 +59,7 @@ app.set('view engine', 'ejs');
 // Middleware & Static Assets
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(verifySameOrigin);
 app.use('/static', express.static(path.join(process.cwd(), 'static')));
 
 // Public Health Check Endpoint
@@ -100,17 +116,43 @@ app.get('/login', (req: AuthenticatedRequest, res) => {
 });
 
 app.post('/login', (req, res) => {
+  const ip = getClientIp(req);
+  const limitCheck = checkAuthRateLimit(ip);
+  if (!limitCheck.allowed) {
+    console.warn(`[RATE LIMIT] Blocked login attempt from IP ${ip}. Retry in ${limitCheck.retryAfterSec}s.`);
+    return res.status(429).render('login', {
+      error: `Demasiados intentos fallidos. Por favor espera ${Math.ceil(limitCheck.retryAfterSec / 60)} minutos antes de reintentar.`,
+      email: req.body?.email || ''
+    });
+  }
+
   const { email, password } = req.body;
 
   if (!email || !password) {
+    recordAuthFailure(ip);
     return res.status(400).render('login', { error: 'Por favor ingresa correo y contraseña', email });
   }
 
   const user = store.getUserByEmail(email);
-  const isValid = user ? verifyPassword(password, user.password_hash) : false;
+  const authRes = user ? verifyPasswordDetailed(password, user.password_hash) : { isValid: false, needsRehash: false };
 
-  if (!user || !isValid) {
+  if (!user || !authRes.isValid) {
+    recordAuthFailure(ip);
     return res.status(401).render('login', { error: 'Credenciales inválidas', email });
+  }
+
+  // Successful login resets failure counter
+  resetAuthRateLimit(ip);
+
+  // Transparently upgrade hash to 210,000 PBKDF2 iterations if needed
+  if (authRes.needsRehash) {
+    try {
+      const newHash = hashPassword(password);
+      store.updateUserPassword(user.id, newHash);
+      console.log(`[AUTH] Upgraded password hash for user #${user.id} (${user.email}) to 210,000 PBKDF2 iterations.`);
+    } catch (err) {
+      console.error(`[AUTH] Error upgrading password hash for user #${user.id}:`, err);
+    }
   }
 
   const token = signToken({ userId: user.id, email: user.email });
@@ -124,20 +166,36 @@ app.get('/register', (req: AuthenticatedRequest, res) => {
 });
 
 app.post('/register', (req, res) => {
+  const ip = getClientIp(req);
+  const limitCheck = checkAuthRateLimit(ip);
+  if (!limitCheck.allowed) {
+    console.warn(`[RATE LIMIT] Blocked register attempt from IP ${ip}. Retry in ${limitCheck.retryAfterSec}s.`);
+    return res.status(429).render('register', {
+      error: `Demasiados intentos fallidos. Por favor espera ${Math.ceil(limitCheck.retryAfterSec / 60)} minutos antes de reintentar.`,
+      email: req.body?.email || ''
+    });
+  }
+
   const { email, password, password_confirm } = req.body;
   if (!email || !password) {
+    recordAuthFailure(ip);
     return res.status(400).render('register', { error: 'Todos los campos son obligatorios', email });
   }
   if (password !== password_confirm) {
+    recordAuthFailure(ip);
     return res.status(400).render('register', { error: 'Las contraseñas no coinciden', email });
   }
   if (password.length < 6) {
+    recordAuthFailure(ip);
     return res.status(400).render('register', { error: 'La contraseña debe tener al menos 6 caracteres', email });
   }
   const existing = store.getUserByEmail(email);
   if (existing) {
+    recordAuthFailure(ip);
     return res.status(400).render('register', { error: 'El correo electrónico ya está registrado', email });
   }
+
+  resetAuthRateLimit(ip);
   const hash = hashPassword(password);
   const user = store.createUser(email, hash);
   const token = signToken({ userId: user.id, email: user.email });
@@ -254,8 +312,9 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
       const forcedTasksWithHours = forcedRows.map(fr => ({
         task: store.getTask(userId, fr.task_id),
         forced_start_hour: fr.forced_start_hour,
-        forced_id: fr.id
-      })).filter((item): item is { task: Task; forced_start_hour: number; forced_id: number } => item.task != null);
+        forced_id: fr.id,
+        id: fr.id
+      })).filter((item): item is { task: Task; forced_start_hour: number; forced_id: number; id: number } => item.task != null);
 
       let hourly;
       if (scenario) {
@@ -372,25 +431,28 @@ app.post('/projects/:id/toggle', (req: AuthenticatedRequest, res) => {
   res.redirect(303, '/');
 });
 
+// POST /projects/:id/update - Update project details (e.g. rename)
 app.post('/projects/:id/update', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
   const id = parseInt(req.params.id, 10);
   const { name, description } = req.body;
-
-  if (name !== undefined && !String(name).trim()) {
+  if (!name || !String(name).trim()) {
     if (req.xhr || req.headers.accept?.includes('application/json')) {
-      return res.status(400).json({ success: false, error: 'El nombre del proyecto no puede estar vacío' });
+      return res.status(400).json({ error: 'El nombre del proyecto no puede estar vacío' });
     }
     return res.redirect(303, '/');
   }
-
   const updated = store.updateProject(userId, id, {
-    name: name !== undefined ? String(name) : undefined,
-    description: description !== undefined ? String(description) : undefined
+    name: String(name).trim(),
+    description: description ? String(description).trim() : undefined
   });
-
+  if (!updated) {
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+    return res.redirect(303, '/');
+  }
   if (req.xhr || req.headers.accept?.includes('application/json')) {
-    if (!updated) return res.status(404).json({ success: false, error: 'Proyecto no encontrado' });
     return res.json({ success: true, project: updated });
   }
   res.redirect(303, '/');
@@ -535,9 +597,6 @@ app.post('/tasks/:id/update_status', (req: AuthenticatedRequest, res) => {
   if (!updated) {
     return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });
   }
-  if (req.xhr || req.headers.accept?.includes('application/json') || req.headers['x-requested-with'] === 'XMLHttpRequest') {
-    return res.json({ success: true, task: updated });
-  }
   res.redirect(303, '/');
 });
 
@@ -571,40 +630,54 @@ app.post('/tasks/:id/move-down', (req: AuthenticatedRequest, res) => {
 // POST /tasks/reorder
 app.post('/tasks/reorder', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  const taskIds: number[] = req.body.task_ids || [];
-  store.reorderTasks(userId, taskIds);
+  const parseResult = reorderPayloadSchema.safeParse(req.body);
+
+  if (!parseResult.success) {
+    const formattedErrors = parseResult.error.issues.map(
+      issue => `${issue.path.join('.')}: ${issue.message}`
+    );
+    return res.status(400).json({
+      status: 'error',
+      detail: `Payload inválido: ${formattedErrors.join('; ')}`,
+      issues: parseResult.error.format()
+    });
+  }
+
+  store.reorderTasks(userId, parseResult.data.task_ids);
   res.json({ status: 'ok' });
 });
 
 // POST /tasks/import
 app.post('/tasks/import', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  const payload = req.body;
-  const projectName = payload.project_name || 'Proyecto Importado IA';
-  const taskList = payload.tasks || [];
+  const parseResult = importPayloadSchema.safeParse(req.body);
 
-  if (!Array.isArray(taskList) || taskList.length === 0) {
-    res.status(400).json({ detail: 'La lista tasks es requerida y no puede estar vacía.' });
-    return;
+  if (!parseResult.success) {
+    const formattedErrors = parseResult.error.issues.map(
+      issue => `${issue.path.join('.')}: ${issue.message}`
+    );
+    return res.status(400).json({
+      status: 'error',
+      detail: `Payload de importación inválido: ${formattedErrors.join('; ')}`,
+      issues: parseResult.error.format()
+    });
   }
+
+  const { project_name: projectName, tasks: taskList } = parseResult.data;
 
   let project = store.getProjects(userId).find(p => p.name === projectName);
   if (!project) {
     project = store.addProject(userId, projectName, 'Proyecto creado vía Importación IA');
   }
 
-  taskList.forEach((tdata: any, idx: number) => {
-    let cat = tdata.category;
-    if (!Object.values(TaskCategory).includes(cat)) {
-      cat = TaskCategory.CARPENTRY;
-    }
+  taskList.forEach((tdata) => {
     store.addTask(userId, {
       project_id: project!.id,
-      title: tdata.title || `Tarea ${idx + 1}`,
-      description: tdata.description || '',
-      category: cat,
-      estimated_hours: parseFloat(tdata.estimated_hours) || 1.0,
-      curing_hours: parseFloat(tdata.curing_hours) || 0.0,
+      title: tdata.title,
+      description: tdata.description,
+      category: tdata.category as TaskCategory,
+      estimated_hours: tdata.estimated_hours,
+      curing_hours: tdata.curing_hours,
       order: store.getTasks(userId).length + 1
     });
   });
@@ -1242,32 +1315,22 @@ app.post('/settings/update', (req: AuthenticatedRequest, res) => {
     exclude_sundays: body.exclude_sundays === 'true' || body.exclude_sundays === 'on',
     exclude_holidays: body.exclude_holidays === 'true' || body.exclude_holidays === 'on',
     require_curing_before_cutoff: body.require_curing_before_cutoff === 'true' || body.require_curing_before_cutoff === 'on',
-    // telegram_chat_id ya NO se acepta acá: se vincula exclusivamente vía código OTP
-    // (ver /settings/telegram/generate-code y /settings/telegram/unlink). Aceptarlo
-    // directo desde este formulario permitía que cualquier usuario le robara la
-    // vinculación de Telegram a otro con solo conocer/adivinar su chat_id (hallazgo
-    // de auditoría, ago 2026).
     google_calendar_id: body.google_calendar_id !== undefined ? String(body.google_calendar_id).trim() : undefined,
     google_calendar_enabled: body.google_calendar_enabled === 'true' || body.google_calendar_enabled === 'on' || body.google_calendar_enabled === '1'
   });
   res.redirect(303, '/');
 });
 
-// Genera un código de un solo uso (10 min) para vincular Telegram vía /vincular en el bot.
-// No toca telegram_chat_id todavía: eso solo pasa si el usuario prueba posesión real
-// del chat mandando este código desde Telegram.
+// Endpoint para la vinculación segura de Telegram vía OTP (código de 6 dígitos)
 app.post('/settings/telegram/generate-code', (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.id;
-  const { code, expiresAt } = store.generateTelegramLinkCode(userId);
-  res.json({ status: 'ok', code, expiresAt });
-});
-
-// Desvincular el PROPIO chat_id no requiere OTP: no es un vector de ataque contra
-// otros usuarios, solo afecta la propia cuenta de quien lo pide.
-app.post('/settings/telegram/unlink', (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.id;
-  store.updateAppSettings(userId, { telegram_chat_id: null as any });
-  res.redirect(303, '/');
+  try {
+    const userId = req.user!.id;
+    const { code, expiresAt } = store.generateTelegramLinkCode(userId);
+    res.json({ success: true, code, expiresAt });
+  } catch (err: any) {
+    console.error('Error generando código de vinculación Telegram:', err);
+    res.status(500).json({ error: 'Error interno al generar código' });
+  }
 });
 
 // Google Calendar Sync route

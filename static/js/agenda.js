@@ -7,3 +7,8 @@ function toggleDayEditor(dateIso) {
 function toggleAssignedTasks(panelId) {
     document.getElementById(panelId).classList.toggle('hidden');
 }
+
+Object.assign(window, {
+    toggleDayEditor,
+    toggleAssignedTasks
+});

@@ -48,3 +48,10 @@ async function generateTelegramLinkCode() {
         btn.textContent = originalText;
     }
 }
+
+Object.assign(window, {
+    openSettingsModal,
+    closeSettingsModal,
+    toggleTip,
+    generateTelegramLinkCode
+});

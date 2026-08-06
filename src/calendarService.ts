@@ -11,6 +11,37 @@ export interface CalendarSyncResult {
   error?: string;
 }
 
+async function executeWithRetry<T>(
+  operationName: string,
+  fn: () => Promise<T>,
+  maxAttempts: number = 3,
+  initialDelayMs: number = 1000
+): Promise<T> {
+  let attempt = 1;
+  let delay = initialDelayMs;
+
+  while (true) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const status = err?.code || err?.response?.status || err?.status || (typeof err?.code === 'number' ? err.code : undefined);
+      const is429 = status === 429 || (err?.message && String(err.message).includes("429")) || (err?.message && String(err.message).toLowerCase().includes("rate limit"));
+      const is5xx = typeof status === 'number' && status >= 500 && status < 600;
+
+      const shouldRetry = (is429 || is5xx) && attempt < maxAttempts;
+
+      if (!shouldRetry) {
+        throw err;
+      }
+
+      console.warn(`[GoogleCalendarService] Retry ${attempt}/${maxAttempts - 1} for '${operationName}' due to ${is429 ? '429 Rate Limit' : `HTTP ${status} Transient Error`}. Retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      attempt++;
+      delay *= 2;
+    }
+  }
+}
+
 export class GoogleCalendarService {
   private calendar: any = null;
   private calendarId: string;
@@ -247,10 +278,13 @@ export class GoogleCalendarService {
       const timezone = (settings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
       const eventPayload = this.buildEventPayload(evalDate, startTime, endTime, scheduledTasks, timezone);
 
-      const res = await this.calendar.events.insert({
-        calendarId: targetCalendarId,
-        requestBody: eventPayload
-      });
+      const res = (await executeWithRetry(
+        `createWorkshopEvent for User #${userId}`,
+        () => this.calendar.events.insert({
+          calendarId: targetCalendarId,
+          requestBody: eventPayload
+        })
+      )) as any;
 
       const eventId = res.data?.id || null;
       console.log(`[GoogleCalendarService] Event created (${eventId}) in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}.`);
@@ -286,11 +320,14 @@ export class GoogleCalendarService {
       const timezone = (settings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
       const eventPayload = this.buildEventPayload(evalDate, startTime, endTime, scheduledTasks, timezone);
 
-      await this.calendar.events.patch({
-        calendarId: targetCalendarId,
-        eventId: eventId,
-        requestBody: eventPayload
-      });
+      await executeWithRetry(
+        `updateWorkshopEvent for User #${userId} (${eventId})`,
+        () => this.calendar.events.patch({
+          calendarId: targetCalendarId,
+          eventId: eventId,
+          requestBody: eventPayload
+        })
+      );
 
       console.log(`[GoogleCalendarService] Event updated (${eventId}) in Google Calendar (${targetCalendarId}) for User #${userId} on ${evalDate}.`);
       return { success: true, eventId };
@@ -323,10 +360,13 @@ export class GoogleCalendarService {
     const targetCalendarId = settings.google_calendar_id.trim();
 
     try {
-      await this.calendar.events.delete({
-        calendarId: targetCalendarId,
-        eventId: eventId
-      });
+      await executeWithRetry(
+        `deleteWorkshopEvent for User #${userId} (${eventId})`,
+        () => this.calendar.events.delete({
+          calendarId: targetCalendarId,
+          eventId: eventId
+        })
+      );
 
       console.log(`[GoogleCalendarService] Event deleted (${eventId}) from Google Calendar (${targetCalendarId}) for User #${userId}.`);
       return { success: true };
