@@ -225,6 +225,14 @@ export class TelegramBotService {
         return true;
       } else {
         const errDetail = data?.description || JSON.stringify(data);
+        if (targetChatId && (
+          errDetail.includes('bot was blocked by the user') ||
+          errDetail.includes('user is deactivated') ||
+          errDetail.includes('chat not found')
+        )) {
+          console.warn(`[Telegram] Chat ID ${targetChatId} está deshabilitado/bloqueado (${errDetail}). Desvinculando automáticamente.`);
+          try { store.unlinkTelegramByChatId(String(targetChatId).trim()); } catch (_) {}
+        }
         console.error(`[Telegram API Error] sendMessage to chatId ${targetChatId} failed: ${errDetail}`);
         return false;
       }
@@ -260,6 +268,14 @@ export class TelegramBotService {
         return true;
       } else {
         const errDetail = data?.description || JSON.stringify(data);
+        if (targetChatId && (
+          errDetail.includes('bot was blocked by the user') ||
+          errDetail.includes('user is deactivated') ||
+          errDetail.includes('chat not found')
+        )) {
+          console.warn(`[Telegram] Chat ID ${targetChatId} está deshabilitado/bloqueado (${errDetail}). Desvinculando automáticamente.`);
+          try { store.unlinkTelegramByChatId(String(targetChatId).trim()); } catch (_) {}
+        }
         console.error(`[Telegram API Error] Method '${method}' failed: ${errDetail}`);
         return false;
       }

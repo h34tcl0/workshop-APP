@@ -93,3 +93,10 @@ function searchMapLocation() {
         })
         .catch(() => showToast('Error buscando la dirección'));
 }
+
+Object.assign(window, {
+    toggleLocationMap,
+    searchMapLocation,
+    updateTimezoneFromCoords,
+    setLocationPin
+});

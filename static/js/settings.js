@@ -49,9 +49,72 @@ async function generateTelegramLinkCode() {
     }
 }
 
+async function saveSettings(event) {
+    if (event) event.preventDefault();
+    const form = document.getElementById('settings-form') || (event && event.target);
+    if (!form) return;
+
+    const btn = form.querySelector('button[type="submit"]');
+    const originalText = btn ? btn.textContent : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = 'Guardando...';
+    }
+
+    try {
+        const formData = new FormData(form);
+        const body = new URLSearchParams(formData);
+
+        const res = await fetch('/settings/update', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: body.toString()
+        });
+
+        if (res.ok) {
+            window.location.reload();
+        } else {
+            const txt = await res.text();
+            alert('Error al guardar configuración: ' + (txt || res.statusText));
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        }
+    } catch (err) {
+        console.error('Error al guardar la configuración:', err);
+        alert('Error de red al guardar la configuración');
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    }
+}
+
+async function unlinkTelegram() {
+    if (!confirm('¿Desvincular este chat de Telegram? Dejarás de recibir notificaciones hasta volver a vincularlo.')) {
+        return;
+    }
+    try {
+        const res = await fetch('/settings/telegram/unlink', { method: 'POST' });
+        if (res.ok) {
+            window.location.reload();
+        } else {
+            const txt = await res.text();
+            alert('Error al desvincular Telegram: ' + (txt || res.statusText));
+        }
+    } catch (err) {
+        alert('Error de red al desvincular Telegram');
+    }
+}
+
 Object.assign(window, {
     openSettingsModal,
     closeSettingsModal,
     toggleTip,
-    generateTelegramLinkCode
+    generateTelegramLinkCode,
+    saveSettings,
+    unlinkTelegram
 });

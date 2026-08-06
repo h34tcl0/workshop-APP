@@ -954,6 +954,14 @@ export class SQLiteStore {
     return { success: true, userId, email: userRow ? String(userRow.email) : undefined };
   }
 
+  unlinkTelegram(userId: number): void {
+    this.db.prepare("UPDATE app_settings SET telegram_chat_id = NULL WHERE user_id = ?").run(userId);
+  }
+
+  unlinkTelegramByChatId(chatId: string): void {
+    this.db.prepare("UPDATE app_settings SET telegram_chat_id = NULL WHERE CAST(telegram_chat_id AS TEXT) = ?").run(chatId.trim());
+  }
+
   // --- PROJECTS ---
   getProjects(userId: number): Project[] {
     const rows = this.db.prepare("SELECT * FROM projects WHERE user_id = ? ORDER BY id ASC").all(userId) as any[];
