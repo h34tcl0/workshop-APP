@@ -205,7 +205,7 @@ export class GoogleCalendarService {
       }
 
       if (auth) {
-        this.calendar = google.calendar({ version: "v3", auth });
+        this.calendar = google.calendar({ version: "v3", auth, timeout: 10000 });
       } else {
         this.calendar = null;
       }

@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { store, initDatabase } from "../src/db.js";
 import {
   acquireEvaluationLock,
   releaseEvaluationLock,
   isEvaluationInProgress,
-  runMorningEvaluation
+  runMorningEvaluation,
+  processCheckinForUser,
+  setLockTimeoutForTest
 } from "../src/scheduler.js";
 
 describe("Evaluation Concurrency & Locking Unit Tests", () => {
@@ -14,6 +16,11 @@ describe("Evaluation Concurrency & Locking Unit Tests", () => {
     await initDatabase();
     // Ensure lock is clean
     releaseEvaluationLock(userId);
+    setLockTimeoutForTest(null);
+  });
+
+  afterEach(() => {
+    setLockTimeoutForTest(null);
   });
 
   it("1. Lock helper functions acquire and release properly per user", () => {
@@ -89,5 +96,57 @@ describe("Evaluation Concurrency & Locking Unit Tests", () => {
 
     // Lock is clean after both settle
     expect(isEvaluationInProgress(userId)).toBe(false);
+  });
+
+  it("5. Exact tonight scenario: Tier 1 Morning Evaluation followed by Tier 3 Night Check-in in same process session", async () => {
+    expect(isEvaluationInProgress(userId)).toBe(false);
+
+    // Step A: Run Tier 1 Morning Evaluation
+    const morningResult = await runMorningEvaluation(userId, "2026-08-10", "sunny");
+    expect(morningResult).toBeDefined();
+    expect(isEvaluationInProgress(userId)).toBe(false);
+
+    // Step B: Run Tier 3 Night Check-in for same user in same session
+    // Must NOT be blocked by morning evaluation lock
+    const warnSpy = vi.spyOn(console, "warn");
+    await processCheckinForUser(userId, new Date("2026-08-10T22:00:00Z"), true);
+
+    const wasBlocked = warnSpy.mock.calls.some(call =>
+      call[0] && typeof call[0] === "string" && call[0].includes("Se omitió el check-in")
+    );
+    expect(wasBlocked).toBe(false);
+    expect(isEvaluationInProgress(userId)).toBe(false);
+    warnSpy.mockRestore();
+  });
+
+  it("6. Safety Lock Timeout: Automatically releases lock if held past timeout limit and logs clear alert", async () => {
+    expect(isEvaluationInProgress(userId)).toBe(false);
+
+    // Set test timeout to 100 milliseconds
+    setLockTimeoutForTest(100);
+
+    // Acquire lock
+    const acquired = acquireEvaluationLock(userId);
+    expect(acquired).toBe(true);
+    expect(isEvaluationInProgress(userId)).toBe(true);
+
+    // Wait 150ms to exceed 100ms safety timeout
+    await new Promise(r => setTimeout(r, 150));
+
+    const warnSpy = vi.spyOn(console, "warn");
+
+    // Lock check or re-acquisition should trigger safety release, log alert, and allow acquisition
+    const reacquiredAfterTimeout = acquireEvaluationLock(userId);
+
+    expect(reacquiredAfterTimeout).toBe(true);
+
+    const loggedAlert = warnSpy.mock.calls.some(call =>
+      call[0] && typeof call[0] === "string" && call[0].includes("ALERTA: lock de evaluación para usuario 1 liberado por timeout de seguridad")
+    );
+    expect(loggedAlert).toBe(true);
+
+    releaseEvaluationLock(userId);
+    expect(isEvaluationInProgress(userId)).toBe(false);
+    warnSpy.mockRestore();
   });
 });

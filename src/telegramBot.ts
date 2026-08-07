@@ -98,7 +98,7 @@ export class TelegramBotService {
     (async () => {
       // 1. Limpieza de Webhook previo (Evita conflicto HTTP 409)
       try {
-        const delRes = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=true`);
+        const delRes = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook?drop_pending_updates=true`, { signal: AbortSignal.timeout(10000) });
         const delData = await delRes.json();
         if (delData && delData.ok) {
           console.log("[Telegram Polling] Webhook previo eliminado exitosamente.");
@@ -109,7 +109,7 @@ export class TelegramBotService {
 
       // 2. Validación de Token con getMe
       try {
-        const getMeRes = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+        const getMeRes = await fetch(`https://api.telegram.org/bot${token}/getMe`, { signal: AbortSignal.timeout(10000) });
         const getMeData = await getMeRes.json();
         if (getMeData && getMeData.ok && getMeData.result) {
           console.log(`[Telegram Bot] Conectado exitosamente como @${getMeData.result.username}`);
@@ -218,7 +218,8 @@ export class TelegramBotService {
       const response = await fetch(`${this.apiUrl}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000)
       });
       const data = await response.json();
       if (data && data.ok) {
@@ -261,7 +262,8 @@ export class TelegramBotService {
       const response = await fetch(`${this.apiUrl}/${method}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000)
       });
       const data = await response.json();
       if (data && data.ok) {

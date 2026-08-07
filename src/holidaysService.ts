@@ -9,7 +9,10 @@ export async function getHolidayDates(year: number, countryCode: string = 'CL'):
   const dates = new Set<string>();
   try {
     const url = `https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`;
-    const response = await fetch(url, { headers: { 'User-Agent': 'WorkshopOS/1.0' } });
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'WorkshopOS/1.0' },
+      signal: AbortSignal.timeout(5000)
+    });
     if (response.ok) {
       const data = await response.json();
       if (Array.isArray(data)) {
