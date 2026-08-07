@@ -2071,7 +2071,7 @@ export class SQLiteStore {
 
     const info = this.db.prepare(`
       INSERT INTO materials (user_id, project_id, name, quantity, unit, category, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       userId,
       pId,

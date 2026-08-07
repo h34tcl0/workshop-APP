@@ -78,7 +78,9 @@
             </button>
         </div>
 
-        <form action="/materials/add" method="post" id="add-material-form" class="space-y-4">
+        <div id="add-material-error" class="hidden p-3 rounded-xl bg-rust/10 border border-rust/30 text-rust text-xs font-semibold"></div>
+
+        <form action="/materials/add" method="post" id="add-material-form" onsubmit="submitAddMaterialForm(event)" class="space-y-4">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Proyecto Asociado</label>
@@ -154,7 +156,9 @@
             </button>
         </div>
 
-        <form action="/tools/add" method="post" id="add-tool-form" class="space-y-4">
+        <div id="add-tool-error" class="hidden p-3 rounded-xl bg-rust/10 border border-rust/30 text-rust text-xs font-semibold"></div>
+
+        <form action="/tools/add" method="post" id="add-tool-form" onsubmit="submitAddToolForm(event)" class="space-y-4">
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div class="sm:col-span-1">
                     <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Nombre Herramienta</label>
@@ -632,12 +636,127 @@ function switchInventoryTab(tab) {
 // TOGGLE FORM CARDS
 function toggleAddMaterialForm() {
     const card = document.getElementById('add-material-form-card');
+    const err = document.getElementById('add-material-error');
+    if (err) { err.classList.add('hidden'); err.textContent = ''; }
     if (card) card.classList.toggle('hidden');
 }
 
 function toggleAddToolForm() {
     const card = document.getElementById('add-tool-form-card');
+    const err = document.getElementById('add-tool-error');
+    if (err) { err.classList.add('hidden'); err.textContent = ''; }
     if (card) card.classList.toggle('hidden');
+}
+
+async function submitAddMaterialForm(e) {
+    e.preventDefault();
+    const form = e.target;
+    const errorContainer = document.getElementById('add-material-error');
+    if (errorContainer) {
+        errorContainer.classList.add('hidden');
+        errorContainer.textContent = '';
+    }
+
+    const formData = new FormData(form);
+    const data = {
+        project_id: formData.get('project_id'),
+        name: formData.get('name'),
+        quantity: formData.get('quantity'),
+        unit: formData.get('unit'),
+        category: formData.get('category'),
+        status: formData.get('status')
+    };
+
+    try {
+        const res = await fetch('/materials/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        const result = await res.json().catch(() => ({}));
+
+        if (res.ok && result.success) {
+            form.reset();
+            // Asegurar que la subtab se mantenga en 'materials'
+            localStorage.setItem('agendapp_planning_subtab', 'materials');
+            window.location.reload();
+        } else {
+            const errorMsg = result.error || 'Error al guardar el material';
+            if (errorContainer) {
+                errorContainer.textContent = '⚠️ ' + errorMsg;
+                errorContainer.classList.remove('hidden');
+            } else {
+                alert(errorMsg);
+            }
+        }
+    } catch (err) {
+        console.error('Error adding material:', err);
+        if (errorContainer) {
+            errorContainer.textContent = '⚠️ Error de conexión al guardar el material.';
+            errorContainer.classList.remove('hidden');
+        } else {
+            alert('Error de conexión al guardar el material.');
+        }
+    }
+}
+
+async function submitAddToolForm(e) {
+    e.preventDefault();
+    const form = e.target;
+    const errorContainer = document.getElementById('add-tool-error');
+    if (errorContainer) {
+        errorContainer.classList.add('hidden');
+        errorContainer.textContent = '';
+    }
+
+    const formData = new FormData(form);
+    const data = {
+        name: formData.get('name'),
+        category: formData.get('category'),
+        status: formData.get('status'),
+        notes: formData.get('notes')
+    };
+
+    try {
+        const res = await fetch('/tools/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        const result = await res.json().catch(() => ({}));
+
+        if (res.ok && result.success) {
+            form.reset();
+            localStorage.setItem('agendapp_planning_subtab', 'materials');
+            window.location.reload();
+        } else {
+            const errorMsg = result.error || 'Error al registrar la herramienta';
+            if (errorContainer) {
+                errorContainer.textContent = '⚠️ ' + errorMsg;
+                errorContainer.classList.remove('hidden');
+            } else {
+                alert(errorMsg);
+            }
+        }
+    } catch (err) {
+        console.error('Error adding tool:', err);
+        if (errorContainer) {
+            errorContainer.textContent = '⚠️ Error de conexión al guardar la herramienta.';
+            errorContainer.classList.remove('hidden');
+        } else {
+            alert('Error de conexión al guardar la herramienta.');
+        }
+    }
 }
 
 function openImportMaterialsModal() {
