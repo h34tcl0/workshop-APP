@@ -8,6 +8,7 @@
       const outOfStockCount = allMats.filter(m => m.status === 'out_of_stock').length;
       const toolsAvailable = allTools.filter(t => t.status === 'available').length;
       const toolsInUse = allTools.filter(t => t.status === 'in_use').length;
+      const toolsToBuy = allTools.filter(t => t.status === 'to_buy' || t.status === 'Por Comprar').length;
       const toolsBroken = allTools.filter(t => t.status === 'broken').length;
     %>
 
@@ -61,7 +62,7 @@
         </div>
         <div class="bg-surface border border-brass/30 bg-brass/5 rounded-xl p-3.5 text-center shadow-panel">
             <span class="block text-[10px] font-semibold text-brass uppercase tracking-wider flex items-center justify-center gap-1.5">
-                <span class="w-2 h-2 rounded-full bg-brass"></span> Herramientas (<%= toolsAvailable %> Avail)
+                <span class="w-2 h-2 rounded-full bg-brass"></span> Herramientas (<%= toolsAvailable %> Avail | <%= toolsToBuy %> Por Comprar)
             </span>
             <span class="block text-2xl font-bold font-mono text-brass mt-0.5"><%= allTools.length %></span>
         </div>
@@ -179,7 +180,8 @@
                     <select name="status" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass font-semibold">
                         <option value="available" selected class="text-moss">🟢 Disponible en Taller</option>
                         <option value="in_use" class="text-amber-500">🟡 En Uso / Mantención</option>
-                        <option value="broken" class="text-rust">🔴 Dañada / Reemplazar</option>
+                        <option value="to_buy" class="text-rust">🔴 Por Comprar (Falta en Taller)</option>
+                        <option value="broken" class="text-rust">⚠️ Dañada / Reemplazar</option>
                     </select>
                 </div>
             </div>
@@ -336,10 +338,11 @@
 
                                 <!-- SELECTOR ESTADO HERRAMIENTA -->
                                 <select onchange="updateToolStatusDirect(<%= tool.id %>, this.value)"
-                                        class="text-[11px] font-bold px-2.5 py-1 rounded-lg border appearance-none pr-6 cursor-pointer focus:outline-none <%= tool.status === 'available' ? 'bg-moss/10 border-moss/40 text-moss' : tool.status === 'in_use' ? 'bg-amber-500/10 border-amber-500/40 text-amber-500' : 'bg-rust/10 border-rust/40 text-rust' %>">
+                                        class="text-[11px] font-bold px-2.5 py-1 rounded-lg border appearance-none pr-6 cursor-pointer focus:outline-none <%= tool.status === 'available' ? 'bg-moss/10 border-moss/40 text-moss' : tool.status === 'in_use' ? 'bg-amber-500/10 border-amber-500/40 text-amber-500' : tool.status === 'to_buy' || tool.status === 'Por Comprar' ? 'bg-rust/10 border-rust/40 text-rust' : 'bg-rust/10 border-rust/40 text-rust' %>">
                                     <option value="available" <%= tool.status === 'available' ? 'selected' : '' %>>🟢 Disponible</option>
                                     <option value="in_use" <%= tool.status === 'in_use' ? 'selected' : '' %>>🟡 En Uso</option>
-                                    <option value="broken" <%= tool.status === 'broken' ? 'selected' : '' %>>🔴 Dañada</option>
+                                    <option value="to_buy" <%= tool.status === 'to_buy' || tool.status === 'Por Comprar' ? 'selected' : '' %>>🔴 Por Comprar</option>
+                                    <option value="broken" <%= tool.status === 'broken' ? 'selected' : '' %>>⚠️ Dañada</option>
                                 </select>
                             </div>
 
@@ -486,7 +489,8 @@
                     <select id="edit-tool-status" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass font-semibold">
                         <option value="available">🟢 Disponible</option>
                         <option value="in_use">🟡 En Uso / Mantención</option>
-                        <option value="broken">🔴 Dañada / Reemplazar</option>
+                        <option value="to_buy">🔴 Por Comprar (Falta en Taller)</option>
+                        <option value="broken">⚠️ Dañada / Reemplazar</option>
                     </select>
                 </div>
             </div>
@@ -956,7 +960,7 @@ function generateAiExportText() {
         txt += `**HERRAMIENTAS EN TALLER (${rawToolsData.length} total):**\n`;
         if (rawToolsData.length > 0) {
             rawToolsData.forEach(t => {
-                const st = t.status === 'available' ? '🟢 Disponible' : t.status === 'in_use' ? '🟡 En Uso' : '🔴 Dañada';
+                const st = t.status === 'available' ? '🟢 Disponible' : t.status === 'in_use' ? '🟡 En Uso' : (t.status === 'to_buy' || t.status === 'Por Comprar') ? '🔴 Por Comprar' : '⚠️ Dañada';
                 txt += `• ${t.name} [${t.category}] - ${st}${t.notes ? ` (Notas: ${t.notes})` : ''}\n`;
             });
         } else {
@@ -980,14 +984,18 @@ function generateAiExportText() {
 
     if (incToBuy) {
         const toBuyMats = rawMaterialsData.filter(m => m.status === 'to_buy' || m.status === 'out_of_stock');
-        txt += `**MATERIALES POR COMPRAR / AGOTADOS (${toBuyMats.length}):**\n`;
-        if (toBuyMats.length > 0) {
+        const toBuyTools = rawToolsData.filter(t => t.status === 'to_buy' || t.status === 'Por Comprar');
+        txt += `**MATERIALES Y HERRAMIENTAS POR COMPRAR / AGOTADOS (${toBuyMats.length + toBuyTools.length}):**\n`;
+        if (toBuyMats.length > 0 || toBuyTools.length > 0) {
             toBuyMats.forEach(m => {
                 const tag = m.status === 'out_of_stock' ? '⚠️ Agotado' : '🔴 Por Comprar';
-                txt += `• ${m.name}: ${m.quantity} ${m.unit} [${m.category}] - ${tag}\n`;
+                txt += `• [Material] ${m.name}: ${m.quantity} ${m.unit} [${m.category}] - ${tag}\n`;
+            });
+            toBuyTools.forEach(t => {
+                txt += `• [Herramienta] ${t.name} [${t.category}] - 🔴 Por Comprar${t.notes ? ` (Notas: ${t.notes})` : ''}\n`;
             });
         } else {
-            txt += `• Sin insumos pendientes por comprar.\n`;
+            txt += `• Sin insumos ni herramientas pendientes por comprar.\n`;
         }
     }
 

@@ -1084,6 +1084,7 @@ app.get('/api/inventory/export-context', (req: AuthenticatedRequest, res) => {
 
     const toolsAvailable = tools.filter(t => t.status === 'available');
     const toolsInUse = tools.filter(t => t.status === 'in_use');
+    const toolsToBuy = tools.filter(t => t.status === 'to_buy' || t.status === 'Por Comprar');
     const toolsBroken = tools.filter(t => t.status === 'broken');
 
     const matsInStock = materials.filter(m => m.status === 'in_stock');
@@ -1098,6 +1099,9 @@ app.get('/api/inventory/export-context', (req: AuthenticatedRequest, res) => {
     }
     if (toolsInUse.length > 0) {
       text += `• En Uso/Mantenimiento: ${toolsInUse.map(t => `${t.name} [${t.category}]`).join(', ')}\n`;
+    }
+    if (toolsToBuy.length > 0) {
+      text += `• Por Comprar / Faltantes: ${toolsToBuy.map(t => `${t.name} [${t.category}]`).join(', ')}\n`;
     }
     if (toolsBroken.length > 0) {
       text += `• Requieren Reemplazo/Reparación: ${toolsBroken.map(t => `${t.name} [${t.category}]`).join(', ')}\n`;
@@ -1115,13 +1119,16 @@ app.get('/api/inventory/export-context', (req: AuthenticatedRequest, res) => {
       text += `• No hay materiales registrados en stock.\n`;
     }
 
-    text += `\n**MATERIALES POR COMPRAR / AGOTADOS:**\n`;
-    if (matsToBuy.length > 0 || matsOutOfStock.length > 0) {
+    text += `\n**MATERIALES Y HERRAMIENTAS POR COMPRAR / AGOTADOS:**\n`;
+    if (matsToBuy.length > 0 || matsOutOfStock.length > 0 || toolsToBuy.length > 0) {
       matsToBuy.forEach(m => {
-        text += `• [POR COMPRAR] ${m.name}: ${m.quantity} ${m.unit} [${m.category}]\n`;
+        text += `• [MATERIAL POR COMPRAR] ${m.name}: ${m.quantity} ${m.unit} [${m.category}]\n`;
       });
       matsOutOfStock.forEach(m => {
-        text += `• [AGOTADO] ${m.name}: ${m.quantity} ${m.unit} [${m.category}]\n`;
+        text += `• [MATERIAL AGOTADO] ${m.name}: ${m.quantity} ${m.unit} [${m.category}]\n`;
+      });
+      toolsToBuy.forEach(t => {
+        text += `• [HERRAMIENTA POR COMPRAR] ${t.name} [${t.category}]${t.notes ? ` (Notas: ${t.notes})` : ''}\n`;
       });
     } else {
       text += `• No hay lista de compras pendiente.\n`;
@@ -1134,7 +1141,7 @@ app.get('/api/inventory/export-context', (req: AuthenticatedRequest, res) => {
         total_tools: tools.length,
         total_materials: materials.length,
         in_stock: matsInStock.length,
-        to_buy: matsToBuy.length + matsOutOfStock.length
+        to_buy: matsToBuy.length + matsOutOfStock.length + toolsToBuy.length
       }
     });
   } catch (err: any) {

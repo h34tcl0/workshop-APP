@@ -271,7 +271,8 @@ export interface Material {
 export enum ToolStatus {
   AVAILABLE = "available",
   IN_USE = "in_use",
-  BROKEN = "broken"
+  BROKEN = "broken",
+  TO_BUY = "to_buy"
 }
 
 export interface Tool {

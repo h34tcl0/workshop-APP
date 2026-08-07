@@ -558,25 +558,38 @@ export class TelegramBotService {
 
     if (cleanText === "/materiales" || cleanText === "materiales" || cleanText.startsWith("/materiales")) {
       const pendingByProject = store.getPendingMaterialsGroupedByProject(user.id);
-      if (pendingByProject.length === 0) {
+      const pendingTools = store.getPendingTools(user.id);
+
+      if (pendingByProject.length === 0 && pendingTools.length === 0) {
         await replyBot.sendRequest("sendMessage", {
           chat_id: chatStr,
-          text: `📦 *MATERIALES POR COMPRAR* (🔴)\n\n✅ ¡Excelente! No tienes insumos pendientes por comprar en tus proyectos activos.`,
+          text: `📦 *COMPRAS PENDIENTES* (🔴)\n\n✅ ¡Excelente! No tienes insumos ni herramientas pendientes por comprar.`,
           parse_mode: "Markdown"
         });
       } else {
-        let msgText = `📦 *RESUMEN DE MATERIALES POR COMPRAR* (🔴)\n\n`;
+        let msgText = `📦 *RESUMEN DE COMPRAS PENDIENTES* (🔴)\n\n`;
         let totalItems = 0;
-        for (const projGroup of pendingByProject) {
-          msgText += `📁 *Proyecto: ${projGroup.project_name}*\n`;
-          for (const m of projGroup.materials) {
-            const icon = m.status === 'out_of_stock' ? '⚠️' : '🔴';
-            msgText += `  • ${icon} *${m.quantity} ${m.unit}* - ${m.name} _[${m.category}]_\n`;
+        if (pendingByProject.length > 0) {
+          msgText += `*Insumos / Materiales:*\n`;
+          for (const projGroup of pendingByProject) {
+            msgText += `📁 *Proyecto: ${projGroup.project_name}*\n`;
+            for (const m of projGroup.materials) {
+              const icon = m.status === 'out_of_stock' ? '⚠️' : '🔴';
+              msgText += `  • ${icon} *${m.quantity} ${m.unit}* - ${m.name} _[${m.category}]_\n`;
+              totalItems++;
+            }
+            msgText += `\n`;
+          }
+        }
+        if (pendingTools.length > 0) {
+          msgText += `🛠️ *Herramientas Por Comprar:*\n`;
+          for (const t of pendingTools) {
+            msgText += `  • 🔴 *${t.name}* _[${t.category}]_${t.notes ? ` - ${t.notes}` : ''}\n`;
             totalItems++;
           }
           msgText += `\n`;
         }
-        msgText += `📌 *Total:* ${totalItems} insumos pendientes por comprar.`;
+        msgText += `📌 *Total:* ${totalItems} ítems pendientes por comprar.`;
         await replyBot.sendRequest("sendMessage", {
           chat_id: chatStr,
           text: msgText,

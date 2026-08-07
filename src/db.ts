@@ -2228,6 +2228,16 @@ export class SQLiteStore {
     return res.changes > 0;
   }
 
+  getPendingTools(userId: number): Tool[] {
+    const rows = this.db.prepare(`
+      SELECT * FROM tools
+      WHERE user_id = ?
+        AND (status = 'to_buy' OR status = 'Por Comprar')
+      ORDER BY category ASC, name ASC
+    `).all(userId) as any[];
+    return rows.map(r => this.rowToTool(r));
+  }
+
   importMaterialsFromJson(userId: number, materialsList: any[], projectId?: number): Material[] {
     const targetProjId = projectId || this.getActiveProject(userId).id;
     const imported: Material[] = [];
