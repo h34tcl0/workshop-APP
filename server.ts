@@ -30,27 +30,29 @@ const app = express();
 const PORT = 3000;
 
 // Process Error Handlers for logging stack traces to stdout/stderr and exiting process for clean container reboot
-process.on('uncaughtException', (err) => {
-  console.error('[FATAL UNCAUGHT EXCEPTION - TERMINATING PROCESS FOR CLEAN REBOOT]', err);
-  try {
-    stopDaemon();
-    closeDatabase();
-  } catch (e) {
-    console.error('[SHUTDOWN ERROR]', e);
-  }
-  process.exit(1);
-});
+if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
+  process.on('uncaughtException', (err) => {
+    console.error('[FATAL UNCAUGHT EXCEPTION - TERMINATING PROCESS FOR CLEAN REBOOT]', err);
+    try {
+      stopDaemon();
+      closeDatabase();
+    } catch (e) {
+      console.error('[SHUTDOWN ERROR]', e);
+    }
+    process.exit(1);
+  });
 
-process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL UNHANDLED REJECTION - TERMINATING PROCESS FOR CLEAN REBOOT]', reason);
-  try {
-    stopDaemon();
-    closeDatabase();
-  } catch (e) {
-    console.error('[SHUTDOWN ERROR]', e);
-  }
-  process.exit(1);
-});
+  process.on('unhandledRejection', (reason) => {
+    console.error('[FATAL UNHANDLED REJECTION - TERMINATING PROCESS FOR CLEAN REBOOT]', reason);
+    try {
+      stopDaemon();
+      closeDatabase();
+    } catch (e) {
+      console.error('[SHUTDOWN ERROR]', e);
+    }
+    process.exit(1);
+  });
+}
 
 // Setup View Engine
 app.set('views', path.join(process.cwd(), 'views'));
@@ -393,7 +395,14 @@ app.post('/projects/active', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
   const { project_id } = req.body;
   if (project_id) {
-    store.setActiveProject(userId, parseInt(project_id, 10));
+    const targetProjId = parseInt(project_id, 10);
+    if (isNaN(targetProjId) || !store.getProjectById(userId, targetProjId)) {
+      if (req.xhr || req.headers.accept?.includes('application/json')) {
+        return res.status(404).json({ error: 'Proyecto no encontrado' });
+      }
+      return res.status(404).send('Proyecto no encontrado');
+    }
+    store.setActiveProject(userId, targetProjId);
   }
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.json({ success: true });
@@ -422,9 +431,21 @@ app.post('/projects/add', (req: AuthenticatedRequest, res) => {
 app.post('/projects/:id/toggle', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
   const id = parseInt(req.params.id, 10);
+  if (isNaN(id) || !store.getProjectById(userId, id)) {
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+    return res.status(404).send('Proyecto no encontrado');
+  }
   const { is_active } = req.body;
   const isActiveBool = is_active !== undefined ? (is_active === 'true' || is_active === true || is_active === 1 || is_active === '1') : undefined;
   const updated = store.toggleProjectActive(userId, id, isActiveBool);
+  if (!updated) {
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+    return res.status(404).send('Proyecto no encontrado');
+  }
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.json({ success: true, project: updated });
   }
@@ -475,9 +496,20 @@ app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
     const parsedEst = parseFlexibleFloat(estimated_hours) ?? 1.0;
     const parsedCur = parseFlexibleFloat(curing_hours) ?? 0.0;
     const parsedOrd = order ? parseInt(String(order), 10) : undefined;
+    const targetProjId = project_id ? parseInt(String(project_id), 10) : undefined;
+
+    if (targetProjId) {
+      const proj = store.getProjectById(userId, targetProjId);
+      if (!proj) {
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+          return res.status(404).json({ error: 'Proyecto no encontrado' });
+        }
+        return res.status(404).send('Proyecto no encontrado');
+      }
+    }
 
     store.addTask(userId, {
-      project_id: project_id ? parseInt(String(project_id), 10) : undefined,
+      project_id: targetProjId,
       title: title ? String(title).trim() : 'Nueva Tarea',
       description: description || '',
       category: category || TaskCategory.CARPENTRY,
@@ -549,13 +581,24 @@ app.post('/tasks/:id/update', (req: AuthenticatedRequest, res) => {
     const parsedEst = parseFlexibleFloat(estimated_hours);
     const parsedCur = parseFlexibleFloat(curing_hours);
     const isActiveBool = is_active !== undefined ? (is_active === 'true' || is_active === true || is_active === 1 || is_active === '1') : undefined;
+    const targetProjId = project_id ? parseInt(String(project_id), 10) : undefined;
+
+    if (targetProjId) {
+      const proj = store.getProjectById(userId, targetProjId);
+      if (!proj) {
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+          return res.status(404).json({ error: 'Proyecto no encontrado' });
+        }
+        return res.status(404).send('Proyecto no encontrado');
+      }
+    }
 
     const updated = store.updateTask(userId, id, {
       title: title ? String(title).trim() : undefined,
       estimated_hours: parsedEst,
       curing_hours: parsedCur !== undefined ? parsedCur : (curing_hours === '' || curing_hours === '0' || curing_hours === 0 ? 0 : undefined),
       category: category || undefined,
-      project_id: project_id ? parseInt(String(project_id), 10) : undefined,
+      project_id: targetProjId,
       is_active: isActiveBool
     });
 
@@ -767,7 +810,13 @@ app.post('/project-templates/:id/delete', (req: AuthenticatedRequest, res) => {
 // ==========================================
 app.get('/api/materials', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  const projectId = req.query.project_id ? parseInt(String(req.query.project_id), 10) : undefined;
+  let projectId: number | undefined;
+  if (req.query.project_id) {
+    projectId = parseInt(String(req.query.project_id), 10);
+    if (isNaN(projectId) || !store.getProjectById(userId, projectId)) {
+      return res.status(404).json({ error: 'Proyecto no encontrado' });
+    }
+  }
   const materials = store.getMaterials(userId, projectId);
   res.json({ success: true, materials });
 });
@@ -782,13 +831,25 @@ app.post('/materials/add', (req: AuthenticatedRequest, res) => {
       }
       return res.redirect(303, '/');
     }
+
+    let targetProjId: number | undefined;
+    if (project_id !== undefined && project_id !== null && project_id !== '') {
+      targetProjId = parseInt(String(project_id), 10);
+      if (isNaN(targetProjId) || !store.getProjectById(userId, targetProjId)) {
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+          return res.status(404).json({ error: 'Proyecto no encontrado' });
+        }
+        return res.status(404).send('Proyecto no encontrado');
+      }
+    }
+
     const mat = store.addMaterial(userId, {
       name: String(name),
       quantity: parseFloat(quantity) || 1.0,
       unit: String(unit || 'unidades'),
       category: String(category || 'General'),
       status: String(status || 'to_buy'),
-      project_id: project_id ? parseInt(project_id, 10) : undefined
+      project_id: targetProjId
     });
     if (req.xhr || req.headers.accept?.includes('application/json')) {
       return res.json({ success: true, material: mat });
@@ -808,6 +869,12 @@ app.post('/materials/:id/toggle', (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const id = parseInt(req.params.id, 10);
     const updated = store.toggleMaterialStatus(userId, id);
+    if (!updated) {
+      if (req.xhr || req.headers.accept?.includes('application/json')) {
+        return res.status(404).json({ error: 'Material no encontrado' });
+      }
+      return res.status(404).send('Material no encontrado');
+    }
     if (req.xhr || req.headers.accept?.includes('application/json')) {
       return res.json({ success: true, material: updated });
     }
@@ -826,14 +893,32 @@ app.post('/materials/:id/update', (req: AuthenticatedRequest, res) => {
     const userId = req.user!.id;
     const id = parseInt(req.params.id, 10);
     const { name, quantity, unit, category, status, project_id } = req.body;
+
+    let targetProjId: number | undefined;
+    if (project_id !== undefined && project_id !== null && project_id !== '') {
+      targetProjId = parseInt(String(project_id), 10);
+      if (isNaN(targetProjId) || !store.getProjectById(userId, targetProjId)) {
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+          return res.status(404).json({ error: 'Proyecto no encontrado' });
+        }
+        return res.status(404).send('Proyecto no encontrado');
+      }
+    }
+
     const updated = store.updateMaterial(userId, id, {
       name: name ? String(name) : undefined,
       quantity: quantity !== undefined ? parseFloat(quantity) : undefined,
       unit: unit ? String(unit) : undefined,
       category: category ? String(category) : undefined,
       status: status ? String(status) : undefined,
-      project_id: project_id ? parseInt(project_id, 10) : undefined
+      project_id: targetProjId
     });
+    if (!updated) {
+      if (req.xhr || req.headers.accept?.includes('application/json')) {
+        return res.status(404).json({ error: 'Material no encontrado' });
+      }
+      return res.status(404).send('Material no encontrado');
+    }
     if (req.xhr || req.headers.accept?.includes('application/json')) {
       return res.json({ success: true, material: updated });
     }
@@ -1070,8 +1155,17 @@ app.post('/materials/import', (req: AuthenticatedRequest, res) => {
       materialsList = req.body.materials;
     }
 
-    const projectId = req.body.project_id ? parseInt(req.body.project_id, 10) : undefined;
-    const imported = store.importMaterialsFromJson(userId, materialsList, projectId);
+    let targetProjId: number | undefined;
+    if (req.body.project_id !== undefined && req.body.project_id !== null && req.body.project_id !== '') {
+      targetProjId = parseInt(String(req.body.project_id), 10);
+      if (isNaN(targetProjId) || !store.getProjectById(userId, targetProjId)) {
+        if (req.xhr || req.headers.accept?.includes('application/json')) {
+          return res.status(404).json({ error: 'Proyecto no encontrado' });
+        }
+        return res.status(404).send('Proyecto no encontrado');
+      }
+    }
+    const imported = store.importMaterialsFromJson(userId, materialsList, targetProjId);
 
     if (req.xhr || req.headers.accept?.includes('application/json')) {
       return res.json({ success: true, imported_count: imported.length, materials: imported });
@@ -1343,6 +1437,25 @@ app.post('/api/checkin/end_shift', async (req: AuthenticatedRequest, res) => {
       }
     }
 
+    // Caso Re-apretar: Si el check-in de hoy ya fue completado/resuelto previamente
+    if (dailyLog && dailyLog.checkin_resolved) {
+      return res.json({
+        success: true,
+        alreadyResolved: true,
+        message: "El check-in de la jornada de hoy ya fue completado previamente.",
+        dailyLogId: dailyLog.id,
+        dateIso: todayIso,
+        tasks: scheduledTasks.map(t => ({
+          id: t.id,
+          title: t.title,
+          project_name: t.project_name || '',
+          estimated_hours: t.estimated_hours,
+          status: t.status,
+          completed: t.status === TaskStatus.COMPLETED
+        }))
+      });
+    }
+
     // Intentar check-in vía Telegram
     let targetChatId = appSettings.telegram_chat_id ? appSettings.telegram_chat_id.trim() : "";
     if (!targetChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
@@ -1364,13 +1477,21 @@ app.post('/api/checkin/end_shift', async (req: AuthenticatedRequest, res) => {
             telegramError = "El bot de Telegram no pudo entregar el mensaje (bloqueado o desvinculado).";
           }
         } else if (uncompletedTasks.length === 0) {
-          telegramError = "No hay tareas pendientes sin completar para la jornada de hoy.";
+          if (dailyLog && dailyLog.status === 'DAY_BLOCKED') {
+            telegramError = "El día estuvo marcado como NO VIABLE (DAY_BLOCKED) por condiciones climáticas u operativas. No hay tareas pendientes para finalizar.";
+          } else {
+            telegramError = "No hay tareas pendientes sin completar para la jornada de hoy.";
+          }
         }
       } catch (err: any) {
         telegramError = err?.message || "Error al comunicarse con la API de Telegram";
       }
     } else {
-      telegramError = "No hay una cuenta de Telegram vinculada en la configuración.";
+      if (dailyLog && dailyLog.status === 'DAY_BLOCKED' && scheduledTasks.length === 0) {
+        telegramError = "El día estuvo marcado como NO VIABLE (DAY_BLOCKED) por condiciones climáticas u operativas. No hay tareas pendientes para finalizar.";
+      } else {
+        telegramError = "No hay una cuenta de Telegram vinculada en la configuración.";
+      }
     }
 
     return res.json({
@@ -1610,14 +1731,18 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Initialize Database & Start Server
-initDatabase().then(() => {
-  console.log('SQLite Database initialized successfully.');
-  startDaemon();
+if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
+  initDatabase().then(() => {
+    console.log('SQLite Database initialized successfully.');
+    startDaemon();
 
-  serverInstance = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Workshop OS server listening on http://0.0.0.0:${PORT}`);
+    serverInstance = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Workshop OS server listening on http://0.0.0.0:${PORT}`);
+    });
+  }).catch(err => {
+    console.error('Failed to initialize SQLite Database:', err);
+    process.exit(1);
   });
-}).catch(err => {
-  console.error('Failed to initialize SQLite Database:', err);
-  process.exit(1);
-});
+}
+
+export { app };

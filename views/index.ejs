@@ -526,6 +526,15 @@
                     return;
                 }
 
+                if (data.alreadyResolved) {
+                    if (typeof showToast === 'function') {
+                        showToast('ℹ️ El check-in de la jornada de hoy ya fue registrado previamente.');
+                    } else {
+                        alert('ℹ️ El check-in de la jornada de hoy ya fue registrado previamente.');
+                    }
+                    return;
+                }
+
                 if (data.telegramSent) {
                     if (typeof showToast === 'function') {
                         showToast('✅ Jornada finalizada. Check-in enviado por Telegram.');

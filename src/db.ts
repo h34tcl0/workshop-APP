@@ -977,6 +977,17 @@ export class SQLiteStore {
     }));
   }
 
+  getProjectById(userId: number, projectId: number): Project | null {
+    const row = this.db.prepare("SELECT * FROM projects WHERE id = ? AND user_id = ?").get(projectId, userId) as any;
+    if (!row) return null;
+    return {
+      id: Number(row.id),
+      name: String(row.name),
+      description: row.description || "",
+      is_active: Boolean(row.is_active)
+    };
+  }
+
   getActiveProject(userId: number): Project {
     const projects = this.getProjects(userId);
     const active = projects.find(p => p.is_active);
