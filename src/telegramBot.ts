@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { DayEvaluation, DayStatus, Task, TaskStatus, DailyLog } from "./types.js";
 import { store } from "./db.js";
 import { getLocalDateIso } from "./dateUtils.js";
+import { triggerSilentReevaluation } from "./scheduler.js";
 
 // Persistimos el offset de Telegram (lastUpdateId) en disco, dentro de DATA_DIR,
 // para que sobreviva a reinicios del proceso/contenedor. Sin esto, cada restart
@@ -732,6 +733,7 @@ export class TelegramBotService {
               }
             }
             store.updateDailyLog(userId, dailyLogId, { checkin_sent: true, checkin_resolved: true });
+            await triggerSilentReevaluation(userId, dailyLog.eval_date);
           }
           responseText = "✅ Día completo. ¡Buen trabajo!";
           showAlert = false;
@@ -893,6 +895,7 @@ export class TelegramBotService {
           }
 
           store.updateDailyLog(userId, dailyLogId, { checkin_sent: true, checkin_resolved: true });
+          await triggerSilentReevaluation(userId, dailyLog.eval_date);
           responseText = "Check-in finalizado";
           showAlert = false;
 

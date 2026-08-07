@@ -8,7 +8,7 @@ import { getHourlyForecast, getWeeklyForecast, MockWeatherService } from './src/
 import { getHolidayDatesForRange } from './src/holidaysService.js';
 import { formatDateShortEs, getLocalDateIso, getWorkshopLocalTime, getTimezoneByCoords } from './src/dateUtils.js';
 import { TaskCategory, TaskStatus, Task } from './src/types.js';
-import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick, acquireEvaluationLock, releaseEvaluationLock, isEvaluationInProgress } from './src/scheduler.js';
+import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick, acquireEvaluationLock, releaseEvaluationLock, isEvaluationInProgress, triggerSilentReevaluation } from './src/scheduler.js';
 import { TelegramBotService } from './src/telegramBot.js';
 import { calendarService } from './src/calendarService.js';
 import {
@@ -517,6 +517,7 @@ app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
       curing_hours: parsedCur,
       order: parsedOrd && !isNaN(parsedOrd) ? parsedOrd : undefined
     });
+    triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after task add:', err));
     res.redirect(303, '/');
   } catch (err) {
     console.error('[Server Error] Error en POST /tasks/add:', err);
@@ -609,6 +610,8 @@ app.post('/tasks/:id/update', (req: AuthenticatedRequest, res) => {
       return res.redirect(303, '/');
     }
 
+    triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after task update:', err));
+
     if (req.xhr || req.headers.accept?.includes('application/json')) {
       return res.json({ success: true, task: updated });
     }
@@ -640,6 +643,7 @@ app.post('/tasks/:id/update_status', (req: AuthenticatedRequest, res) => {
   if (!updated) {
     return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });
   }
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after task status update:', err));
   res.redirect(303, '/');
 });
 
@@ -650,6 +654,7 @@ app.post('/tasks/:id/delete', (req: AuthenticatedRequest, res) => {
   const task = store.getTask(userId, id);
   const title = task ? task.title : 'Tarea';
   store.deleteTask(userId, id);
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after task delete:', err));
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.json({ success: true, message: `Tarea '${title}' eliminada` });
   }
@@ -938,6 +943,7 @@ app.post('/materials/:id/set-status', (req: AuthenticatedRequest, res) => {
     const id = parseInt(req.params.id, 10);
     const { status } = req.body;
     const updated = store.setMaterialStatus(userId, id, status);
+    triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after material status update:', err));
     if (req.xhr || req.headers.accept?.includes('application/json')) {
       return res.json({ success: true, material: updated });
     }
@@ -1565,6 +1571,8 @@ app.post('/api/checkin/resolve', async (req: AuthenticatedRequest, res) => {
         checkin_resolved: true
       });
     }
+
+    await triggerSilentReevaluation(userId, dailyLog?.eval_date);
 
     return res.json({ success: true });
   } catch (err: any) {

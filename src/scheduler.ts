@@ -255,7 +255,7 @@ export async function runMorningEvaluation(
   userId: number,
   targetDateIso?: string,
   mockScenario?: string,
-  options?: { skipLock?: boolean }
+  options?: { skipLock?: boolean; silent?: boolean }
 ): Promise<{
   evalResult: DayEvaluation;
   status: DayStatus;
@@ -372,8 +372,10 @@ export async function runMorningEvaluation(
     // Execute Mirror Sync with Google Calendar across the horizon
     const calSync = await syncMultiDayCalendar(userId, horizonEvaluations);
 
-    // Check Telegram Work Start notification for today
-    const tgResult = await processWorkStartNotificationsForUser(userId);
+    // Check Telegram Work Start notification for today (unless evaluation is marked silent)
+    const tgResult = options?.silent
+      ? { sent: false, reason: "Evaluación silenciosa (sin notificación de Telegram)" }
+      : await processWorkStartNotificationsForUser(userId);
 
     console.log(`[Scheduler] Multi-Day Evaluation completed for User #${userId} starting ${todayIso}: ${todayEval.status} - ${todayEval.reason}`);
     return {
@@ -388,6 +390,18 @@ export async function runMorningEvaluation(
   } finally {
     if (needsLock) {
       releaseEvaluationLock(userId);
+    }
+  }
+}
+
+export async function triggerSilentReevaluation(userId: number, targetDateIso?: string): Promise<void> {
+  try {
+    await runMorningEvaluation(userId, targetDateIso, undefined, { silent: true });
+  } catch (err: any) {
+    if (err?.message === "EVALUATION_IN_PROGRESS") {
+      console.log(`[Scheduler] Silent re-evaluation skipped for User #${userId}: lock active.`);
+    } else {
+      console.error(`[Scheduler] Error in triggerSilentReevaluation for User #${userId}:`, err);
     }
   }
 }
