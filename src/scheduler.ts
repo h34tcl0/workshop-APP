@@ -9,6 +9,24 @@ import { getLocalDateIso, getLocalHoursAndMinutes, getTargetTimeZone } from "./d
 
 export { getLocalDateIso, getLocalHoursAndMinutes, getTargetTimeZone };
 
+const activeEvaluationLocks = new Set<number>();
+
+export function isEvaluationInProgress(userId: number): boolean {
+  return activeEvaluationLocks.has(userId);
+}
+
+export function acquireEvaluationLock(userId: number): boolean {
+  if (activeEvaluationLocks.has(userId)) {
+    return false;
+  }
+  activeEvaluationLocks.add(userId);
+  return true;
+}
+
+export function releaseEvaluationLock(userId: number): void {
+  activeEvaluationLocks.delete(userId);
+}
+
 export async function syncMultiDayCalendar(
   userId: number,
   horizonEvaluations: Array<{ date_iso: string; evaluation: DayEvaluation }>
@@ -208,7 +226,8 @@ export async function processWorkStartNotificationsForUser(
 export async function runMorningEvaluation(
   userId: number,
   targetDateIso?: string,
-  mockScenario?: string
+  mockScenario?: string,
+  options?: { skipLock?: boolean }
 ): Promise<{
   evalResult: DayEvaluation;
   status: DayStatus;
@@ -218,168 +237,201 @@ export async function runMorningEvaluation(
   calendarSynced: boolean;
   calendarReason: string;
 }> {
-  const appSettings = store.getAppSettings(userId);
-  const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
-  const todayIso = targetDateIso || getLocalDateIso(new Date(), userTz);
-  console.log(`[Scheduler] Running Multi-Day Evaluation for User #${userId} starting ${todayIso} (TZ: ${userTz})...`);
-
-  const pendingTasks = store.getPendingTasks(userId);
-
-  const forecastDaysCount = appSettings.forecast_days || 7;
-  const horizonEvaluations: Array<{ date_iso: string; evaluation: DayEvaluation }> = [];
-
-  let simulatedPendingTasks = [...pendingTasks];
-  const startDateObj = new Date(`${todayIso}T12:00:00Z`);
-
-  for (let i = 0; i < forecastDaysCount; i++) {
-    const curDate = new Date(startDateObj);
-    curDate.setDate(curDate.getDate() + i);
-    const dateIso = curDate.toISOString().split("T")[0];
-
-    let dayForecasts: HourlyForecast[] = [];
-    if (mockScenario) {
-      const mockSvc = new MockWeatherService(mockScenario);
-      dayForecasts = mockSvc.getHourlyForecast(dateIso);
-    } else {
-      try {
-        dayForecasts = await getHourlyForecast(dateIso, appSettings.latitude, appSettings.longitude);
-      } catch (err) {
-        console.warn(`[Scheduler] Error fetching weather forecast for ${dateIso}, using mock:`, err);
-        const mockSvc = new MockWeatherService("sunny");
-        dayForecasts = mockSvc.getHourlyForecast(dateIso);
-      }
+  const needsLock = !options?.skipLock;
+  if (needsLock) {
+    if (!acquireEvaluationLock(userId)) {
+      console.warn(`[Scheduler] Se omitió la evaluación para el Usuario #${userId}: ya hay una evaluación en curso.`);
+      throw new Error("EVALUATION_IN_PROGRESS");
     }
-
-    let dayHolidays = new Set<string>();
-    if (appSettings.exclude_holidays) {
-      try {
-        dayHolidays = getHolidayDatesForRange(dateIso, dateIso);
-      } catch (_) {}
-    }
-
-    const evalResult = evaluateDayFeasibility(dateIso, simulatedPendingTasks, dayForecasts, appSettings, dayHolidays);
-
-    let windowStart: string | null = null;
-    let windowEnd: string | null = null;
-    let netWorkHours: number | null = null;
-    let tasksSummary: string | null = null;
-    let scheduledTaskIds: string | null = null;
-
-    if (evalResult.status === DayStatus.DAY_VIABLE && evalResult.window) {
-      windowStart = evalResult.window.start_time;
-      windowEnd = evalResult.window.end_time;
-      netWorkHours = evalResult.window.net_work_hours;
-      if (evalResult.scheduled_tasks) {
-        tasksSummary = evalResult.scheduled_tasks.map(t => t.title).join(", ");
-        scheduledTaskIds = JSON.stringify(evalResult.scheduled_tasks.map(t => t.id));
-
-        const scheduledIds = new Set(evalResult.scheduled_tasks.map(t => t.id));
-        simulatedPendingTasks = simulatedPendingTasks.filter(t => !scheduledIds.has(t.id));
-      }
-    }
-
-    const existingLog = store.getDailyLogByDate(userId, dateIso);
-    const isNewLog = !existingLog;
-
-    const logData: any = {
-      eval_date: dateIso,
-      status: evalResult.status,
-      block_reason: evalResult.reason,
-      window_start: windowStart,
-      window_end: windowEnd,
-      net_work_hours: netWorkHours,
-      tasks_summary: tasksSummary,
-      scheduled_task_ids: scheduledTaskIds,
-      morning_climate_snapshot: JSON.stringify(evalResult.climate_segments || [])
-    };
-
-    if (isNewLog) {
-      logData.checkin_sent = false;
-      logData.checkin_resolved = false;
-      logData.weather_alert_sent = false;
-      logData.weather_alert_acknowledged = false;
-      logData.weather_alert_retry_count = 0;
-      logData.weather_alert_last_sent_at = null;
-      logData.weather_alert_message = null;
-      logData.telegram_notified = false;
-      logData.calendar_created = false;
-      logData.google_event_id = null;
-    }
-
-    store.saveDailyLog(userId, logData);
-    horizonEvaluations.push({ date_iso: dateIso, evaluation: evalResult });
   }
 
-  const todayItem = horizonEvaluations.find(h => h.date_iso === todayIso) || horizonEvaluations[0];
-  const todayEval = todayItem.evaluation;
+  try {
+    const appSettings = store.getAppSettings(userId);
+    const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+    const todayIso = targetDateIso || getLocalDateIso(new Date(), userTz);
+    console.log(`[Scheduler] Running Multi-Day Evaluation for User #${userId} starting ${todayIso} (TZ: ${userTz})...`);
 
-  // Execute Mirror Sync with Google Calendar across the horizon
-  const calSync = await syncMultiDayCalendar(userId, horizonEvaluations);
+    const pendingTasks = store.getPendingTasks(userId);
 
-  // Check Telegram Work Start notification for today
-  const tgResult = await processWorkStartNotificationsForUser(userId);
+    const forecastDaysCount = appSettings.forecast_days || 7;
+    const horizonEvaluations: Array<{ date_iso: string; evaluation: DayEvaluation }> = [];
 
-  console.log(`[Scheduler] Multi-Day Evaluation completed for User #${userId} starting ${todayIso}: ${todayEval.status} - ${todayEval.reason}`);
-  return {
-    evalResult: todayEval,
-    status: todayEval.status,
-    reason: todayEval.reason,
-    telegramSent: tgResult.sent,
-    telegramReason: tgResult.reason,
-    calendarSynced: calSync.synced,
-    calendarReason: calSync.reason
-  };
+    let simulatedPendingTasks = [...pendingTasks];
+    const startDateObj = new Date(`${todayIso}T12:00:00Z`);
+
+    for (let i = 0; i < forecastDaysCount; i++) {
+      const curDate = new Date(startDateObj);
+      curDate.setDate(curDate.getDate() + i);
+      const dateIso = curDate.toISOString().split("T")[0];
+
+      let dayForecasts: HourlyForecast[] = [];
+      if (mockScenario) {
+        const mockSvc = new MockWeatherService(mockScenario);
+        dayForecasts = mockSvc.getHourlyForecast(dateIso);
+      } else {
+        try {
+          dayForecasts = await getHourlyForecast(dateIso, appSettings.latitude, appSettings.longitude);
+        } catch (err) {
+          console.warn(`[Scheduler] Error fetching weather forecast for ${dateIso}, using mock:`, err);
+          const mockSvc = new MockWeatherService("sunny");
+          dayForecasts = mockSvc.getHourlyForecast(dateIso);
+        }
+      }
+
+      let dayHolidays = new Set<string>();
+      if (appSettings.exclude_holidays) {
+        try {
+          dayHolidays = getHolidayDatesForRange(dateIso, dateIso);
+        } catch (_) {}
+      }
+
+      const evalResult = evaluateDayFeasibility(dateIso, simulatedPendingTasks, dayForecasts, appSettings, dayHolidays);
+
+      let windowStart: string | null = null;
+      let windowEnd: string | null = null;
+      let netWorkHours: number | null = null;
+      let tasksSummary: string | null = null;
+      let scheduledTaskIds: string | null = null;
+
+      if (evalResult.status === DayStatus.DAY_VIABLE && evalResult.window) {
+        windowStart = evalResult.window.start_time;
+        windowEnd = evalResult.window.end_time;
+        netWorkHours = evalResult.window.net_work_hours;
+        if (evalResult.scheduled_tasks) {
+          tasksSummary = evalResult.scheduled_tasks.map(t => t.title).join(", ");
+          scheduledTaskIds = JSON.stringify(evalResult.scheduled_tasks.map(t => t.id));
+
+          const scheduledIds = new Set(evalResult.scheduled_tasks.map(t => t.id));
+          simulatedPendingTasks = simulatedPendingTasks.filter(t => !scheduledIds.has(t.id));
+        }
+      }
+
+      const existingLog = store.getDailyLogByDate(userId, dateIso);
+      const isNewLog = !existingLog;
+
+      const logData: any = {
+        eval_date: dateIso,
+        status: evalResult.status,
+        block_reason: evalResult.reason,
+        window_start: windowStart,
+        window_end: windowEnd,
+        net_work_hours: netWorkHours,
+        tasks_summary: tasksSummary,
+        scheduled_task_ids: scheduledTaskIds,
+        morning_climate_snapshot: JSON.stringify(evalResult.climate_segments || [])
+      };
+
+      if (isNewLog) {
+        logData.checkin_sent = false;
+        logData.checkin_resolved = false;
+        logData.weather_alert_sent = false;
+        logData.weather_alert_acknowledged = false;
+        logData.weather_alert_retry_count = 0;
+        logData.weather_alert_last_sent_at = null;
+        logData.weather_alert_message = null;
+        logData.telegram_notified = false;
+        logData.calendar_created = false;
+        logData.google_event_id = null;
+      }
+
+      store.saveDailyLog(userId, logData);
+      horizonEvaluations.push({ date_iso: dateIso, evaluation: evalResult });
+    }
+
+    const todayItem = horizonEvaluations.find(h => h.date_iso === todayIso) || horizonEvaluations[0];
+    const todayEval = todayItem.evaluation;
+
+    // Execute Mirror Sync with Google Calendar across the horizon
+    const calSync = await syncMultiDayCalendar(userId, horizonEvaluations);
+
+    // Check Telegram Work Start notification for today
+    const tgResult = await processWorkStartNotificationsForUser(userId);
+
+    console.log(`[Scheduler] Multi-Day Evaluation completed for User #${userId} starting ${todayIso}: ${todayEval.status} - ${todayEval.reason}`);
+    return {
+      evalResult: todayEval,
+      status: todayEval.status,
+      reason: todayEval.reason,
+      telegramSent: tgResult.sent,
+      telegramReason: tgResult.reason,
+      calendarSynced: calSync.synced,
+      calendarReason: calSync.reason
+    };
+  } finally {
+    if (needsLock) {
+      releaseEvaluationLock(userId);
+    }
+  }
 }
 
-export async function processCheckinForUser(userId: number, nowDate?: Date, force: boolean = false): Promise<void> {
-  const now = nowDate || new Date();
-  const appSettings = store.getAppSettings(userId);
-  const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
-  const todayIso = getLocalDateIso(now, userTz);
-  const localTime = getLocalHoursAndMinutes(now, userTz);
-
-  const dailyLog = store.getDailyLogByDate(userId, todayIso);
-  if (!dailyLog || dailyLog.status !== DayStatus.DAY_VIABLE) {
-    return;
+export async function processCheckinForUser(
+  userId: number,
+  nowDate?: Date,
+  force: boolean = false,
+  options?: { skipLock?: boolean }
+): Promise<void> {
+  const needsLock = !options?.skipLock;
+  if (needsLock) {
+    if (!acquireEvaluationLock(userId)) {
+      console.warn(`[Scheduler] Se omitió el check-in para el Usuario #${userId}: evaluación/check-in en curso.`);
+      return;
+    }
   }
 
-  if (!force && (dailyLog.checkin_sent || dailyLog.checkin_resolved)) {
-    return;
-  }
-
-  if (!force && localTime.hours < appSettings.checkin_hour) {
-    return;
-  }
-
-  let taskIds: number[] = [];
   try {
-    taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
-  } catch (_) {}
+    const now = nowDate || new Date();
+    const appSettings = store.getAppSettings(userId);
+    const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+    const todayIso = getLocalDateIso(now, userTz);
+    const localTime = getLocalHoursAndMinutes(now, userTz);
 
-  const scheduledTasks = taskIds
-    .map(tid => store.getTask(userId, tid))
-    .filter((t): t is any => t != null && t.status !== TaskStatus.COMPLETED);
+    const dailyLog = store.getDailyLogByDate(userId, todayIso);
+    if (!dailyLog || dailyLog.status !== DayStatus.DAY_VIABLE) {
+      return;
+    }
 
-  if (scheduledTasks.length === 0) {
-    store.updateDailyLog(userId, dailyLog.id, { checkin_sent: true, checkin_resolved: true });
-    return;
-  }
+    if (!force && (dailyLog.checkin_sent || dailyLog.checkin_resolved)) {
+      return;
+    }
 
-  let targetChatId = appSettings.telegram_chat_id ? appSettings.telegram_chat_id.trim() : "";
-  if (!targetChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
-    targetChatId = process.env.TELEGRAM_CHAT_ID.trim();
-  }
+    if (!force && localTime.hours < appSettings.checkin_hour) {
+      return;
+    }
 
-  if (!targetChatId) {
-    console.log(`[Telegram] SKIPPED: No valid chatId provided for userId ${userId}`);
-    return;
-  }
+    let taskIds: number[] = [];
+    try {
+      taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
+    } catch (_) {}
 
-  const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, targetChatId);
-  const sent = await telegramSvc.sendCheckinPrompt(dailyLog.id, scheduledTasks);
-  if (sent) {
-    store.updateDailyLog(userId, dailyLog.id, { checkin_sent: true });
-    console.log(`[Scheduler] Sent check-in prompt for User #${userId} on ${todayIso} (${scheduledTasks.length} tasks).`);
+    const scheduledTasks = taskIds
+      .map(tid => store.getTask(userId, tid))
+      .filter((t): t is any => t != null && t.status !== TaskStatus.COMPLETED);
+
+    if (scheduledTasks.length === 0) {
+      store.updateDailyLog(userId, dailyLog.id, { checkin_sent: true, checkin_resolved: true });
+      return;
+    }
+
+    let targetChatId = appSettings.telegram_chat_id ? appSettings.telegram_chat_id.trim() : "";
+    if (!targetChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
+      targetChatId = process.env.TELEGRAM_CHAT_ID.trim();
+    }
+
+    if (!targetChatId) {
+      console.log(`[Telegram] SKIPPED: No valid chatId provided for userId ${userId}`);
+      return;
+    }
+
+    const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, targetChatId);
+    const sent = await telegramSvc.sendCheckinPrompt(dailyLog.id, scheduledTasks);
+    if (sent) {
+      store.updateDailyLog(userId, dailyLog.id, { checkin_sent: true });
+      console.log(`[Scheduler] Sent check-in prompt for User #${userId} on ${todayIso} (${scheduledTasks.length} tasks).`);
+    }
+  } finally {
+    if (needsLock) {
+      releaseEvaluationLock(userId);
+    }
   }
 }
 

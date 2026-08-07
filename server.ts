@@ -8,7 +8,7 @@ import { getHourlyForecast, getWeeklyForecast, MockWeatherService } from './src/
 import { getHolidayDatesForRange } from './src/holidaysService.js';
 import { formatDateShortEs, getLocalDateIso, getWorkshopLocalTime, getTimezoneByCoords } from './src/dateUtils.js';
 import { TaskCategory, TaskStatus, Task } from './src/types.js';
-import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick } from './src/scheduler.js';
+import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick, acquireEvaluationLock, releaseEvaluationLock, isEvaluationInProgress } from './src/scheduler.js';
 import { TelegramBotService } from './src/telegramBot.js';
 import { calendarService } from './src/calendarService.js';
 import {
@@ -1219,15 +1219,15 @@ app.post('/day-override/forced-task/:forced_id/delete', (req: AuthenticatedReque
 const handleEvaluationRequest = async (req: AuthenticatedRequest, res: any) => {
   const userId = req.user!.id;
   const scenario = req.body.scenario || req.query.scenario;
+
+  const isJsonRequested = req.xhr || 
+    (req.headers.accept && req.headers.accept.includes('application/json')) ||
+    (req.headers['content-type'] && req.headers['content-type'].includes('application/json')) ||
+    req.path.startsWith('/api/') ||
+    req.body.format === 'json';
+
   try {
     const evalRunResult = await runMorningEvaluation(userId, undefined, scenario || undefined);
-    
-    // Check if client requested JSON response (AJAX / fetch / API)
-    const isJsonRequested = req.xhr || 
-      (req.headers.accept && req.headers.accept.includes('application/json')) ||
-      (req.headers['content-type'] && req.headers['content-type'].includes('application/json')) ||
-      req.path.startsWith('/api/') ||
-      req.body.format === 'json';
 
     if (isJsonRequested) {
       return res.json({
@@ -1248,6 +1248,22 @@ const handleEvaluationRequest = async (req: AuthenticatedRequest, res: any) => {
       res.redirect(303, '/');
     }
   } catch (err: any) {
+    if (err.message === 'EVALUATION_IN_PROGRESS') {
+      console.warn(`[Server] Solicitud de evaluación rechazada por evaluación en curso para Usuario #${userId}`);
+      if (isJsonRequested) {
+        return res.status(429).json({
+          success: false,
+          error: 'Ya hay una evaluación en curso, esperá unos segundos.',
+          code: 'EVALUATION_IN_PROGRESS',
+          telegramSent: false,
+          telegramReason: '⚠️ Evaluación en curso',
+          calendarSynced: false,
+          calendarReason: '⚠️ Evaluación en curso'
+        });
+      }
+      return res.redirect(303, '/');
+    }
+
     console.error('Error running evaluation:', err);
     if (req.xhr || (req.headers.accept && req.headers.accept.includes('application/json'))) {
       return res.status(500).json({
@@ -1281,6 +1297,15 @@ app.post('/evaluation/force_checkin', async (req: AuthenticatedRequest, res) => 
 // Endpoint Término de la Jornada -> Fuerza check-in inmediato
 app.post('/api/checkin/end_shift', async (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
+
+  if (!acquireEvaluationLock(userId)) {
+    return res.status(429).json({
+      success: false,
+      error: 'Ya hay una evaluación en curso, esperá unos segundos.',
+      code: 'EVALUATION_IN_PROGRESS'
+    });
+  }
+
   try {
     const appSettings = store.getAppSettings(userId);
     const userTz = appSettings?.timezone || process.env.TIMEZONE || "America/Santiago";
@@ -1290,7 +1315,7 @@ app.post('/api/checkin/end_shift', async (req: AuthenticatedRequest, res) => {
     // Obtener log diario de hoy o evaluar el día
     let dailyLog = store.getDailyLogByDate(userId, todayIso);
     if (!dailyLog) {
-      await runMorningEvaluation(userId, todayIso);
+      await runMorningEvaluation(userId, todayIso, undefined, { skipLock: true });
       dailyLog = store.getDailyLogByDate(userId, todayIso);
     }
 
@@ -1366,6 +1391,8 @@ app.post('/api/checkin/end_shift', async (req: AuthenticatedRequest, res) => {
   } catch (err: any) {
     console.error('Error en término de jornada / check-in:', err);
     return res.status(500).json({ success: false, error: err?.message || 'Error al procesar el término de jornada' });
+  } finally {
+    releaseEvaluationLock(userId);
   }
 });
 
