@@ -87,16 +87,40 @@ export class GoogleCalendarService {
     return k;
   }
 
+  private extractValidJson(str: string): string | null {
+    if (!str) return null;
+    let first = str.indexOf("{");
+    if (first === -1) {
+      first = str.indexOf("[");
+      if (first === -1) return null;
+    }
+    const openChar = str[first];
+    const closeChar = openChar === "{" ? "}" : "]";
+    let depth = 0;
+    for (let i = first; i < str.length; i++) {
+      if (str[i] === openChar) depth++;
+      else if (str[i] === closeChar) {
+        depth--;
+        if (depth === 0) {
+          return str.slice(first, i + 1);
+        }
+      }
+    }
+    return null;
+  }
+
   private init() {
     try {
       let auth: any = null;
+      this.initError = null;
 
       // 1. Check direct JSON credentials in environment variable (GOOGLE_CREDENTIALS_JSON)
       if (process.env.GOOGLE_CREDENTIALS_JSON && process.env.GOOGLE_CREDENTIALS_JSON.trim()) {
         const rawJson = process.env.GOOGLE_CREDENTIALS_JSON.trim();
-        if (rawJson.startsWith("{") || rawJson.startsWith("[")) {
+        const jsonToParse = this.extractValidJson(rawJson) || rawJson;
+        if (jsonToParse.startsWith("{") || jsonToParse.startsWith("[")) {
           try {
-            const credentials = JSON.parse(rawJson);
+            const credentials = JSON.parse(jsonToParse);
             if (credentials.private_key && typeof credentials.private_key === "string") {
               credentials.private_key = this.cleanPrivateKey(credentials.private_key);
               if (!this.isValidPrivateKey(credentials.private_key)) {
@@ -166,16 +190,18 @@ export class GoogleCalendarService {
 
         if (selectedPath) {
           try {
-            const rawData = fs.readFileSync(selectedPath, "utf8");
-            const credentials = JSON.parse(rawData);
+            let fileKeyError: string | null = null;
+            const rawData = fs.readFileSync(selectedPath, "utf8").trim();
+            const jsonToParse = this.extractValidJson(rawData) || rawData;
+            const credentials = JSON.parse(jsonToParse);
             if (credentials.private_key && typeof credentials.private_key === "string") {
               credentials.private_key = this.cleanPrivateKey(credentials.private_key);
               if (!this.isValidPrivateKey(credentials.private_key)) {
-                this.initError = `File '${selectedPath}' contains an invalid private_key format.`;
-                console.warn(`[GoogleCalendarService] ${this.initError}`);
+                fileKeyError = `File '${selectedPath}' contains an invalid private_key format.`;
+                console.warn(`[GoogleCalendarService] ${fileKeyError}`);
               }
             }
-            if (!this.initError) {
+            if (!fileKeyError) {
               if (credentials.client_email) {
                 this.serviceAccountEmail = credentials.client_email;
               }
@@ -192,7 +218,10 @@ export class GoogleCalendarService {
                   scopes: ["https://www.googleapis.com/auth/calendar"]
                 });
               }
+              this.initError = null;
               console.log(`[GoogleCalendarService] Credenciales cargadas desde: ${selectedPath}`);
+            } else {
+              this.initError = fileKeyError;
             }
           } catch (fileErr: any) {
             this.initError = `Error leyendo/parseando el archivo de credenciales en '${selectedPath}': ${fileErr.message || fileErr}`;

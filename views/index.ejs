@@ -223,16 +223,8 @@
             </div>
 
             <div class="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2.5 shrink-0 min-w-0 max-w-full">
-                <!-- SEGMENTED MODE SWITCHER IN HEADER -->
+                <!-- SEGMENTED MODE SWITCHER (Modo Enfoque | Planificación | Taller | Inventario) -->
                 <%- include('components/mode_switcher') %>
-
-                <button type="button" id="toggle-backlog-btn" aria-label="Modo Enfoque"
-                    class="flex items-center gap-1.5 bg-surface hover:bg-surface2 border border-hairline hover:border-brassdim text-ink2 hover:text-ink p-1.5 sm:p-2 md:px-3 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors shrink-0">
-                    <svg class="w-4 h-4 text-brass shrink-0">
-                        <use href="#i-sidebar" />
-                    </svg>
-                    <span id="toggle-backlog-text" class="hidden md:inline">Modo Enfoque</span>
-                </button>
 
                 <form id="eval-form" action="/evaluation/force_run" method="post"
                     class="flex items-center gap-1 bg-surface border border-hairline rounded-lg p-1 sm:px-2 sm:py-1.5 shrink-0 max-w-full">
@@ -274,28 +266,7 @@
 
     <!-- MAIN GRID -->
     <main class="max-w-[1440px] mx-auto px-2.5 sm:px-6 py-4 sm:py-8 w-full max-w-full overflow-x-hidden">
-        <!-- SUB-TABS DENTRO DEL MODO PLANIFICACIÓN (Agenda vs Materiales) -->
-        <div id="planning-subtabs-bar" class="flex items-center justify-center sm:justify-start gap-2 mb-6">
-            <button type="button" 
-                    id="plan-tab-btn-agenda" 
-                    onclick="switchPlanningSubtab('agenda')" 
-                    class="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-surface border border-brass text-brass shadow-sm transition-all flex items-center gap-1.5">
-                <svg class="w-3.5 h-3.5"><use href="#i-list"/></svg>
-                <span>Agenda y Backlog</span>
-            </button>
-            <button type="button" 
-                    id="plan-tab-btn-materials" 
-                    onclick="switchPlanningSubtab('materials')" 
-                    class="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-surface border border-hairline text-ink2 hover:text-ink transition-all flex items-center gap-1.5">
-                <svg class="w-3.5 h-3.5"><use href="#i-box"/></svg>
-                <span>Materiales</span>
-                <% if ((locals.materials || []).filter(m => m.status === 'to_buy').length > 0) { %>
-                    <span class="w-1.5 h-1.5 rounded-full bg-rust"></span>
-                <% } %>
-            </button>
-        </div>
-
-        <!-- MODO PLANIFICACIÓN - SUBVISTA MATERIALES (OCULTA POR DEFECTO SI ESTÁ EN AGENDA) -->
+        <!-- MODO INVENTARIO - MATERIALES Y HERRAMIENTAS (VISTA EXCLUSIVA) -->
         <div id="materials-view-wrapper" class="hidden w-full max-w-5xl mx-auto mb-8">
             <%- include('components/materials') %>
         </div>

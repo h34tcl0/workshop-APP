@@ -1,125 +1,119 @@
-<!-- CONMUTADOR SEGMENTADO DE MODOS (HEADER) -->
-<div class="bg-surface2/80 border border-hairline p-1 rounded-xl flex items-center gap-1 shadow-inner shrink-0">
+<!-- GRUPO DE NAVEGACIÓN PRINCIPAL EN HEADER -->
+<div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+    <!-- BOTÓN MODO ENFOQUE (A la izquierda de Planificación, sólo visible cuando Planificación está activo) -->
     <button type="button" 
-            id="mode-btn-planning" 
-            onclick="switchWorkspaceMode('planning')" 
-            class="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all bg-brass text-canvas shadow-sm">
-        <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-calendar"/></svg>
-        <span class="hidden sm:inline">Planificación</span>
+            id="toggle-backlog-btn" 
+            aria-label="Modo Enfoque"
+            class="flex items-center gap-1.5 bg-surface hover:bg-surface2 border border-hairline hover:border-brassdim text-ink2 hover:text-ink p-1.5 sm:p-2 md:px-3 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors shrink-0">
+        <svg class="w-4 h-4 text-brass shrink-0">
+            <use href="#i-sidebar" />
+        </svg>
+        <span id="toggle-backlog-text" class="hidden md:inline">Modo Enfoque</span>
     </button>
-    <button type="button" 
-            id="mode-btn-workshop" 
-            onclick="switchWorkspaceMode('workshop')" 
-            class="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all text-ink2 hover:text-ink">
-        <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-wrench"/></svg>
-        <span class="hidden sm:inline">Taller</span>
-    </button>
+
+    <!-- CONMUTADOR SEGMENTADO DE MODOS DE PRIMER NIVEL (Planificación | Taller | Inventario) -->
+    <div class="bg-surface2/80 border border-hairline p-1 rounded-xl flex items-center gap-1 shadow-inner shrink-0">
+        <button type="button" 
+                id="mode-btn-planning" 
+                onclick="switchWorkspaceMode('planning')" 
+                class="px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all bg-brass text-canvas shadow-sm">
+            <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-calendar"/></svg>
+            <span class="hidden sm:inline">Planificación</span>
+        </button>
+        <button type="button" 
+                id="mode-btn-workshop" 
+                onclick="switchWorkspaceMode('workshop')" 
+                class="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all text-ink2 hover:text-ink">
+            <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-wrench"/></svg>
+            <span class="hidden sm:inline">Taller</span>
+        </button>
+        <button type="button" 
+                id="mode-btn-inventory" 
+                onclick="switchWorkspaceMode('inventory')" 
+                class="px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 transition-all text-ink2 hover:text-ink">
+            <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-box"/></svg>
+            <span class="hidden sm:inline">Inventario</span>
+            <% if (((locals.materials || []).filter(m => m.status === 'to_buy').length > 0) || ((locals.tools || []).filter(t => t.status === 'to_buy' || t.status === 'Por Comprar').length > 0)) { %>
+                <span class="w-1.5 h-1.5 rounded-full bg-rust"></span>
+            <% } %>
+        </button>
+    </div>
 </div>
 
 <script>
-// Modo Enfoque (#toggle-backlog-btn, lógica en backlog.js) solo tiene sentido cuando
-// el backlog está en pantalla — es decir, modo Planificación + subtab Agenda. Se oculta
-// en cualquier otro contexto (Taller, o subtab Materiales) para no confundir, ya que
-// ahí no tiene ningún efecto visible (bug de UX reportado ago 2026).
-function updateFocusModeButtonVisibility(mode, subtab) {
+function updateFocusModeButtonVisibility(mode) {
     const focusBtn = document.getElementById('toggle-backlog-btn');
     if (!focusBtn) return;
-    const shouldShow = mode === 'planning' && subtab !== 'materials';
+    const shouldShow = (mode === 'planning');
     focusBtn.classList.toggle('hidden', !shouldShow);
 }
 
 function switchWorkspaceMode(mode) {
     const planningBtn = document.getElementById('mode-btn-planning');
     const workshopBtn = document.getElementById('mode-btn-workshop');
-    const planningSubtabs = document.getElementById('planning-subtabs-bar');
+    const inventoryBtn = document.getElementById('mode-btn-inventory');
+
     const planningContainer = document.getElementById('main-layout-grid');
     const workshopContainer = document.getElementById('workshop-mode-view');
     const materialsView = document.getElementById('materials-view-wrapper');
 
-    if (!planningBtn || !workshopBtn) return;
+    if (!planningBtn || !workshopBtn || !inventoryBtn) return;
+
+    // Reset de clases de todos los botones de modo
+    [planningBtn, workshopBtn, inventoryBtn].forEach(btn => {
+        btn.classList.remove('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
+        btn.classList.add('text-ink2', 'font-medium');
+    });
+
+    // Ocultar todas las vistas principales
+    if (planningContainer) planningContainer.classList.add('hidden');
+    if (workshopContainer) workshopContainer.classList.add('hidden');
+    if (materialsView) materialsView.classList.add('hidden');
 
     if (mode === 'workshop') {
-        planningBtn.classList.remove('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
-        planningBtn.classList.add('text-ink2', 'font-medium');
         workshopBtn.classList.add('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
         workshopBtn.classList.remove('text-ink2', 'font-medium');
 
-        if (planningSubtabs) planningSubtabs.classList.add('hidden');
-        if (planningContainer) planningContainer.classList.add('hidden');
-        // materials-view-wrapper es hermano de main-layout-grid, no hijo: hay que
-        // ocultarlo explícitamente o queda visible "sangrando" arriba de Taller si la
-        // subtab Materiales había quedado activa antes de cambiar de modo.
-        if (materialsView) materialsView.classList.add('hidden');
         if (workshopContainer) workshopContainer.classList.remove('hidden');
 
-        updateFocusModeButtonVisibility('workshop', null);
+        updateFocusModeButtonVisibility('workshop');
         localStorage.setItem('agendapp_workspace_mode', 'workshop');
+    } else if (mode === 'inventory') {
+        inventoryBtn.classList.add('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
+        inventoryBtn.classList.remove('text-ink2', 'font-medium');
+
+        if (materialsView) materialsView.classList.remove('hidden');
+
+        updateFocusModeButtonVisibility('inventory');
+        localStorage.setItem('agendapp_workspace_mode', 'inventory');
     } else {
-        workshopBtn.classList.remove('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
-        workshopBtn.classList.add('text-ink2', 'font-medium');
+        // Por defecto: 'planning'
         planningBtn.classList.add('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
         planningBtn.classList.remove('text-ink2', 'font-medium');
 
-        if (planningSubtabs) planningSubtabs.classList.remove('hidden');
-        if (workshopContainer) workshopContainer.classList.add('hidden');
-
-        // Delegamos la visibilidad de backlog/agenda vs materiales a switchPlanningSubtab,
-        // que ya sabe restaurar el estado correcto según la última subtab guardada —
-        // evita duplicar esa lógica acá y mantiene todo consistente.
-        const savedSubtab = localStorage.getItem('agendapp_planning_subtab') || 'agenda';
-        switchPlanningSubtab(savedSubtab);
-
-        localStorage.setItem('agendapp_workspace_mode', 'planning');
-    }
-}
-
-function switchPlanningSubtab(subtab) {
-    const agendaBtn = document.getElementById('plan-tab-btn-agenda');
-    const materialsBtn = document.getElementById('plan-tab-btn-materials');
-    // Nota: backlog-container y agenda-container no se tocan acá — Modo Enfoque
-    // (backlog.js) maneja su propio estado de colapso de forma independiente, y
-    // ambos son hijos de main-layout-grid, que se oculta/muestra como bloque entero.
-    const materialsView = document.getElementById('materials-view-wrapper');
-    const planningContainer = document.getElementById('main-layout-grid');
-
-    if (!agendaBtn || !materialsBtn) return;
-
-    if (subtab === 'materials') {
-        agendaBtn.classList.remove('border-brass', 'text-brass');
-        agendaBtn.classList.add('border-hairline', 'text-ink2');
-        materialsBtn.classList.add('border-brass', 'text-brass');
-        materialsBtn.classList.remove('border-hairline', 'text-ink2');
-
-        if (planningContainer) planningContainer.classList.add('hidden');
-        if (materialsView) materialsView.classList.remove('hidden');
-
-        updateFocusModeButtonVisibility('planning', 'materials');
-        localStorage.setItem('agendapp_planning_subtab', 'materials');
-    } else {
-        materialsBtn.classList.remove('border-brass', 'text-brass');
-        materialsBtn.classList.add('border-hairline', 'text-ink2');
-        agendaBtn.classList.add('border-brass', 'text-brass');
-        agendaBtn.classList.remove('border-hairline', 'text-ink2');
-
         if (planningContainer) planningContainer.classList.remove('hidden');
-        if (materialsView) materialsView.classList.add('hidden');
 
-        updateFocusModeButtonVisibility('planning', 'agenda');
-        localStorage.setItem('agendapp_planning_subtab', 'agenda');
+        updateFocusModeButtonVisibility('planning');
+        localStorage.setItem('agendapp_workspace_mode', 'planning');
     }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     const savedMode = localStorage.getItem('agendapp_workspace_mode');
-    const savedSubtab = localStorage.getItem('agendapp_planning_subtab');
+    const savedSubtab = localStorage.getItem('agendapp_planning_subtab'); // compatibilidad previa
 
     if (savedMode === 'workshop') {
         switchWorkspaceMode('workshop');
+    } else if (savedMode === 'inventory' || savedSubtab === 'materials') {
+        switchWorkspaceMode('inventory');
     } else {
         switchWorkspaceMode('planning');
-        if (savedSubtab === 'materials') {
-            switchPlanningSubtab('materials');
-        }
     }
 });
+
+// Exponer en window para acceso global si se requiere
+if (typeof window !== 'undefined') {
+    window.switchWorkspaceMode = switchWorkspaceMode;
+    window.updateFocusModeButtonVisibility = updateFocusModeButtonVisibility;
+}
 </script>

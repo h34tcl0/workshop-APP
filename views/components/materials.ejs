@@ -686,8 +686,8 @@ async function submitAddMaterialForm(e) {
 
         if (res.ok && result.success) {
             form.reset();
-            // Asegurar que la subtab se mantenga en 'materials'
-            localStorage.setItem('agendapp_planning_subtab', 'materials');
+            // Asegurar que el modo se mantenga en 'inventory'
+            localStorage.setItem('agendapp_workspace_mode', 'inventory');
             window.location.reload();
         } else {
             const errorMsg = result.error || 'Error al guardar el material';
@@ -741,7 +741,7 @@ async function submitAddToolForm(e) {
 
         if (res.ok && result.success) {
             form.reset();
-            localStorage.setItem('agendapp_planning_subtab', 'materials');
+            localStorage.setItem('agendapp_workspace_mode', 'inventory');
             window.location.reload();
         } else {
             const errorMsg = result.error || 'Error al registrar la herramienta';
