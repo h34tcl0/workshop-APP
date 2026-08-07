@@ -209,6 +209,7 @@ export async function initDatabase(): Promise<Database.Database> {
       weather_alert_retry_count INTEGER NOT NULL DEFAULT 0,
       weather_alert_last_sent_at TEXT,
       weather_alert_message TEXT,
+      humidity_alert_sent INTEGER NOT NULL DEFAULT 0,
       intraday_alert_triggered INTEGER NOT NULL DEFAULT 0,
       intraday_alert_acknowledged INTEGER NOT NULL DEFAULT 0,
       intraday_alert_last_sent_at TEXT,
@@ -363,6 +364,9 @@ export async function initDatabase(): Promise<Database.Database> {
   const currentDailyLogCols = dbInstance.prepare("PRAGMA table_info(daily_logs)").all() as any[];
   if (!currentDailyLogCols.some(c => c.name === 'google_event_id')) {
     dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN google_event_id TEXT;");
+  }
+  if (!currentDailyLogCols.some(c => c.name === 'humidity_alert_sent')) {
+    dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN humidity_alert_sent INTEGER NOT NULL DEFAULT 0;");
   }
   if (!currentDailyLogCols.some(c => c.name === 'intraday_alert_triggered')) {
     dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN intraday_alert_triggered INTEGER NOT NULL DEFAULT 0;");
@@ -1532,6 +1536,7 @@ export class SQLiteStore {
       weather_alert_retry_count: Number(row.weather_alert_retry_count || 0),
       weather_alert_last_sent_at: row.weather_alert_last_sent_at || null,
       weather_alert_message: row.weather_alert_message || null,
+      humidity_alert_sent: Boolean(row.humidity_alert_sent),
       intraday_alert_triggered: Boolean(row.intraday_alert_triggered),
       intraday_alert_acknowledged: Boolean(row.intraday_alert_acknowledged),
       intraday_alert_last_sent_at: row.intraday_alert_last_sent_at || null,
@@ -1566,6 +1571,7 @@ export class SQLiteStore {
       weather_alert_retry_count: Number(row.weather_alert_retry_count || 0),
       weather_alert_last_sent_at: row.weather_alert_last_sent_at || null,
       weather_alert_message: row.weather_alert_message || null,
+      humidity_alert_sent: Boolean(row.humidity_alert_sent),
       intraday_alert_triggered: Boolean(row.intraday_alert_triggered),
       intraday_alert_acknowledged: Boolean(row.intraday_alert_acknowledged),
       intraday_alert_last_sent_at: row.intraday_alert_last_sent_at || null,
@@ -1600,6 +1606,7 @@ export class SQLiteStore {
       weather_alert_retry_count: Number(row.weather_alert_retry_count || 0),
       weather_alert_last_sent_at: row.weather_alert_last_sent_at || null,
       weather_alert_message: row.weather_alert_message || null,
+      humidity_alert_sent: Boolean(row.humidity_alert_sent),
       intraday_alert_triggered: Boolean(row.intraday_alert_triggered),
       intraday_alert_acknowledged: Boolean(row.intraday_alert_acknowledged),
       intraday_alert_last_sent_at: row.intraday_alert_last_sent_at || null,
@@ -1622,10 +1629,10 @@ export class SQLiteStore {
         tasks_summary, scheduled_task_ids, morning_climate_snapshot,
         telegram_notified, calendar_created, google_event_id, checkin_sent, checkin_resolved,
         weather_alert_sent, weather_alert_acknowledged, weather_alert_retry_count,
-        weather_alert_last_sent_at, weather_alert_message,
+        weather_alert_last_sent_at, weather_alert_message, humidity_alert_sent,
         intraday_alert_triggered, intraday_alert_acknowledged, intraday_alert_last_sent_at, intraday_alert_burst_count,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
     ).run(
       userId,
       logData.eval_date,
@@ -1647,6 +1654,7 @@ export class SQLiteStore {
       logData.weather_alert_retry_count || 0,
       logData.weather_alert_last_sent_at || null,
       logData.weather_alert_message || null,
+      logData.humidity_alert_sent ? 1 : 0,
       logData.intraday_alert_triggered ? 1 : 0,
       logData.intraday_alert_acknowledged ? 1 : 0,
       logData.intraday_alert_last_sent_at || null,
@@ -1683,6 +1691,7 @@ export class SQLiteStore {
         weather_alert_retry_count = ?,
         weather_alert_last_sent_at = ?,
         weather_alert_message = ?,
+        humidity_alert_sent = ?,
         intraday_alert_triggered = ?,
         intraday_alert_acknowledged = ?,
         intraday_alert_last_sent_at = ?,
@@ -1708,6 +1717,7 @@ export class SQLiteStore {
       updated.weather_alert_retry_count,
       updated.weather_alert_last_sent_at || null,
       updated.weather_alert_message || null,
+      updated.humidity_alert_sent ? 1 : 0,
       updated.intraday_alert_triggered ? 1 : 0,
       updated.intraday_alert_acknowledged ? 1 : 0,
       updated.intraday_alert_last_sent_at || null,

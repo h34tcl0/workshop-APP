@@ -221,6 +221,7 @@ export interface DailyLog {
   weather_alert_retry_count: number;
   weather_alert_last_sent_at?: string | null;
   weather_alert_message?: string | null;
+  humidity_alert_sent?: boolean;
   intraday_alert_triggered?: boolean;
   intraday_alert_acknowledged?: boolean;
   intraday_alert_last_sent_at?: string | null;
