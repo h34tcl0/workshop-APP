@@ -589,6 +589,13 @@ export function evaluateDayWithOverrides(
 
   let effectiveCfg = { ...settings };
   if (dayOverride) {
+    // If a day override exists (e.g. force_status === "VIABLE" or custom start/end hours),
+    // it takes precedence over default day exclusions (saturdays, sundays, holidays)
+    if (dayOverride.force_status === "VIABLE" || dayOverride.custom_start_hour != null || dayOverride.custom_end_hour != null) {
+      effectiveCfg.exclude_saturdays = false;
+      effectiveCfg.exclude_sundays = false;
+      effectiveCfg.exclude_holidays = false;
+    }
     if (dayOverride.custom_start_hour != null) effectiveCfg.operational_start_hour = dayOverride.custom_start_hour;
     if (dayOverride.custom_end_hour != null) effectiveCfg.operational_end_hour = dayOverride.custom_end_hour;
   }

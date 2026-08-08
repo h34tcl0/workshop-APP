@@ -1,5 +1,5 @@
 import { store } from "./db.js";
-import { evaluateDayFeasibility, computeHourlyClimateMap, compressClimateSegments, detectNewWeatherRisk } from "./evaluator.js";
+import { evaluateDayFeasibility, evaluateDayWithOverrides, computeHourlyClimateMap, compressClimateSegments, detectNewWeatherRisk } from "./evaluator.js";
 import { getHourlyForecast, MockWeatherService } from "./weatherService.js";
 import { getHolidayDatesForRange } from "./holidaysService.js";
 import { TelegramBotService } from "./telegramBot.js";
@@ -313,7 +313,25 @@ export async function runMorningEvaluation(
         } catch (_) {}
       }
 
-      const evalResult = evaluateDayFeasibility(dateIso, simulatedPendingTasks, dayForecasts, appSettings, dayHolidays);
+      const dayOverride = store.getDayOverride(userId, dateIso);
+      const forcedRows = store.getForcedTasksForDate(userId, dateIso);
+
+      const forcedTasksWithHours = forcedRows.map(fr => ({
+        task: store.getTask(userId, fr.task_id),
+        forced_start_hour: fr.forced_start_hour,
+        forced_id: fr.id,
+        id: fr.id
+      })).filter((item): item is { task: Task; forced_start_hour: number; forced_id: number; id: number } => item.task != null);
+
+      const evalResult = evaluateDayWithOverrides(
+        dateIso,
+        simulatedPendingTasks,
+        dayForecasts,
+        appSettings,
+        dayHolidays,
+        dayOverride,
+        forcedTasksWithHours
+      );
 
       let windowStart: string | null = null;
       let windowEnd: string | null = null;
@@ -332,6 +350,10 @@ export async function runMorningEvaluation(
           const scheduledIds = new Set(evalResult.scheduled_tasks.map(t => t.id));
           simulatedPendingTasks = simulatedPendingTasks.filter(t => !scheduledIds.has(t.id));
         }
+      }
+      if (forcedTasksWithHours.length > 0) {
+        const forcedIds = new Set(forcedTasksWithHours.map(ft => ft.task.id));
+        simulatedPendingTasks = simulatedPendingTasks.filter(t => !forcedIds.has(t.id));
       }
 
       const existingLog = store.getDailyLogByDate(userId, dateIso);

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { evaluateDayFeasibility, computeHourlyClimateMap, isRainyForecast } from "../src/evaluator.js";
-import { AppSettings, Task, TaskCategory, TaskStatus, HourlyForecast, DayStatus } from "../src/types.js";
+import { evaluateDayFeasibility, evaluateDayWithOverrides, computeHourlyClimateMap, isRainyForecast } from "../src/evaluator.js";
+import { AppSettings, Task, TaskCategory, TaskStatus, HourlyForecast, DayStatus, DayOverride } from "../src/types.js";
 
 const mockSettings: AppSettings = {
   operational_start_hour: 8,
@@ -197,5 +197,100 @@ describe("Evaluator - Timeline Formatting & Project Name Separation", () => {
     expect(taskTimelineItem).toBeDefined();
     expect(taskTimelineItem?.project_name).toBeUndefined();
     expect(taskTimelineItem?.title).toBe("#1 Barnizado General");
+  });
+});
+
+describe("Evaluator - Day Overrides Precedence", () => {
+  it("overrides exclude_sundays=true when dayOverride forces Sunday as VIABLE with custom hours", () => {
+    const sundaySettings: AppSettings = {
+      ...mockSettings,
+      exclude_sundays: true,
+      exclude_saturdays: true
+    };
+    const task = createMockTask({
+      project_name: "Zapatero",
+      title: "Ensamblado de Mueble Zapatero",
+      estimated_hours: 3.0
+    });
+    const forecasts = createMockForecasts(20, 50, 0, 0);
+
+    const sundayDate = "2026-08-09"; // 2026-08-09 is Sunday
+
+    const override: DayOverride = {
+      user_id: 1,
+      override_date: sundayDate,
+      force_status: "VIABLE",
+      custom_start_hour: 15,
+      custom_end_hour: 21,
+      note: "Trabajo especial de domingo"
+    };
+
+    const result = evaluateDayWithOverrides(
+      sundayDate,
+      [task],
+      forecasts,
+      sundaySettings,
+      new Set(),
+      override
+    );
+
+    expect(result.status).toBe(DayStatus.DAY_VIABLE);
+    expect(result.reason).not.toContain("Día no laborable");
+    expect(result.window?.start_time).toBe("15:00");
+    expect(result.window?.end_time).toBe("20:00");
+    expect(result.scheduled_tasks).toHaveLength(1);
+    expect(result.scheduled_tasks?.[0].title).toBe("Ensamblado de Mueble Zapatero");
+    expect(result.timeline.length).toBeGreaterThan(0);
+    // Check that timeline includes Setup and Task items
+    const setupItem = result.timeline.find(t => t.title.includes("Setup"));
+    const taskItem = result.timeline.find(t => t.title.includes("Ensamblado"));
+    expect(setupItem).toBeDefined();
+    expect(taskItem).toBeDefined();
+  });
+
+  it("forces a normal working day as BLOCKED when dayOverride specifies BLOCKED", () => {
+    const mondayDate = "2026-08-10"; // Monday
+    const task = createMockTask();
+    const forecasts = createMockForecasts(20, 50, 0, 0);
+
+    const override: DayOverride = {
+      user_id: 1,
+      override_date: mondayDate,
+      force_status: "BLOCKED",
+      note: "Mantenimiento taller"
+    };
+
+    const result = evaluateDayWithOverrides(
+      mondayDate,
+      [task],
+      forecasts,
+      mockSettings,
+      new Set(),
+      override
+    );
+
+    expect(result.status).toBe(DayStatus.DAY_BLOCKED);
+    expect(result.is_manually_blocked).toBe(true);
+    expect(result.reason).toBe("Mantenimiento taller");
+  });
+
+  it("respects exclude_sundays=true when NO dayOverride is present", () => {
+    const sundaySettings: AppSettings = {
+      ...mockSettings,
+      exclude_sundays: true
+    };
+    const sundayDate = "2026-08-09";
+    const task = createMockTask();
+    const forecasts = createMockForecasts(20, 50, 0, 0);
+
+    const result = evaluateDayWithOverrides(
+      sundayDate,
+      [task],
+      forecasts,
+      sundaySettings
+    );
+
+    expect(result.status).toBe(DayStatus.DAY_BLOCKED);
+    expect(result.reason).toContain("Día no laborable (domingo, desactivado en configuración)");
   });
 });
