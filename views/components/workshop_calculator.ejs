@@ -101,7 +101,7 @@
         </div>
 
         <!-- AGREGAR NUEVO PRESET -->
-        <form action="/calculator/offsets/add" method="post" class="space-y-3 bg-surface2/60 border border-hairline p-3.5 rounded-xl">
+        <form action="/calculator/offsets/add" method="post" id="add-offset-form" onsubmit="submitAddOffsetForm(event)" class="space-y-3 bg-surface2/60 border border-hairline p-3.5 rounded-xl">
             <span class="block text-xs font-bold text-brass uppercase">Nuevo Offset de Taller</span>
             <div class="grid grid-cols-2 gap-2">
                 <div>
@@ -291,6 +291,56 @@ function closeManageOffsetsModal() {
     if (modal) modal.classList.add('hidden');
 }
 
+async function refreshCalculatorOffsetsView() {
+    try {
+        const res = await fetch(window.location.href);
+        if (res.ok) {
+            const html = await res.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newOffsetsModal = doc.getElementById('manage-offsets-modal');
+            const oldOffsetsModal = document.getElementById('manage-offsets-modal');
+            if (newOffsetsModal && oldOffsetsModal) {
+                const newList = newOffsetsModal.querySelector('.space-y-2');
+                const oldList = oldOffsetsModal.querySelector('.space-y-2');
+                if (newList && oldList) oldList.innerHTML = newList.innerHTML;
+            }
+            const newPresetsContainer = doc.getElementById('offsets-presets-container');
+            const oldPresetsContainer = document.getElementById('offsets-presets-container');
+            if (newPresetsContainer && oldPresetsContainer) {
+                oldPresetsContainer.innerHTML = newPresetsContainer.innerHTML;
+            }
+        }
+    } catch (e) {
+        console.error('Error refreshing calculator offsets:', e);
+    }
+}
+
+async function submitAddOffsetForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+
+    try {
+        const res = await fetch('/calculator/offsets/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) {
+            form.reset();
+            await refreshCalculatorOffsetsView();
+        }
+    } catch (e) {
+        console.error('Error adding offset preset:', e);
+    }
+}
+
 async function deleteOffsetPreset(id) {
     if (!confirm('¿Seguro que deseas eliminar este preset?')) return;
     try {
@@ -299,7 +349,7 @@ async function deleteOffsetPreset(id) {
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
         });
         if (res.ok) {
-            window.location.reload();
+            await refreshCalculatorOffsetsView();
         }
     } catch (e) {
         console.error('Error deleting offset preset:', e);

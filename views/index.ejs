@@ -291,7 +291,7 @@
             <%- include('components/workshop_calculator') %>
 
             <!-- VISTA RÁPIDA DE TAREAS Y CONTROLES DEL TALLER -->
-            <div class="bg-surface border border-hairline rounded-3xl p-5 sm:p-7 shadow-panel max-w-2xl mx-auto space-y-4">
+            <div id="workshop-tasks-card" class="bg-surface border border-hairline rounded-3xl p-5 sm:p-7 shadow-panel max-w-2xl mx-auto space-y-4">
                 <div class="flex items-center justify-between border-b border-hairline pb-3 gap-2 flex-wrap">
                     <h3 class="font-display text-lg font-bold text-ink flex items-center gap-2">
                         <svg class="w-5 h-5 text-brass"><use href="#i-list"/></svg>
@@ -312,7 +312,7 @@
                                     <h4 class="font-bold text-sm text-ink truncate"><%= t.title %></h4>
                                     <p class="text-xs text-ink3 mt-0.5"><%= t.estimated_hours %>h activas • <%= t.curing_hours %>h curado</p>
                                 </div>
-                                <form action="/tasks/<%= t.id %>/complete" method="post">
+                                <form action="/tasks/<%= t.id %>/complete" method="post" onsubmit="completeTaskInline(event, '<%= t.id %>')">
                                     <button type="submit" class="bg-moss/20 hover:bg-moss text-moss hover:text-canvas border border-moss/40 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors min-h-[44px] flex items-center gap-1.5 shrink-0">
                                         <svg class="w-4 h-4"><use href="#i-check"/></svg> Completar
                                     </button>
@@ -455,11 +455,54 @@
     <script src="/static/js/settings.js"></script>
     <script src="/static/js/map.js"></script>
     <script>
+        async function refreshWorkshopView() {
+            try {
+                const res = await fetch(window.location.href);
+                if (res.ok) {
+                    const html = await res.text();
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const newQueue = doc.getElementById('workshop-tasks-card');
+                    const oldQueue = document.getElementById('workshop-tasks-card');
+                    if (newQueue && oldQueue) {
+                        oldQueue.innerHTML = newQueue.innerHTML;
+                    }
+                    const newAgenda = doc.getElementById('agenda-container');
+                    const oldAgenda = document.getElementById('agenda-container');
+                    if (newAgenda && oldAgenda) {
+                        oldAgenda.innerHTML = newAgenda.innerHTML;
+                    }
+                    const newBacklog = doc.getElementById('backlog-container');
+                    const oldBacklog = document.getElementById('backlog-container');
+                    if (newBacklog && oldBacklog) {
+                        oldBacklog.innerHTML = newBacklog.innerHTML;
+                    }
+                }
+            } catch (e) {
+                console.error('Error refreshing workshop view:', e);
+            }
+        }
+
+        async function completeTaskInline(event, taskId) {
+            event.preventDefault();
+            try {
+                const res = await fetch(`/tasks/${taskId}/complete`, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+                });
+                if (res.ok) {
+                    await refreshWorkshopView();
+                }
+            } catch (err) {
+                console.error('Error completing task inline:', err);
+            }
+        }
+
         function closeEvalFeedbackModal(shouldReload = true) {
             const modal = document.getElementById('eval-feedback-modal');
             if (modal) modal.classList.add('hidden');
             if (shouldReload) {
-                window.location.reload();
+                refreshWorkshopView();
             }
         }
 
@@ -512,7 +555,7 @@
                     } else {
                         alert('✅ Jornada finalizada. Check-in enviado por Telegram.');
                     }
-                    setTimeout(() => window.location.reload(), 1200);
+                    await refreshWorkshopView();
                 } else {
                     openEndShiftModal(data);
                 }
@@ -599,7 +642,7 @@
                     if (typeof showToast === 'function') {
                         showToast('✅ Check-in guardado exitosamente.');
                     }
-                    setTimeout(() => window.location.reload(), 800);
+                    await refreshWorkshopView();
                 } else {
                     alert('Error al guardar el check-in: ' + (data.error || 'Error desconocido'));
                     if (submitBtn) {
@@ -678,7 +721,7 @@
 
                             modal.classList.remove('hidden');
                         } else {
-                            window.location.reload();
+                            refreshWorkshopView();
                         }
                     })
                     .catch(err => {

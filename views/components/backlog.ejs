@@ -21,7 +21,7 @@
         <%- JSON.stringify(task_history || []).replace(/</g, '\\u003c') %>
     </script>
     <div id="tab-manual" class="tab-content">
-        <form action="/tasks/add" method="post" class="bg-surface border border-hairline rounded-2xl p-5 sm:p-6 space-y-4 shadow-panel">
+        <form id="add-task-form" action="/tasks/add" method="post" onsubmit="submitAddTaskForm(event)" class="bg-surface border border-hairline rounded-2xl p-5 sm:p-6 space-y-4 shadow-panel">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div class="sm:col-span-2">
                     <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Proyecto Asignado</label>
@@ -152,7 +152,7 @@
                         <button type="submit" class="flex-1 bg-chalk hover:bg-chalk/80 text-canvas font-semibold py-2.5 rounded-lg text-xs transition-colors min-h-[44px] sm:min-h-0">Guardar cambios</button>
                     </div>
                 </form>
-                <form action="/tasks/<%= task.id %>/update_status" method="post" class="mt-2">
+                <form action="/tasks/<%= task.id %>/update_status" method="post" onsubmit="submitTaskUpdateStatusForm(event)" class="mt-2">
                     <input type="hidden" name="status" value="completed"><input type="hidden" name="progress" value="100">
                     <button type="submit" class="w-full flex items-center justify-center gap-1.5 bg-moss/10 hover:bg-moss/20 text-moss font-semibold py-2.5 rounded-lg text-xs transition-colors min-h-[44px] sm:min-h-0">
                         <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg> Marcar como completada
@@ -206,7 +206,7 @@
         </button>
         <div id="projects-panel" class="hidden border-t border-hairline p-4 space-y-4">
             <!-- Form Crear nuevo proyecto -->
-            <form action="/projects/add" method="post" id="add-project-form" class="bg-surface2/60 border border-hairline rounded-xl p-3.5 space-y-3">
+            <form action="/projects/add" method="post" id="add-project-form" onsubmit="submitAddProjectForm(event)" class="bg-surface2/60 border border-hairline rounded-xl p-3.5 space-y-3">
                 <p class="text-xs font-semibold text-ink2">Crear nuevo proyecto</p>
                 <div class="flex flex-col sm:flex-row gap-2">
                     <input type="text" name="name" required placeholder="Nombre (ej. Estructura Pérgola)" class="flex-1 bg-surface border border-hairline text-ink text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
@@ -258,7 +258,7 @@
                         
                         <!-- Toggle Activo para Agendar -->
                         <div class="flex items-center gap-2 shrink-0" onclick="event.stopPropagation()">
-                            <form action="/projects/<%= p.id %>/toggle" method="post" class="inline-block">
+                            <form action="/projects/<%= p.id %>/toggle" method="post" class="inline-block" onsubmit="submitToggleProjectForm(event)">
                                 <input type="hidden" name="is_active" value="<%= isProjActive ? 'false' : 'true' %>">
                                 <button type="submit" title="<%= isProjActive ? 'Desactivar proyecto para agendamiento' : 'Activar proyecto para agendamiento' %>" class="px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors flex items-center gap-1.5 min-h-[32px] sm:min-h-0 <%= isProjActive ? 'bg-moss/10 text-moss border-moss/30 hover:bg-moss/20' : 'bg-surface2 text-ink2 border-hairline hover:bg-hairline' %>">
                                     <span class="w-2 h-2 rounded-full <%= isProjActive ? 'bg-moss' : 'bg-ink3' %>"></span>
@@ -279,7 +279,7 @@
                                 <div class="flex items-center justify-between gap-2">
                                     <div class="flex items-center gap-2 min-w-0 flex-1">
                                         <!-- Task Active Checkbox -->
-                                        <form action="/tasks/<%= t.id %>/toggle-active" method="post" class="inline-block shrink-0">
+                                        <form action="/tasks/<%= t.id %>/toggle-active" method="post" class="inline-block shrink-0" onsubmit="submitToggleTaskActiveForm(event)">
                                             <input type="hidden" name="is_active" value="<%= isTaskActive ? 'false' : 'true' %>">
                                             <button type="submit" title="<%= isTaskActive ? 'Desactivar esta tarea del agendamiento' : 'Activar esta tarea para el agendamiento' %>" class="w-5 h-5 rounded flex items-center justify-center border transition-colors <%= isTaskActive ? 'bg-moss text-canvas border-moss' : 'bg-surface2 text-transparent border-hairline hover:border-ink3' %>">
                                                 <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg>

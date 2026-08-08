@@ -424,7 +424,7 @@
                     </button>
                 </div>
 
-                <form action="/day-override/<%= date_iso %>/save" method="post" class="space-y-4">
+                <form action="/day-override/<%= date_iso %>/save" method="post" onsubmit="submitDayOverrideForm(event)" class="space-y-4">
                     <div>
                         <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Estado del día</label>
                         <select name="force_status" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none min-h-[44px] sm:min-h-0">
@@ -471,7 +471,7 @@
                 </form>
 
                 <% if (override && override.id) { %>
-                <form action="/day-override/<%= date_iso %>/clear" method="post" class="mt-2">
+                <form action="/day-override/<%= date_iso %>/clear" method="post" onsubmit="submitClearDayOverrideForm(event)" class="mt-2">
                     <button type="submit" class="w-full text-center text-xs text-ink3 hover:text-rust py-2.5 min-h-[44px] sm:min-h-0 flex items-center justify-center">Quitar todos los ajustes manuales de este día</button>
                 </form>
                 <% } %>
@@ -484,7 +484,7 @@
                         <% eval.forced_tasks.forEach(function(ft) { %>
                         <div class="flex items-center justify-between gap-2 bg-brass/5 border border-brassdim/30 rounded-lg px-3 py-2">
                             <span class="text-xs text-ink2">⚡ <strong class="text-ink font-medium"><%= ft.task.title %></strong> a las <%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
-                            <form action="/day-override/forced-task/<%= ft.id || ft.forced_id %>/delete" method="post">
+                            <form action="/day-override/forced-task/<%= ft.id || ft.forced_id %>/delete" method="post" onsubmit="submitDeleteForcedTaskForm(event)">
                                 <button type="submit" aria-label="Quitar forzada" class="w-9 h-9 sm:w-6 sm:h-6 rounded-md text-rust hover:bg-rust/10 flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0"><svg class="w-3.5 h-3.5"><use href="#i-close"/></svg></button>
                             </form>
                         </div>
@@ -492,7 +492,7 @@
                     </div>
                     <% } %>
 
-                    <form action="/day-override/<%= date_iso %>/force-task" method="post" class="flex flex-col sm:flex-row sm:items-end gap-2">
+                    <form action="/day-override/<%= date_iso %>/force-task" method="post" onsubmit="submitForceTaskForm(event)" class="flex flex-col sm:flex-row sm:items-end gap-2">
                         <div class="flex-1 min-w-0">
                             <label class="block text-[10px] text-ink3 mb-1">Tarea</label>
                             <select name="task_id" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2 py-2 text-xs focus:outline-none min-h-[44px] sm:min-h-0">

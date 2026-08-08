@@ -49,6 +49,32 @@ async function generateTelegramLinkCode() {
     }
 }
 
+async function refreshSettingsView() {
+    try {
+        const res = await fetch(window.location.href);
+        if (res.ok) {
+            const html = await res.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newModal = doc.getElementById('settings-modal');
+            const oldModal = document.getElementById('settings-modal');
+            if (newModal && oldModal) {
+                const wasHidden = oldModal.classList.contains('hidden');
+                oldModal.innerHTML = newModal.innerHTML;
+                if (wasHidden) oldModal.classList.add('hidden');
+                else oldModal.classList.remove('hidden');
+            }
+            const newHeader = doc.querySelector('header');
+            const oldHeader = document.querySelector('header');
+            if (newHeader && oldHeader) {
+                oldHeader.innerHTML = newHeader.innerHTML;
+            }
+        }
+    } catch (e) {
+        console.error('Error refreshing settings view:', e);
+    }
+}
+
 async function saveSettings(event) {
     if (event) event.preventDefault();
     const form = document.getElementById('settings-form') || (event && event.target);
@@ -74,7 +100,11 @@ async function saveSettings(event) {
         });
 
         if (res.ok) {
-            window.location.reload();
+            closeSettingsModal();
+            if (typeof showToast === 'function') {
+                showToast('Ajustes guardados correctamente');
+            }
+            await refreshSettingsView();
         } else {
             const txt = await res.text();
             alert('Error al guardar configuración: ' + (txt || res.statusText));
@@ -100,7 +130,10 @@ async function unlinkTelegram() {
     try {
         const res = await fetch('/settings/telegram/unlink', { method: 'POST' });
         if (res.ok) {
-            window.location.reload();
+            if (typeof showToast === 'function') {
+                showToast('Telegram desvinculado');
+            }
+            await refreshSettingsView();
         } else {
             const txt = await res.text();
             alert('Error al desvincular Telegram: ' + (txt || res.statusText));

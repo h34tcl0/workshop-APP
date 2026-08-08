@@ -1,3 +1,38 @@
+async function refreshBacklogView() {
+    try {
+        const res = await fetch(window.location.href);
+        if (res.ok) {
+            const html = await res.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newBacklog = doc.getElementById('backlog-container');
+            const oldBacklog = document.getElementById('backlog-container');
+            if (newBacklog && oldBacklog) {
+                oldBacklog.innerHTML = newBacklog.innerHTML;
+            }
+            const newAgenda = doc.getElementById('agenda-container');
+            const oldAgenda = document.getElementById('agenda-container');
+            if (newAgenda && oldAgenda) {
+                oldAgenda.innerHTML = newAgenda.innerHTML;
+            }
+            if (typeof restoreProjectAccordions === 'function') {
+                restoreProjectAccordions();
+            }
+            if (typeof initMoveTaskForms === 'function') {
+                initMoveTaskForms();
+            }
+            if (typeof initSortable === 'function') {
+                initSortable();
+            }
+            if (typeof initTaskAutocomplete === 'function') {
+                initTaskAutocomplete();
+            }
+        }
+    } catch (e) {
+        console.error('Error refreshing backlog view:', e);
+    }
+}
+
 // ── Toast (notificación flotante, usada en varias partes de la página) ──
 function showToast(msg) {
     const t = document.getElementById('toast');
@@ -44,10 +79,10 @@ function importJsonTasks() {
     if (!jsonText) return;
     fetch('/tasks/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: jsonText })
         .then(res => res.json())
-        .then(data => {
+        .then(async data => {
             if (data.status === 'success') {
                 showToast(data.message);
-                setTimeout(() => window.location.reload(), 800);
+                await refreshBacklogView();
             }
         });
 }
@@ -118,7 +153,7 @@ async function activateTaskToBacklog(taskId, taskTitle) {
         const data = await res.json();
         if (data.success) {
             showToast(data.message || `Tarea '${taskTitle}' agregada al backlog activo`);
-            setTimeout(() => window.location.reload(), 400);
+            await refreshBacklogView();
         } else {
             showToast(data.error || 'Error al agregar tarea al backlog activo');
         }
@@ -143,7 +178,7 @@ async function handleTaskDelete(event, taskId, taskTitle) {
             showToast(data.message || `Tarea '${taskTitle}' eliminada`);
             const taskCard = document.getElementById(`task-card-${taskId}`);
             if (taskCard) taskCard.remove();
-            setTimeout(() => window.location.reload(), 400);
+            await refreshBacklogView();
         } else {
             showToast('Error al eliminar tarea');
         }
@@ -177,7 +212,7 @@ async function handleTaskUpdate(event, taskId) {
         const data = await res.json();
         if (res.ok && data.success) {
             showToast('Tarea actualizada correctamente');
-            setTimeout(() => window.location.reload(), 400);
+            await refreshBacklogView();
         } else {
             showToast(data.error || 'Error al actualizar tarea');
         }
@@ -543,6 +578,235 @@ document.addEventListener('DOMContentLoaded', function () {
     initTaskAutocomplete();
 });
 
+async function saveProjectName(projectId) {
+    const input = document.getElementById(`proj-name-input-${projectId}`);
+    if (!input || !input.value.trim()) return;
+    try {
+        const res = await fetch(`/projects/${projectId}/update-name`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify({ name: input.value.trim() })
+        });
+        const data = await res.json();
+        if (data.success) {
+            showToast('Nombre de proyecto actualizado');
+            await refreshBacklogView();
+        } else {
+            showToast(data.error || 'Error al actualizar nombre de proyecto');
+        }
+    } catch (e) {
+        console.error('Error saving project name:', e);
+        showToast('Error de conexión');
+    }
+}
+
+function toggleProjectNameEdit(projectId) {
+    const editDiv = document.getElementById(`proj-name-edit-${projectId}`);
+    const nameDisplay = document.getElementById(`proj-name-display-${projectId}`);
+    if (editDiv) editDiv.classList.toggle('hidden');
+    if (nameDisplay) nameDisplay.classList.toggle('hidden');
+}
+
+async function submitAddTaskForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: new URLSearchParams(formData),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (res.ok) {
+            showToast('Tarea agregada exitosamente');
+            const titleInput = document.getElementById('manual-title');
+            if (titleInput) titleInput.value = '';
+            await refreshBacklogView();
+        } else {
+            showToast('Error al agregar tarea');
+        }
+    } catch (err) {
+        console.error('Error in submitAddTaskForm:', err);
+        showToast('Error de conexión');
+    }
+}
+
+async function submitAddProjectForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: new URLSearchParams(formData),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (res.ok) {
+            showToast('Proyecto creado');
+            form.reset();
+            await refreshBacklogView();
+        } else {
+            showToast('Error al crear proyecto');
+        }
+    } catch (err) {
+        console.error('Error creating project:', err);
+        showToast('Error de conexión');
+    }
+}
+
+async function submitToggleProjectForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: new URLSearchParams(formData),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (res.ok) {
+            showToast('Estado del proyecto actualizado');
+            await refreshBacklogView();
+        } else {
+            showToast('Error al actualizar proyecto');
+        }
+    } catch (err) {
+        console.error('Error toggling project:', err);
+        showToast('Error de conexión');
+    }
+}
+
+async function submitToggleTaskActiveForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: new URLSearchParams(formData),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (res.ok) {
+            showToast('Estado de tarea actualizado');
+            await refreshBacklogView();
+        } else {
+            showToast('Error al actualizar tarea');
+        }
+    } catch (err) {
+        console.error('Error toggling task active:', err);
+        showToast('Error de conexión');
+    }
+}
+
+async function submitTaskUpdateStatusForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: new URLSearchParams(formData),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (res.ok) {
+            showToast('Tarea marcada como completada');
+            await refreshBacklogView();
+        } else {
+            showToast('Error al actualizar tarea');
+        }
+    } catch (err) {
+        console.error('Error updating task status:', err);
+        showToast('Error de conexión');
+    }
+}
+
+async function submitDayOverrideForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: new URLSearchParams(formData),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (res.ok) {
+            showToast('Ajuste del día guardado');
+            await refreshBacklogView();
+        } else {
+            showToast('Error al guardar ajuste del día');
+        }
+    } catch (err) {
+        console.error('Error in submitDayOverrideForm:', err);
+        showToast('Error de conexión');
+    }
+}
+
+async function submitClearDayOverrideForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (res.ok) {
+            showToast('Ajustes manuales eliminados');
+            await refreshBacklogView();
+        } else {
+            showToast('Error al limpiar ajustes del día');
+        }
+    } catch (err) {
+        console.error('Error in submitClearDayOverrideForm:', err);
+        showToast('Error de conexión');
+    }
+}
+
+async function submitForceTaskForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            body: new URLSearchParams(formData),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (res.ok) {
+            showToast('Tarea forzada asignada');
+            await refreshBacklogView();
+        } else {
+            showToast('Error al forzar tarea');
+        }
+    } catch (err) {
+        console.error('Error in submitForceTaskForm:', err);
+        showToast('Error de conexión');
+    }
+}
+
+async function submitDeleteForcedTaskForm(event) {
+    event.preventDefault();
+    const form = event.target;
+    try {
+        const res = await fetch(form.action, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        if (res.ok) {
+            showToast('Tarea forzada quitada');
+            await refreshBacklogView();
+        } else {
+            showToast('Error al eliminar tarea forzada');
+        }
+    } catch (err) {
+        console.error('Error in submitDeleteForcedTaskForm:', err);
+        showToast('Error de conexión');
+    }
+}
+
 // Exponer explícitamente funciones al ámbito global (window)
 Object.assign(window, {
     showToast,
@@ -563,5 +827,17 @@ Object.assign(window, {
     handleProjectSelectChange,
     cancelInlineProject,
     createInlineProject,
-    toggleFocusMode
+    toggleFocusMode,
+    refreshBacklogView,
+    submitAddTaskForm,
+    submitAddProjectForm,
+    submitToggleProjectForm,
+    submitToggleTaskActiveForm,
+    submitTaskUpdateStatusForm,
+    saveProjectName,
+    toggleProjectNameEdit,
+    submitDayOverrideForm,
+    submitClearDayOverrideForm,
+    submitForceTaskForm,
+    submitDeleteForcedTaskForm
 });

@@ -686,9 +686,9 @@ async function submitAddMaterialForm(e) {
 
         if (res.ok && result.success) {
             form.reset();
-            // Asegurar que el modo se mantenga en 'inventory'
+            toggleAddMaterialForm();
             localStorage.setItem('agendapp_workspace_mode', 'inventory');
-            window.location.reload();
+            await refreshMaterialsView();
         } else {
             const errorMsg = result.error || 'Error al guardar el material';
             if (errorContainer) {
@@ -741,8 +741,9 @@ async function submitAddToolForm(e) {
 
         if (res.ok && result.success) {
             form.reset();
+            toggleAddToolForm();
             localStorage.setItem('agendapp_workspace_mode', 'inventory');
-            window.location.reload();
+            await refreshMaterialsView();
         } else {
             const errorMsg = result.error || 'Error al registrar la herramienta';
             if (errorContainer) {
@@ -785,6 +786,33 @@ function loadExampleMaterialsJson() {
     }
 }
 
+async function refreshMaterialsView() {
+    try {
+        const res = await fetch(window.location.href);
+        if (res.ok) {
+            const html = await res.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newWrapper = doc.getElementById('materials-view-wrapper');
+            const oldWrapper = document.getElementById('materials-view-wrapper');
+            if (newWrapper && oldWrapper) {
+                oldWrapper.innerHTML = newWrapper.innerHTML;
+            } else {
+                const newContainer = doc.getElementById('materials-module-container');
+                const oldContainer = document.getElementById('materials-module-container');
+                if (newContainer && oldContainer) {
+                    oldContainer.innerHTML = newContainer.innerHTML;
+                }
+            }
+            if (typeof activeInventorySubtab !== 'undefined' && typeof switchInventoryTab === 'function') {
+                switchInventoryTab(activeInventorySubtab);
+            }
+        }
+    } catch (e) {
+        console.error('Error refreshing materials view:', e);
+    }
+}
+
 // DIRECT STATUS UPDATES
 async function updateMaterialStatusDirect(id, status) {
     try {
@@ -793,7 +821,7 @@ async function updateMaterialStatusDirect(id, status) {
             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
             body: JSON.stringify({ status })
         });
-        if (res.ok) window.location.reload();
+        if (res.ok) await refreshMaterialsView();
     } catch (e) {
         console.error('Error setting material status:', e);
     }
@@ -806,7 +834,7 @@ async function updateToolStatusDirect(id, status) {
             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
             body: JSON.stringify({ status })
         });
-        if (res.ok) window.location.reload();
+        if (res.ok) await refreshMaterialsView();
     } catch (e) {
         console.error('Error setting tool status:', e);
     }
@@ -819,7 +847,7 @@ async function deleteMaterial(id) {
             method: 'POST',
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
         });
-        if (res.ok) window.location.reload();
+        if (res.ok) await refreshMaterialsView();
     } catch (e) {
         console.error('Error deleting material:', e);
     }
@@ -832,7 +860,7 @@ async function deleteTool(id) {
             method: 'POST',
             headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
         });
-        if (res.ok) window.location.reload();
+        if (res.ok) await refreshMaterialsView();
     } catch (e) {
         console.error('Error deleting tool:', e);
     }
@@ -874,7 +902,10 @@ async function submitEditMaterialForm(e) {
             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
             body: JSON.stringify(data)
         });
-        if (res.ok) window.location.reload();
+        if (res.ok) {
+            closeEditMaterialModal();
+            await refreshMaterialsView();
+        }
     } catch (err) {
         console.error('Error editing material:', err);
     }
@@ -910,7 +941,10 @@ async function submitEditToolForm(e) {
             headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
             body: JSON.stringify(data)
         });
-        if (res.ok) window.location.reload();
+        if (res.ok) {
+            closeEditToolModal();
+            await refreshMaterialsView();
+        }
     } catch (err) {
         console.error('Error editing tool:', err);
     }

@@ -22,7 +22,10 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
 
     store.updateAppSettings(user.id, {
       timezone: "America/Santiago",
-      forecast_days: 7
+      forecast_days: 7,
+      work_days: [0, 1, 2, 3, 4, 5, 6],
+      exclude_saturdays: false,
+      exclude_sundays: false
     });
 
     const project = store.addProject(user.id, "Proyecto Reevaluacion", "Desc");
@@ -107,7 +110,10 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
 
     store.updateAppSettings(user.id, {
       timezone: "America/Santiago",
-      forecast_days: 7
+      forecast_days: 7,
+      work_days: [0, 1, 2, 3, 4, 5, 6],
+      exclude_saturdays: false,
+      exclude_sundays: false
     });
 
     const project = store.addProject(user.id, "Proyecto Mutacion", "Desc");
