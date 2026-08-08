@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluateDayFeasibility, evaluateDayWithOverrides, computeHourlyClimateMap, isRainyForecast } from "../src/evaluator.js";
+import { evaluateDayFeasibility, evaluateDayWithOverrides, computeHourlyClimateMap, isRainyForecast, getHourlyClimateAudit } from "../src/evaluator.js";
 import { AppSettings, Task, TaskCategory, TaskStatus, HourlyForecast, DayStatus, DayOverride } from "../src/types.js";
 
 const mockSettings: AppSettings = {
@@ -292,5 +292,73 @@ describe("Evaluator - Day Overrides Precedence", () => {
 
     expect(result.status).toBe(DayStatus.DAY_BLOCKED);
     expect(result.reason).toContain("Día no laborable (domingo, desactivado en configuración)");
+  });
+
+  it("flags risk when rain occurs during passive curing hours in getHourlyClimateAudit", () => {
+    const varnishTask = createMockTask({
+      category: TaskCategory.VARNISH_PAINT,
+      estimated_hours: 3.0,
+      requires_curing: true,
+      curing_hours: 5.0
+    });
+    const forecasts = createMockForecasts(20, 50, 0, 0);
+
+    const mockWindow = {
+      start_time: "08:00",
+      end_time: "13:00",
+      start_hour: 8,
+      end_hour: 13,
+      total_duration_hours: 5,
+      net_work_hours: 3,
+      is_viable: true
+    };
+
+    // Passive curing runs from 12:00 to 17:00 (5 hours after work ends at 12:00).
+    // Rain at 15:00 occurs during passive curing!
+    forecasts[15].precipitation_mm = 1.5;
+    forecasts[15].precipitation_probability = 80;
+
+    const audit = getHourlyClimateAudit(forecasts, mockWindow, [varnishTask], mockSettings);
+    expect(audit).toBeDefined();
+
+    const hour15Audit = audit.find(item => item.hour === 15);
+    expect(hour15Audit).toBeDefined();
+    expect(hour15Audit?.is_curing).toBe(true);
+    expect(hour15Audit?.risk_reasons.some(r => r.includes("Lluvia en curado pasivo"))).toBe(true);
+  });
+
+  it("maintains accurate work window start/end label for VIABLE day_override", () => {
+    const sundaySettings: AppSettings = {
+      ...mockSettings,
+      exclude_sundays: true,
+      operational_start_hour: 11,
+      operational_end_hour: 21,
+      setup_hours: 1.0,
+      teardown_hours: 1.0
+    };
+    const sundayDate = "2026-08-09";
+    const task = createMockTask({ estimated_hours: 4.0 });
+    const forecasts = createMockForecasts(20, 50, 0, 0);
+
+    const override: DayOverride = {
+      id: 1,
+      override_date: sundayDate,
+      force_status: "VIABLE",
+      custom_start_hour: 15,
+      custom_end_hour: 21
+    };
+
+    const result = evaluateDayWithOverrides(
+      sundayDate,
+      [task],
+      forecasts,
+      sundaySettings,
+      new Set(),
+      override
+    );
+
+    expect(result.status).toBe(DayStatus.DAY_VIABLE);
+    expect(result.window?.start_time).toBe("15:00");
+    expect(result.window?.end_time).toBe("21:00");
   });
 });

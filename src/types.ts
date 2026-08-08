@@ -197,6 +197,8 @@ export interface DayEvaluation {
   is_manually_blocked?: boolean;
   forced_tasks?: ForcedTaskWithDetails[];
   day_override?: DayOverride | null;
+  hourly_forecast?: HourlyForecast[] | null;
+  hourly_audit?: any[] | null;
 }
 
 export interface DailyLog {
@@ -211,6 +213,7 @@ export interface DailyLog {
   tasks_summary?: string | null;
   scheduled_task_ids?: string | null; // JSON string of number[]
   morning_climate_snapshot?: string | null;
+  hourly_forecast?: string | null;
   telegram_notified: boolean;
   calendar_created: boolean;
   google_event_id?: string | null;

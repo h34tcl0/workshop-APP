@@ -230,6 +230,153 @@ export function calculateBarSegments(
   };
 }
 
+export interface HourlyClimateAuditItem {
+  hour: number;
+  time_label: string;
+  forecast: HourlyForecast;
+  phase: "NONE" | "SETUP" | "WORK" | "TEARDOWN" | "CURING";
+  phase_label: string;
+  is_active_work: boolean;
+  is_curing: boolean;
+  has_temp_risk: boolean;
+  has_humidity_risk: boolean;
+  has_rain_risk: boolean;
+  has_any_risk: boolean;
+  risk_reasons: string[];
+}
+
+export function getHourlyClimateAudit(
+  forecasts: HourlyForecast[],
+  window: TimeWindow | null | undefined,
+  scheduledTasks: Task[] = [],
+  cfg: AppSettings
+): HourlyClimateAuditItem[] {
+  const forecastMap = new Map<number, HourlyForecast>();
+  if (Array.isArray(forecasts)) {
+    for (const f of forecasts) {
+      forecastMap.set(f.hour, f);
+    }
+  }
+
+  let startH = window ? window.start_hour : cfg.operational_start_hour;
+  let setupEnd = window ? startH + cfg.setup_hours : startH;
+  let workEnd = window ? setupEnd + window.net_work_hours : setupEnd;
+  let teardownEnd = window ? workEnd + cfg.teardown_hours : workEnd;
+
+  let maxCuringEnd = teardownEnd;
+  if (window && scheduledTasks.length > 0) {
+    let currH = setupEnd;
+    for (const task of scheduledTasks) {
+      const tEnd = currH + task.estimated_hours;
+      currH = tEnd;
+      const reqCur = task.requires_curing || task.curing_hours > 0 || task.category === TaskCategory.PVA_GLUE || task.category === TaskCategory.VARNISH_PAINT || task.category === TaskCategory.EPOXY;
+      if (reqCur) {
+        const cDur = task.curing_hours > 0 ? task.curing_hours : (task.category === TaskCategory.EPOXY ? 6.0 : 2.0);
+        const cEnd = tEnd + cDur;
+        if (cEnd > maxCuringEnd) maxCuringEnd = cEnd;
+      }
+    }
+  }
+
+  const result: HourlyClimateAuditItem[] = [];
+
+  for (let h = 0; h < 24; h++) {
+    const f = forecastMap.get(h) || {
+      hour: h,
+      temperature_c: 20,
+      relative_humidity: 50,
+      precipitation_mm: 0,
+      precipitation_probability: 0,
+      cloud_cover_percent: 0,
+      wind_speed_kmh: 0,
+      weather_code: 0,
+      description: "Sin datos"
+    };
+
+    let phase: "NONE" | "SETUP" | "WORK" | "TEARDOWN" | "CURING" = "NONE";
+    let phase_label = "";
+    let isActiveWork = false;
+    let isCuring = false;
+
+    if (window) {
+      if (h >= startH && h < setupEnd) {
+        phase = "SETUP";
+        phase_label = "PREP";
+        isActiveWork = true;
+      } else if (h >= setupEnd && h < workEnd) {
+        phase = "WORK";
+        phase_label = "TRABAJO";
+        isActiveWork = true;
+      } else if (h >= workEnd && h < teardownEnd) {
+        phase = "TEARDOWN";
+        phase_label = "CIERRE";
+        isActiveWork = true;
+      } else {
+        const checkH = (h < startH) ? h + 24 : h;
+        if (checkH >= teardownEnd && checkH < maxCuringEnd) {
+          phase = "CURING";
+          phase_label = "CURADO";
+          isCuring = true;
+        }
+      }
+    }
+
+    const risk_reasons: string[] = [];
+    let has_humidity_risk = false;
+    let has_rain_risk = false;
+    let has_temp_risk = false;
+
+    if (f.relative_humidity > cfg.max_humidity_percent) {
+      has_humidity_risk = true;
+      risk_reasons.push(`Humedad ${f.relative_humidity}% (límite ${cfg.max_humidity_percent}%)`);
+    }
+
+    if (f.precipitation_mm >= cfg.min_rain_precipitation_mm || f.precipitation_probability >= 30) {
+      has_rain_risk = true;
+      const rainMsg = isCuring
+        ? `Lluvia en curado pasivo: ${f.precipitation_mm}mm (${f.precipitation_probability}%)`
+        : `Lluvia ${f.precipitation_mm}mm (${f.precipitation_probability}%)`;
+      risk_reasons.push(rainMsg);
+    }
+
+    if (isActiveWork || isCuring) {
+      for (const t of scheduledTasks) {
+        if (t.category === TaskCategory.EPOXY) {
+          if (f.relative_humidity > 75) {
+            has_humidity_risk = true;
+            if (!risk_reasons.some(r => r.includes("Epoxi"))) {
+              risk_reasons.push(`Epoxi: Humedad ${f.relative_humidity}% > 75%`);
+            }
+          }
+          if (f.temperature_c < 15.0) {
+            has_temp_risk = true;
+            risk_reasons.push(`Epoxi: Temp ${f.temperature_c}°C < 15°C`);
+          }
+        }
+      }
+    }
+
+    const has_any_risk = has_humidity_risk || has_rain_risk || has_temp_risk;
+
+    result.push({
+      hour: h,
+      time_label: `${String(h).padStart(2, "0")}:00`,
+      forecast: f,
+      phase,
+      phase_label,
+      is_active_work: isActiveWork,
+      is_curing: isCuring,
+      has_temp_risk,
+      has_humidity_risk,
+      has_rain_risk,
+      has_any_risk,
+      risk_reasons
+    });
+  }
+
+  return result;
+}
+
 export function evaluateDayFeasibility(
   evalDateInput: Date | string,
   backlogTasks: Task[],
@@ -269,7 +416,9 @@ export function evaluateDayFeasibility(
     weather_summary: weatherSummary,
     climate_segments: climateSegments,
     free_windows: freeWindows,
-    climate_only_status: climateOnlyStatus as "clear" | "blocked"
+    climate_only_status: climateOnlyStatus as "clear" | "blocked",
+    hourly_forecast: forecasts,
+    hourly_audit: getHourlyClimateAudit(forecasts, null, [], cfg)
   };
 
   const weekday = evalDateObj.getDay(); // 0=Sunday, 6=Saturday
@@ -492,6 +641,7 @@ export function evaluateDayFeasibility(
     }
 
     const barSegments = calculateBarSegments(bestWindow, timeline, cfg, climateSegments);
+    const hourlyAudit = getHourlyClimateAudit(forecasts, bestWindow, bestScheduledTasks, cfg);
 
     return {
       ...commonFields,
@@ -501,7 +651,8 @@ export function evaluateDayFeasibility(
       reason: `Ventana viable (${bestWindow.start_time} a ${bestWindow.end_time}).`,
       timeline,
       cutoff_reason: cutoffReason,
-      bar_segments: barSegments
+      bar_segments: barSegments,
+      hourly_audit: hourlyAudit
     };
   }
 
@@ -583,7 +734,9 @@ export function evaluateDayWithOverrides(
       climate_only_status: freeWindows.length > 0 ? "clear" : "blocked",
       is_manually_blocked: true,
       forced_tasks: forcedTasksDetails,
-      day_override: dayOverride
+      day_override: dayOverride,
+      hourly_forecast: forecasts,
+      hourly_audit: getHourlyClimateAudit(forecasts, null, [], settings)
     };
   }
 
@@ -613,6 +766,9 @@ export function evaluateDayWithOverrides(
 
   result.forced_tasks = forcedTasksDetails;
   result.day_override = dayOverride;
+  if (result.status === DayStatus.DAY_VIABLE && result.window) {
+    result.hourly_audit = getHourlyClimateAudit(forecasts, result.window, result.scheduled_tasks || [], effectiveCfg);
+  }
   return result;
 }
 

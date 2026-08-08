@@ -387,6 +387,9 @@ export async function initDatabase(): Promise<Database.Database> {
   if (!currentDailyLogCols.some(c => c.name === 'calendar_sync_claimed_at')) {
     dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN calendar_sync_claimed_at TEXT;");
   }
+  if (!currentDailyLogCols.some(c => c.name === 'hourly_forecast')) {
+    dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN hourly_forecast TEXT;");
+  }
 
   // Special migration for day_overrides (recreate for per-user UNIQUE constraint)
   const dayOverrideCols = dbInstance.prepare("PRAGMA table_info(day_overrides)").all() as any[];
@@ -1537,6 +1540,7 @@ export class SQLiteStore {
       tasks_summary: row.tasks_summary || null,
       scheduled_task_ids: row.scheduled_task_ids || null,
       morning_climate_snapshot: row.morning_climate_snapshot || null,
+      hourly_forecast: row.hourly_forecast || null,
       telegram_notified: Boolean(row.telegram_notified),
       calendar_created: Boolean(row.calendar_created),
       google_event_id: row.google_event_id ? String(row.google_event_id) : null,
@@ -1572,6 +1576,7 @@ export class SQLiteStore {
       tasks_summary: row.tasks_summary || null,
       scheduled_task_ids: row.scheduled_task_ids || null,
       morning_climate_snapshot: row.morning_climate_snapshot || null,
+      hourly_forecast: row.hourly_forecast || null,
       telegram_notified: Boolean(row.telegram_notified),
       calendar_created: Boolean(row.calendar_created),
       google_event_id: row.google_event_id ? String(row.google_event_id) : null,
@@ -1607,6 +1612,7 @@ export class SQLiteStore {
       tasks_summary: row.tasks_summary || null,
       scheduled_task_ids: row.scheduled_task_ids || null,
       morning_climate_snapshot: row.morning_climate_snapshot || null,
+      hourly_forecast: row.hourly_forecast || null,
       telegram_notified: Boolean(row.telegram_notified),
       calendar_created: Boolean(row.calendar_created),
       google_event_id: row.google_event_id ? String(row.google_event_id) : null,
@@ -1637,13 +1643,13 @@ export class SQLiteStore {
     this.db.prepare(
       `INSERT INTO daily_logs (
         user_id, eval_date, status, block_reason, window_start, window_end, net_work_hours,
-        tasks_summary, scheduled_task_ids, morning_climate_snapshot,
+        tasks_summary, scheduled_task_ids, morning_climate_snapshot, hourly_forecast,
         telegram_notified, calendar_created, google_event_id, checkin_sent, checkin_resolved,
         weather_alert_sent, weather_alert_acknowledged, weather_alert_retry_count,
         weather_alert_last_sent_at, weather_alert_message, humidity_alert_sent,
         intraday_alert_triggered, intraday_alert_acknowledged, intraday_alert_last_sent_at, intraday_alert_burst_count,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
     ).run(
       userId,
       logData.eval_date,
@@ -1655,6 +1661,7 @@ export class SQLiteStore {
       logData.tasks_summary || null,
       logData.scheduled_task_ids || null,
       logData.morning_climate_snapshot || null,
+      logData.hourly_forecast || null,
       logData.telegram_notified ? 1 : 0,
       logData.calendar_created ? 1 : 0,
       logData.google_event_id || null,
@@ -1692,6 +1699,7 @@ export class SQLiteStore {
         tasks_summary = ?,
         scheduled_task_ids = ?,
         morning_climate_snapshot = ?,
+        hourly_forecast = ?,
         telegram_notified = ?,
         calendar_created = ?,
         google_event_id = ?,
@@ -1718,6 +1726,7 @@ export class SQLiteStore {
       updated.tasks_summary || null,
       updated.scheduled_task_ids || null,
       updated.morning_climate_snapshot || null,
+      updated.hourly_forecast || null,
       updated.telegram_notified ? 1 : 0,
       updated.calendar_created ? 1 : 0,
       updated.google_event_id || null,

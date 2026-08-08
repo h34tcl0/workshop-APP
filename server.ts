@@ -3,7 +3,7 @@ import path from 'path';
 import { z } from 'zod';
 import { initDatabase, store, closeDatabase } from './src/db.js';
 import { importPayloadSchema, reorderPayloadSchema } from './src/schemas.js';
-import { evaluateDayWithOverrides } from './src/evaluator.js';
+import { evaluateDayWithOverrides, getHourlyClimateAudit } from './src/evaluator.js';
 import { getHourlyForecast, getWeeklyForecast, MockWeatherService } from './src/weatherService.js';
 import { getHolidayDatesForRange } from './src/holidaysService.js';
 import { formatDateShortEs, getLocalDateIso, getWorkshopLocalTime, getTimezoneByCoords } from './src/dateUtils.js';
@@ -382,7 +382,8 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
       tools,
       calculator_offsets: calculatorOffsets,
       all_projects: allProjects,
-      all_tasks: allTasks
+      all_tasks: allTasks,
+      getHourlyClimateAudit
     });
   } catch (err) {
     console.error('Error rendering dashboard:', err);

@@ -4,7 +4,7 @@ import { getHourlyForecast, MockWeatherService } from "./weatherService.js";
 import { getHolidayDatesForRange } from "./holidaysService.js";
 import { TelegramBotService } from "./telegramBot.js";
 import { calendarService } from "./calendarService.js";
-import { DayEvaluation, DayStatus, HourlyForecast, TaskStatus } from "./types.js";
+import { DayEvaluation, DayStatus, HourlyForecast, TaskStatus, Task } from "./types.js";
 import { getLocalDateIso, getLocalHoursAndMinutes, getTargetTimeZone } from "./dateUtils.js";
 
 export { getLocalDateIso, getLocalHoursAndMinutes, getTargetTimeZone };
@@ -368,7 +368,8 @@ export async function runMorningEvaluation(
         net_work_hours: netWorkHours,
         tasks_summary: tasksSummary,
         scheduled_task_ids: scheduledTaskIds,
-        morning_climate_snapshot: JSON.stringify(evalResult.climate_segments || [])
+        morning_climate_snapshot: JSON.stringify(evalResult.climate_segments || []),
+        hourly_forecast: JSON.stringify(evalResult.hourly_forecast || [])
       };
 
       if (isNewLog) {
