@@ -26,12 +26,55 @@
             const end_limit = (override && override.custom_end_hour != null) ? override.custom_end_hour : app_settings.operational_end_hour;
             const total_shift_hours = Math.max(1, end_limit - start_limit);
 
-            // Efficiency Ring Calculation: (window real / shift config) * 100
-            let window_hours = 0;
-            if (is_viable && eval.window) {
-                window_hours = Math.max(0, eval.window.end_hour - eval.window.start_hour);
+            // Efficiency Ring Calculation: 80% Jornada / 20% Fuera de jornada
+            let rawForecasts = eval.hourly_forecast || item.hourly_forecast;
+            if (typeof rawForecasts === 'string') {
+                try { rawForecasts = JSON.parse(rawForecasts); } catch (e) { rawForecasts = []; }
             }
-            const pct = Math.min(100, Math.max(0, Math.round((window_hours / total_shift_hours) * 100)));
+
+            let jornadaGood = 0, jornadaTotal = 0;
+            let fueraGood = 0, fueraTotal = 0;
+
+            if (Array.isArray(rawForecasts) && rawForecasts.length > 0) {
+                const minRain = app_settings.min_rain_precipitation_mm;
+                const maxHum = app_settings.max_humidity_percent;
+                for (const f of rawForecasts) {
+                    const h = f.hour;
+                    const isJornada = (h >= start_limit && h < end_limit);
+                    const isOk = (f.precipitation_mm < minRain && f.relative_humidity <= maxHum);
+
+                    if (isJornada) {
+                        jornadaTotal++;
+                        if (isOk) jornadaGood++;
+                    } else {
+                        fueraTotal++;
+                        if (isOk) fueraGood++;
+                    }
+                }
+            }
+
+            let pJornada = jornadaTotal > 0 ? (jornadaGood / jornadaTotal) : 0;
+            let pFuera = fueraTotal > 0 ? (fueraGood / fueraTotal) : 0;
+            let pctJornada = Math.round(pJornada * 100);
+            let pctFuera = Math.round(pFuera * 100);
+
+            let pct = 0;
+            if (jornadaTotal > 0 || fueraTotal > 0) {
+                if (fueraTotal === 0) {
+                    pct = pctJornada;
+                } else {
+                    pct = Math.round((pJornada * 0.80 + pFuera * 0.20) * 100);
+                }
+            } else {
+                // Fallback si no hay forecast horario
+                let window_hours = 0;
+                if (is_viable && eval.window) {
+                    window_hours = Math.max(0, eval.window.end_hour - eval.window.start_hour);
+                }
+                const total_shift_hours = Math.max(1, end_limit - start_limit);
+                pct = Math.min(100, Math.max(0, Math.round((window_hours / total_shift_hours) * 100)));
+            }
+            pct = Math.min(100, Math.max(0, pct));
 
             // Ring Color Scale (Independent of phase warm/cool colors):
             // 70-100% -> Green (--w-ok #63cf8e)
@@ -46,21 +89,16 @@
 
             const stroke_dash = ((pct / 100) * 163.4).toFixed(1) + ' 163.4';
 
-            // Tooltip Text based on Day Status:
-            let ring_tooltip = '';
-            if (!is_viable) {
-                if (is_manual_block) {
-                    ring_tooltip = 'Bloqueado manualmente: ' + (eval.unassigned_reason || eval.reason || 'Restricción del usuario');
-                } else if (is_amber) {
-                    ring_tooltip = 'Sin plan agendado: ' + (eval.unassigned_reason || eval.reason || 'Ventana libre sin tareas coordinadas');
-                } else {
-                    ring_tooltip = 'Jornada bloqueada/suspendida: ' + (eval.unassigned_reason || eval.reason || 'Lluvia o condiciones meteorológicas no operativas');
-                }
-            } else if (pct >= 95) {
-                ring_tooltip = 'Jornada completa sin restricciones climáticas.';
-            } else {
-                ring_tooltip = eval.cutoff_reason || eval.reason || 'Ventana reducida por condiciones climáticas o margen de tiempo.';
-            }
+            // Tooltip Text: Muestra desglose de Jornada, Resto del día e Índice final
+            let strJornada = (jornadaGood === jornadaTotal && jornadaTotal > 0)
+                ? 'Jornada completa sin restricciones (100%)'
+                : ('Jornada: ' + jornadaGood + '/' + jornadaTotal + 'h óptimas (' + pctJornada + '%)');
+
+            let strFuera = (fueraGood === fueraTotal && fueraTotal > 0)
+                ? 'Resto del día: despejado (100%)'
+                : ('Resto del día: ' + fueraGood + '/' + fueraTotal + 'h despejadas (' + pctFuera + '%)');
+
+            let ring_tooltip = strJornada + ' · ' + strFuera + ' · Índice: ' + pct + '%';
 
             // Weather Emoji:
             let ico_emoji = '☀️';
