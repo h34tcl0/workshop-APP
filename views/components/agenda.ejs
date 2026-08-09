@@ -8,7 +8,7 @@
         <span class="text-[11px] font-mono text-ink3 bg-surface border border-hairline px-2.5 py-1 rounded-full shrink-0">7 días</span>
     </div>
 
-    <div class="agenda-days-grid flex flex-col md:grid md:grid-cols-1 xl:grid-cols-2 gap-3 sm:gap-4 w-full max-w-full min-w-0">
+    <div class="agenda-days-grid flex flex-col md:grid md:grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-5 w-full max-w-full min-w-0">
 
         <% forecast_evaluations.forEach(function(item) { %>
         <% 
@@ -18,197 +18,225 @@
             const cond = (eval.weather_summary && eval.weather_summary.condition) ? eval.weather_summary.condition : 'sunny';
             const is_manual_block = Boolean(eval.is_manually_blocked);
             const is_amber = (!is_viable) && (!is_manual_block) && (eval.climate_only_status === 'clear');
+            const is_blocked_or_suspended = (!is_viable) && (!is_amber);
             const date_iso = item.date_iso || eval.eval_date;
             const date_str = item.date_str || eval.date_str;
             const override = eval.day_override || item.day_override;
             const start_limit = (override && override.custom_start_hour != null) ? override.custom_start_hour : app_settings.operational_start_hour;
             const end_limit = (override && override.custom_end_hour != null) ? override.custom_end_hour : app_settings.operational_end_hour;
+            const total_shift_hours = Math.max(1, end_limit - start_limit);
+
+            // Efficiency Ring Calculation: (window real / shift config) * 100
+            let window_hours = 0;
+            if (is_viable && eval.window) {
+                window_hours = Math.max(0, eval.window.end_hour - eval.window.start_hour);
+            }
+            const pct = Math.min(100, Math.max(0, Math.round((window_hours / total_shift_hours) * 100)));
+
+            // Ring Color Scale (Independent of phase warm/cool colors):
+            // 70-100% -> Green (--w-ok #63cf8e)
+            // 30-69% -> Yellow (--w-warn #e6c452)
+            // 0-29% -> Red (--w-rust #eb5757)
+            let ring_color = 'var(--w-ok)';
+            if (pct < 30) {
+                ring_color = 'var(--w-rust)';
+            } else if (pct < 70) {
+                ring_color = 'var(--w-warn)';
+            }
+
+            const stroke_dash = ((pct / 100) * 163.4).toFixed(1) + ' 163.4';
+
+            // Tooltip Text based on Day Status:
+            let ring_tooltip = '';
+            if (!is_viable) {
+                if (is_manual_block) {
+                    ring_tooltip = 'Bloqueado manualmente: ' + (eval.unassigned_reason || eval.reason || 'Restricción del usuario');
+                } else if (is_amber) {
+                    ring_tooltip = 'Sin plan agendado: ' + (eval.unassigned_reason || eval.reason || 'Ventana libre sin tareas coordinadas');
+                } else {
+                    ring_tooltip = 'Jornada bloqueada/suspendida: ' + (eval.unassigned_reason || eval.reason || 'Lluvia o condiciones meteorológicas no operativas');
+                }
+            } else if (pct >= 95) {
+                ring_tooltip = 'Jornada completa sin restricciones climáticas.';
+            } else {
+                ring_tooltip = eval.cutoff_reason || eval.reason || 'Ventana reducida por condiciones climáticas o margen de tiempo.';
+            }
+
+            // Weather Emoji:
+            let ico_emoji = '☀️';
+            if (cond === 'rain') ico_emoji = '🌧️';
+            else if (cond === 'cloudy') ico_emoji = '☁️';
+            else if (cond === 'partly') ico_emoji = '⛅';
+
+            // Card Theme Class:
+            let card_theme = 'sunny';
+            if (cond === 'rain' || !is_viable) {
+                card_theme = is_blocked_or_suspended ? 'blocked' : (cond === 'rain' ? 'rainy' : 'sunny');
+            }
         %>
 
-        <% if (is_viable) { %>
-        <!-- ── DÍA VIABLE ── -->
-        <div class="agenda-day-card group bg-surface border border-hairline rounded-2xl p-4 sm:p-5 shadow-panel w-full max-w-full min-w-0 shrink">
+        <article class="weather-card <%= card_theme %> group w-full max-w-full min-w-0 shrink">
 
-            <!-- Header del Día -->
-            <div class="flex items-center justify-between gap-2 mb-3">
-                <span class="font-display text-base sm:text-lg font-semibold text-ink flex items-center gap-2 min-w-0">
-                    <span class="truncate"><%= date_str %></span>
-                    <svg class="w-4 h-4 text-brass shrink-0">
-                        <% if (cond === 'rain') { %><use href="#i-cloud-rain"/><% } else if (cond === 'cloudy') { %><use href="#i-cloud"/><% } else if (cond === 'partly') { %><use href="#i-cloud-sun"/><% } else { %><use href="#i-sun"/><% } %>
-                    </svg>
-                </span>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <button type="button" onclick="toggleDayEditor('<%= date_iso %>')" aria-label="Editar día" class="w-9 h-9 sm:w-6 sm:h-6 rounded-md bg-surface2 hover:bg-hairline text-ink3 flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
-                        <svg class="w-3.5 h-3.5 sm:w-3 sm:h-3"><use href="#i-edit"/></svg>
-                    </button>
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-moss/10 text-moss border border-moss/25 whitespace-nowrap">
-                        Viable
-                    </span>
-                </div>
-            </div>
-
-            <!-- Rango de Horario y Temps -->
-            <p class="text-xs text-ink3 mb-4">
-                Jornada <%= start_limit %>:00–<%= end_limit %>:00 ·
-                <span class="text-ink2 font-mono"><%= eval.weather_summary.min_temp %>° - <%= eval.weather_summary.max_temp %>°C</span> ·
-                <span class="text-ink2 font-mono">💧 <%= eval.weather_summary.min_humidity %>% - <%= eval.weather_summary.max_humidity %>%</span>
-                <% if (eval.weather_summary.total_rain_mm && eval.weather_summary.total_rain_mm > 0) { %>
-                    · <span class="text-rust font-mono font-semibold">🌧️ <%= eval.weather_summary.total_rain_mm %> mm</span>
-                <% } %>
-            </p>
-
-            <% if (eval.window) { %>
-            <!-- Ventana de Trabajo -->
-            <div class="flex items-center justify-between mb-2">
-                <span class="text-xs font-semibold text-ink2 uppercase tracking-wide">Ventana de trabajo</span>
-                <span class="text-sm font-mono font-semibold text-brass">
-                    <%= eval.window.start_time %> — <%= eval.window.end_time %>
-                </span>
-            </div>
-
-            <!-- REGLA DE JORNADA -->
-            <% if (seg) { %>
-            <div class="rounded-lg border border-hairline bg-canvas/50 p-2.5 mb-4">
-                <div class="tick-row flex items-center justify-between text-[10px] font-mono text-ink3 mb-1.5 px-0.5">
-                    <span><%= start_limit %>:00</span>
-                    <span><%= end_limit %>:00</span>
-                </div>
-                <div class="relative h-8 rounded-md overflow-hidden flex ring-1 ring-hairline">
-
-                    <% if (seg.before_segments) { seg.before_segments.forEach(function(bseg) { %>
-                    <% if (bseg.condition === 'rain') { %>
-                    <div class="h-full bg-rust/70 border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= bseg.pct %>%;" title="Lluvia <%= Math.floor(bseg.start_h) %>:00–<%= Math.floor(bseg.end_h) %>:00">
-                        <span class="text-[8px] sm:text-[9px] font-mono font-semibold text-canvas whitespace-nowrap px-1">LLUVIA</span>
-                    </div>
-                    <% } else if (bseg.condition === 'humid') { %>
-                    <div class="h-full bg-brass/50 border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= bseg.pct %>%;" title="Humedad <%= Math.floor(bseg.start_h) %>:00–<%= Math.floor(bseg.end_h) %>:00">
-                        <span class="text-[8px] sm:text-[9px] font-mono font-semibold text-canvas whitespace-nowrap px-1">HUMEDAD</span>
-                    </div>
-                    <% } else { %>
-                    <div class="h-full bg-moss/25 border-r border-canvas" style="width: <%= bseg.pct %>%;" title="Libre <%= Math.floor(bseg.start_h) %>:00–<%= Math.floor(bseg.end_h) %>:00"></div>
-                    <% } %>
-                    <% }); } %>
-
-                    <div class="h-full bg-brass border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= seg.pct_setup || 10 %>%;" title="Preparación <%= seg.setup_h || 1 %>h">
-                        <span class="text-[9px] sm:text-[10px] font-mono font-bold text-canvas whitespace-nowrap px-1">PREP</span>
-                    </div>
-
-                    <div class="h-full bg-moss border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= seg.pct_work || 60 %>%;" title="Trabajo <%= seg.work_h || 2 %>h">
-                        <span class="text-[9px] sm:text-[10px] font-mono font-bold text-canvas whitespace-nowrap px-1"><%= seg.work_h || 2 %>H TRABAJO</span>
-                    </div>
-
-                    <div class="h-full bg-chalk border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= seg.pct_teardown || 10 %>%;" title="Cierre <%= seg.teardown_h || 1 %>h">
-                        <span class="text-[9px] sm:text-[10px] font-mono font-bold text-canvas whitespace-nowrap px-1">CIERRE</span>
-                    </div>
-
-                    <% if (seg.pct_curing && seg.pct_curing > 0) { %>
-                    <div class="h-full border-r border-canvas border-dashed border-2 border-chalk/70 bg-chalk/10 flex items-center justify-center overflow-hidden" style="width: <%= seg.pct_curing %>%;" title="Curado <%= seg.curing_h %>h">
-                        <span class="text-[9px] sm:text-[10px] font-mono font-semibold text-chalk whitespace-nowrap px-1">CURADO</span>
-                    </div>
-                    <% } %>
-
-                    <% if (seg.after_segments) { seg.after_segments.forEach(function(aseg) { %>
-                    <% if (aseg.condition === 'rain') { %>
-                    <div class="h-full bg-rust/70 border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= aseg.pct %>%;" title="Lluvia <%= Math.floor(aseg.start_h) %>:00–<%= Math.floor(aseg.end_h) %>:00">
-                        <span class="text-[8px] sm:text-[9px] font-mono font-semibold text-canvas whitespace-nowrap px-1">LLUVIA</span>
-                    </div>
-                    <% } else if (aseg.condition === 'humid') { %>
-                    <div class="h-full bg-brass/50 border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= aseg.pct %>%;" title="Humedad <%= Math.floor(aseg.start_h) %>:00–<%= Math.floor(aseg.end_h) %>:00">
-                        <span class="text-[8px] sm:text-[9px] font-mono font-semibold text-canvas whitespace-nowrap px-1">HUMEDAD</span>
-                    </div>
-                    <% } else { %>
-                    <div class="h-full bg-moss/25 border-r border-canvas" style="width: <%= aseg.pct %>%;" title="Libre <%= Math.floor(aseg.start_h) %>:00–<%= Math.floor(aseg.end_h) %>:00"></div>
-                    <% } %>
-                    <% }); } %>
-
-                </div>
-            </div>
-            <% } %>
-
-            <!-- Cronograma Detallado -->
-            <% if (eval.timeline && eval.timeline.length > 0) { %>
-            <div class="border-t border-hairline pt-3 mb-3">
-                <p class="text-[11px] text-ink3 font-semibold uppercase tracking-wider mb-2">Cronograma</p>
-                <div class="space-y-1 bg-canvas/40 rounded-lg p-2.5 border border-hairline">
-                    <% eval.timeline.forEach(function(act) { %>
-                    <div class="flex items-center justify-between text-xs py-1 px-1.5 rounded-md hover:bg-surface2 transition-colors gap-2">
-                        <span class="font-mono text-brass font-semibold w-24 shrink-0"><%= act.time_range %></span>
-                        <span class="text-ink2 font-medium flex-1 min-w-0 flex items-center gap-1">
-                            <% if (act.project_name) { %>
-                                <span class="text-brass font-bold text-[10px] bg-brass/10 border border-brass/20 px-1 py-0.5 rounded shrink-0 max-w-[35%] truncate" title="<%= act.project_name %>">[<%= act.project_name %>]</span>
-                            <% } %>
-                            <span class="truncate" title="<%= act.title %>"><%= act.title %></span>
-                        </span>
-                        <span class="text-[10px] font-mono font-medium text-ink3 bg-surface2 border border-hairline px-1.5 py-0.5 rounded-full shrink-0"><%= act.duration %></span>
-                    </div>
-                    <% }); %>
-                </div>
-
-                <% if (eval.cutoff_reason) { %>
-                <div class="mt-2.5 bg-brass/5 border border-brassdim/30 rounded-lg p-2.5 text-xs text-ink2">
-                    <strong class="font-semibold text-brass">Motivo de cierre — </strong><%= eval.cutoff_reason %>
-                </div>
-                <% } %>
-            </div>
-            <% } %>
-
-            <!-- Tareas Asignadas -->
-            <% if (eval.scheduled_tasks && eval.scheduled_tasks.length > 0) { %>
-            <% const panel_id = 'assigned-' + date_iso; %>
-            <div class="border-t border-hairline pt-3 mt-3">
-                <button type="button" onclick="toggleAssignedTasks('<%= panel_id %>')" class="w-full flex items-center justify-between text-left mb-2 group/btn">
-                    <span class="text-[11px] text-ink3 font-semibold uppercase tracking-wider flex items-center gap-1.5">
-                        <svg class="w-3.5 h-3.5 text-moss shrink-0"><use href="#i-check"/></svg>
-                        Tareas agendadas (<%= eval.scheduled_tasks.length %>)
-                    </span>
-                    <svg class="w-3.5 h-3.5 text-ink3 group-hover/btn:text-ink transition-transform duration-200"><use href="#i-chevron-down-sm"/></svg>
+            <!-- HEADER DEL DÍA -->
+            <div class="weather-card-head">
+                <!-- Weather Icon Clickable Trigger to toggle 24h Hourly Forecast -->
+                <button type="button" 
+                        onclick="toggleHourlyPanel('<%= date_iso %>')" 
+                        class="weather-ico-btn text-2xl shrink-0" 
+                        title="Hacé clic para ver o ocultar el pronóstico de 24 horas">
+                    <span><%= ico_emoji %></span>
                 </button>
-                <div id="<%= panel_id %>" class="space-y-2">
-                    <% eval.scheduled_tasks.forEach(function(task, idx) { %>
-                    <div class="flex items-center justify-between gap-2 bg-canvas/60 border border-hairline rounded-lg px-3 py-2 shadow-sm min-w-0">
-                        <div class="flex items-center gap-2 min-w-0 flex-1">
-                            <span class="w-5 h-5 rounded-md bg-moss/10 text-moss border border-moss/20 flex items-center justify-center text-[10px] font-mono font-bold shrink-0">
-                                #<%= task.order || (idx + 1) %>
-                            </span>
-                            <div class="min-w-0 flex-1">
-                                <p class="text-xs font-medium text-ink flex items-center gap-1 min-w-0">
-                                    <% if (task.project_name) { %>
-                                        <span class="text-brass font-bold text-[11px] bg-brass/10 border border-brass/20 px-1.5 py-0.5 rounded shrink-0 max-w-[40%] truncate" title="<%= task.project_name %>">[<%= task.project_name %>]</span>
-                                    <% } %>
-                                    <span class="truncate" title="<%= task.title %>"><%= task.title %></span>
-                                </p>
-                                <% if (task.category && category_labels[task.category]) { %>
-                                <p class="text-[10px] text-ink3 capitalize truncate"><%= category_labels[task.category] %></p>
+
+                <!-- Date in Fraunces Serif -->
+                <span class="font-serif-fraunces text-2xl sm:text-3xl font-semibold text-[var(--w-t1)] tracking-tight truncate min-w-0">
+                    <%= date_str %>
+                </span>
+
+                <!-- Anillo de Eficiencia Climática con Tooltip -->
+                <div class="ring-container ring shrink-0 ml-auto" onclick="toggleHourlyPanel('<%= date_iso %>')" title="Ver pronóstico 24h">
+                    <svg width="60" height="60" viewBox="0 0 64 64" class="block">
+                        <circle cx="32" cy="32" r="26" fill="none" stroke="var(--w-s2)" stroke-width="6"/>
+                        <circle cx="32" cy="32" r="26" fill="none" stroke="<%= ring_color %>" stroke-width="6"
+                            stroke-linecap="round" stroke-dasharray="<%= stroke_dash %>" transform="rotate(-90 32 32)" class="transition-all duration-500 ease-out"/>
+                        <text x="32" y="37" text-anchor="middle" font-family="var(--w-mono)" font-size="15" fill="var(--w-t1)" font-weight="700"><%= pct %></text>
+                        <text x="32" y="47" text-anchor="middle" font-family="var(--w-sans)" font-size="8" fill="var(--w-t2)" font-weight="600" letter-spacing="0.05em">%</text>
+                    </svg>
+                    <div class="ring-tooltip">
+                        <div class="font-bold text-[10px] text-[var(--w-sky)] uppercase tracking-wider mb-1">Eficiencia Climática (<%= pct %>%)</div>
+                        <p class="text-[11px] text-[var(--w-t1)]"><%= ring_tooltip %></p>
+                    </div>
+                </div>
+
+                <!-- Status Badge & Edit Pencil -->
+                <div class="flex items-center gap-1.5 shrink-0 ml-1">
+                    <button type="button" onclick="toggleDayEditor('<%= date_iso %>')" aria-label="Editar día" class="w-8 h-8 rounded-lg bg-[var(--w-s2)] hover:bg-[var(--w-bd)] text-[var(--w-t2)] hover:text-[var(--w-t1)] flex items-center justify-center transition-colors">
+                        <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg>
+                    </button>
+                    <% if (is_viable) { %>
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-ok)]/15 text-[var(--w-ok)] border border-[var(--w-ok)]/30 whitespace-nowrap">
+                            Viable
+                        </span>
+                    <% } else if (is_amber) { %>
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-warn)]/15 text-[var(--w-warn)] border border-[var(--w-warn)]/30 whitespace-nowrap">
+                            Clima bueno, sin plan
+                        </span>
+                    <% } else if (is_manual_block) { %>
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-s2)] text-[var(--w-t2)] border border-[var(--w-bd)] whitespace-nowrap">
+                            Bloqueado
+                        </span>
+                    <% } else { %>
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-rust)]/15 text-[var(--w-rust)] border border-[var(--w-rust)]/30 whitespace-nowrap">
+                            Suspendido
+                        </span>
+                    <% } %>
+                </div>
+            </div>
+
+            <!-- METADATOS DE LA JORNADA -->
+            <div class="font-mono-jb text-[11.5px] text-[var(--w-t2)] px-5 pb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>Jornada <%= start_limit %>:00–<%= end_limit %>:00</span>
+                <span>·</span>
+                <span class="text-[var(--w-t1)]"><%= eval.weather_summary ? eval.weather_summary.min_temp : 0 %>°–<%= eval.weather_summary ? eval.weather_summary.max_temp : 0 %>°C</span>
+                <span>·</span>
+                <span class="text-[var(--w-t1)]">💧 <%= eval.weather_summary ? eval.weather_summary.min_humidity : 0 %>%–<%= eval.weather_summary ? eval.weather_summary.max_humidity : 0 %>%</span>
+                <% if (eval.weather_summary && eval.weather_summary.total_rain_mm > 0) { %>
+                    <span>·</span>
+                    <span class="text-[var(--w-rust)] font-semibold">🌧️ <%= eval.weather_summary.total_rain_mm %> mm</span>
+                <% } %>
+            </div>
+
+            <!-- ARCO METEOROLÓGICO Y VENTANA DE TRABAJO -->
+            <svg class="arc block w-[calc(100%-40px)] mx-auto mt-1" viewBox="0 0 320 170">
+                <defs>
+                    <linearGradient id="g-<%= date_iso %>" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0" stop-color="var(--w-temp)"/>
+                        <stop offset="0.5" stop-color="var(--w-amber-hi)"/>
+                        <stop offset="1" stop-color="var(--w-temp)"/>
+                    </linearGradient>
+                </defs>
+                <path d="M20 160 A140 140 0 0 1 300 160" fill="none" 
+                    stroke="<%= is_viable ? 'url(#g-' + date_iso + ')' : 'var(--w-sky)' %>" 
+                    stroke-width="3" stroke-linecap="round" opacity="<%= is_viable ? '1' : '0.35' %>"/>
+                <g stroke="var(--w-t2)" opacity="0.3">
+                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(-75 160 160)"/>
+                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(-50 160 160)"/>
+                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(-25 160 160)"/>
+                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(25 160 160)"/>
+                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(50 160 160)"/>
+                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(75 160 160)"/>
+                </g>
+                <% if (is_viable) { %>
+                    <circle class="sun" cx="160" cy="20" r="16" fill="var(--w-amber)" opacity="0.25"/>
+                    <circle class="sun" cx="160" cy="20" r="8" fill="var(--w-amber-hi)"/>
+                <% } %>
+            </svg>
+
+            <div class="win text-center -mt-11 mb-3">
+                <div class="text-[10px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-0.5">VENTANA DE TRABAJO REAL</div>
+                <div class="font-mono-jb text-xl font-bold <%= is_viable ? 'text-[var(--w-amber-hi)]' : 'text-[var(--w-sky)]' %>">
+                    <%= is_viable ? (eval.window.start_time + ' — ' + eval.window.end_time) : '00:00 — 00:00' %>
+                </div>
+            </div>
+
+            <!-- RESUMEN DE FASES (Cálido = operario presente, Frío = taller autónomo) -->
+            <div class="phases flex items-center justify-center gap-2 px-5 mb-4 flex-wrap">
+                <span class="pill-phase pill-warm">PREP</span>
+                <span class="pill-phase pill-warm">
+                    <%= (is_viable && eval.window) ? (Math.max(1, (eval.window.end_hour - eval.window.start_hour - 2)) + 'H TRABAJO') : 'TRABAJO' %>
+                </span>
+                <span class="pill-phase pill-cool">CIERRE</span>
+                <span class="pill-phase pill-cool">CURADO</span>
+            </div>
+
+            <!-- UNIFICADA LISTA DE TAREAS AGENDADAS CON RANGOS HORARIOS EXACTOS -->
+            <% if (is_viable && eval.timeline && eval.timeline.length > 0) { %>
+                <div class="crono px-5 pt-3 pb-4 border-t border-[var(--w-bd)]">
+                    <h4 class="text-[10.5px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-2.5 flex items-center justify-between">
+                        <span>📋 Tareas Agendadas</span>
+                    </h4>
+                    <% eval.timeline.forEach(function(act) { %>
+                        <% 
+                            const isSetup = act.title.includes('Setup') || act.title.includes('Preparación');
+                            const isTeardown = act.title.includes('Teardown') || act.title.includes('Guardado') || act.title.includes('Cierre');
+                            const isCuring = act.title.includes('Curado') || act.title.includes('Secado');
+                            const icon = isSetup ? '🛠️' : (isTeardown ? '🧹' : (isCuring ? '🌙' : '📝'));
+                        %>
+                        <div class="agenda-task-row">
+                            <span class="time"><%= act.time_range %></span>
+                            <span class="task-title flex items-center gap-1.5 min-w-0">
+                                <span class="shrink-0"><%= icon %></span>
+                                <% if (act.project_name) { %>
+                                    <span class="text-[var(--w-amber-hi)] font-bold text-[10px] bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/20 px-1.5 py-0.5 rounded shrink-0 max-w-[35%] truncate" title="<%= act.project_name %>">[<%= act.project_name %>]</span>
                                 <% } %>
-                            </div>
+                                <span class="truncate" title="<%= act.title %>"><%= act.title %></span>
+                            </span>
+                            <span class="dur"><%= isCuring ? ('+' + act.duration) : act.duration %></span>
                         </div>
-                        <div class="flex items-center gap-1.5 text-[11px] font-mono shrink-0">
-                            <span class="px-2 py-0.5 rounded bg-surface2 text-ink2 border border-hairline whitespace-nowrap"><%= task.estimated_hours %>h</span>
-                            <% if (task.curing_hours > 0) { %>
-                            <span class="px-1.5 py-0.5 rounded bg-chalk/10 text-chalk border border-chalk/20 whitespace-nowrap">+<%= task.curing_hours %>h curado</span>
-                            <% } %>
-                        </div>
-                    </div>
                     <% }); %>
                 </div>
-            </div>
+            <% } else { %>
+                <div class="note mx-5 mb-4 p-3 rounded-xl text-xs text-[var(--w-t2)] border border-[var(--w-bd)] bg-[var(--w-s2)]/40">
+                    <b class="text-[var(--w-sky)]">Estado de jornada — </b> 
+                    <%= eval.unassigned_reason || eval.cutoff_reason || eval.reason || 'Sin tareas agendadas para esta jornada.' %>
+                </div>
             <% } %>
 
+            <!-- TAREAS FORZADAS (si existen) -->
             <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
-            <div class="border-t border-hairline pt-3 mt-3">
-                <p class="text-[11px] text-brass font-semibold uppercase tracking-wider mb-2">⚡ Forzadas (se saltan clima y ventana)</p>
-                <div class="space-y-1.5">
-                    <% eval.forced_tasks.forEach(function(ft) { %>
-                    <div class="flex items-center justify-between gap-2 bg-brass/5 border border-brassdim/30 rounded-md px-3 py-2">
-                        <span class="text-xs font-medium text-ink truncate"><%= ft.task.title %></span>
-                        <span class="text-[11px] font-mono text-brass shrink-0"><%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
+                <div class="px-5 pb-3">
+                    <p class="text-[10.5px] text-[var(--w-amber-hi)] font-semibold uppercase tracking-wider mb-2">⚡ Tareas Forzadas Manuales</p>
+                    <div class="space-y-1.5">
+                        <% eval.forced_tasks.forEach(function(ft) { %>
+                            <div class="flex items-center justify-between gap-2 bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/30 rounded-xl px-3 py-2 text-xs">
+                                <span class="font-medium text-[var(--w-t1)] truncate"><%= ft.task ? ft.task.title : 'Tarea' %></span>
+                                <span class="font-mono-jb text-[var(--w-amber-hi)] shrink-0"><%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
+                            </div>
+                        <% }); %>
                     </div>
-                    <% }); %>
                 </div>
-            </div>
             <% } %>
 
-            <!-- PANEL EXPANDIBLE DE CLIMA POR HORA -->
+            <!-- PANEL DESPLEGABLE DE CLIMA 24H (Se activa al hacer clic en el ícono de clima o anillo) -->
             <%
                 let hourly_items = eval.hourly_audit;
                 if ((!hourly_items || hourly_items.length === 0) && eval.hourly_forecast && typeof getHourlyClimateAudit === 'function') {
@@ -223,26 +251,14 @@
             %>
 
             <% if (hourly_items && hourly_items.length > 0) { %>
-            <% const hourly_panel_id = 'hourly-panel-' + date_iso; %>
-            <div class="mt-3 pt-2 border-t border-hairline/60">
-                <button type="button" 
-                        onclick="const el = document.getElementById('<%= hourly_panel_id %>'); el.classList.toggle('hidden');" 
-                        class="inline-flex items-center gap-1.5 text-xs font-semibold text-brass hover:text-brass/80 bg-brass/10 hover:bg-brass/20 border border-brass/30 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer min-h-[36px]"
-                        title="Ver detalle de clima hora por hora">
-                    <svg class="w-4 h-4 text-brass" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <span>Ver detalle horario (24h)</span>
-                    <svg class="w-3.5 h-3.5 text-brass/70"><use href="#i-chevron-down-sm"/></svg>
-                </button>
-
-                <div id="<%= hourly_panel_id %>" class="hidden mt-3 rounded-xl border border-hairline bg-canvas/90 p-3 text-xs shadow-inner overflow-hidden">
-                    <div class="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-hairline">
-                        <span class="font-semibold text-ink text-xs uppercase tracking-wider flex items-center gap-1.5">
-                            <svg class="w-4 h-4 text-brass"><use href="#i-sun"/></svg>
-                            Pronóstico Horario — <%= date_str %>
+                <% const hourly_panel_id = 'hourly-panel-' + date_iso; %>
+                <div id="<%= hourly_panel_id %>" class="hidden border-t border-[var(--w-bd)] bg-[var(--w-bg)]/95 p-4 text-xs shadow-inner">
+                    <div class="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-[var(--w-bd)]">
+                        <span class="font-semibold text-[var(--w-t1)] text-xs uppercase tracking-wider flex items-center gap-1.5">
+                            <span><%= ico_emoji %></span>
+                            Pronóstico Horario (24h) — <%= date_str %>
                         </span>
-                        <div class="flex items-center gap-2 text-[10px] font-mono text-ink3">
+                        <div class="flex items-center gap-2 text-[10px] font-mono-jb text-[var(--w-t2)]">
                             <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Humedad &gt; <%= app_settings.max_humidity_percent %>%</span>
                             <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span> Lluvia &ge; <%= app_settings.min_rain_precipitation_mm %>mm</span>
                         </div>
@@ -250,564 +266,63 @@
 
                     <div class="max-h-64 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
                         <% hourly_items.forEach(function(item) { %>
-                        <%
-                            const f = item.forecast || item;
-                            const hLabel = item.time_label || (String(f.hour).padStart(2, '0') + ':00');
-                            const isRain = f.precipitation_mm >= app_settings.min_rain_precipitation_mm || f.precipitation_probability >= 30;
-                            const isHumid = f.relative_humidity > app_settings.max_humidity_percent;
-                            const isCuring = item.is_curing;
-                            const isActive = item.is_active_work;
+                            <%
+                                const f = item.forecast || item;
+                                const hLabel = item.time_label || (String(f.hour).padStart(2, '0') + ':00');
+                                const isRain = f.precipitation_mm >= app_settings.min_rain_precipitation_mm || f.precipitation_probability >= 30;
+                                const isHumid = f.relative_humidity > app_settings.max_humidity_percent;
+                                const isCuring = item.is_curing;
+                                const isActive = item.is_active_work;
 
-                            let rowBg = 'bg-surface/50 border-hairline/40';
-                            if (isRain) {
-                                rowBg = 'bg-red-500/15 border-red-500/40 text-red-200 font-semibold';
-                            } else if (isHumid) {
-                                rowBg = 'bg-amber-500/15 border-amber-500/40 text-amber-200';
-                            } else if (isActive) {
-                                rowBg = 'bg-moss/10 border-moss/30';
-                            } else if (isCuring) {
-                                rowBg = 'bg-indigo-500/10 border-indigo-500/30';
-                            }
-                        %>
-                        <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs transition-colors <%= rowBg %>">
-                            <div class="flex items-center gap-2 w-28 shrink-0">
-                                <span class="font-mono font-bold text-ink"><%= hLabel %></span>
-                                <% if (item.phase_label) { %>
-                                    <% if (item.phase === 'WORK') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-moss/20 text-moss border border-moss/30 px-1 py-0.5 rounded">TRABAJO</span>
-                                    <% } else if (item.phase === 'SETUP') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-brass/20 text-brass border border-brass/30 px-1 py-0.5 rounded">PREP</span>
-                                    <% } else if (item.phase === 'TEARDOWN') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-chalk/20 text-chalk border border-chalk/30 px-1 py-0.5 rounded">CIERRE</span>
-                                    <% } else if (item.phase === 'CURING') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-1 py-0.5 rounded">CURADO</span>
+                                let rowBg = 'bg-[var(--w-s1)] border-[var(--w-bd)]';
+                                if (isRain) {
+                                    rowBg = 'bg-red-500/15 border-red-500/40 text-red-200 font-semibold';
+                                } else if (isHumid) {
+                                    rowBg = 'bg-amber-500/15 border-amber-500/40 text-amber-200';
+                                } else if (isActive) {
+                                    rowBg = 'bg-emerald-500/10 border-emerald-500/30';
+                                } else if (isCuring) {
+                                    rowBg = 'bg-sky-500/10 border-sky-500/30';
+                                }
+                            %>
+                            <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs transition-colors <%= rowBg %>">
+                                <div class="flex items-center gap-2 w-28 shrink-0">
+                                    <span class="font-mono-jb font-bold text-[var(--w-t1)]"><%= hLabel %></span>
+                                    <% if (item.phase_label) { %>
+                                        <% if (item.phase === 'WORK') { %>
+                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-amber)]/20 text-[var(--w-amber-hi)] border border-[var(--w-amber)]/30 px-1 py-0.5 rounded">TRABAJO</span>
+                                        <% } else if (item.phase === 'SETUP') { %>
+                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-amber)]/20 text-[var(--w-amber-hi)] border border-[var(--w-amber)]/30 px-1 py-0.5 rounded">PREP</span>
+                                        <% } else if (item.phase === 'TEARDOWN') { %>
+                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-sky)]/20 text-[var(--w-sky)] border border-[var(--w-sky)]/30 px-1 py-0.5 rounded">CIERRE</span>
+                                        <% } else if (item.phase === 'CURING') { %>
+                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-sky)]/20 text-[var(--w-sky)] border border-[var(--w-sky)]/30 px-1 py-0.5 rounded">CURADO</span>
+                                        <% } %>
                                     <% } %>
+                                </div>
+
+                                <div class="flex items-center gap-3 font-mono-jb text-xs">
+                                    <span class="text-[var(--w-t2)] w-14 text-right"><%= (f.temperature_c != null) ? f.temperature_c.toFixed(1) : 0 %>°C</span>
+                                    <span class="w-16 text-right <%= isHumid ? 'text-amber-400 font-bold' : 'text-[var(--w-t2)]' %>">
+                                        💧 <%= f.relative_humidity %>%
+                                    </span>
+                                    <span class="w-24 text-right <%= isRain ? 'text-red-400 font-bold' : 'text-[var(--w-t2)]' %>">
+                                        🌧️ <%= f.precipitation_mm %>mm (<%= f.precipitation_probability %>%)
+                                    </span>
+                                </div>
+
+                                <% if (item.risk_reasons && item.risk_reasons.length > 0) { %>
+                                    <div class="hidden sm:block text-[10px] font-sans font-medium text-red-300 truncate max-w-[140px]" title="<%= item.risk_reasons.join(', ') %>">
+                                        ⚠️ <%= item.risk_reasons[0] %>
+                                    </div>
                                 <% } %>
                             </div>
-
-                            <div class="flex items-center gap-3 font-mono text-xs">
-                                <span class="text-ink2 w-14 text-right"><%= f.temperature_c.toFixed(1) %>°C</span>
-                                <span class="w-16 text-right <%= isHumid ? 'text-amber-400 font-bold' : 'text-ink3' %>">
-                                    💧 <%= f.relative_humidity %>%
-                                </span>
-                                <span class="w-24 text-right <%= isRain ? 'text-red-400 font-bold' : 'text-ink3' %>">
-                                    🌧️ <%= f.precipitation_mm %>mm (<%= f.precipitation_probability %>%)
-                                </span>
-                            </div>
-
-                            <% if (item.risk_reasons && item.risk_reasons.length > 0) { %>
-                            <div class="hidden sm:block text-[10px] font-sans font-medium text-red-300 truncate max-w-[140px]" title="<%= item.risk_reasons.join(', ') %>">
-                                ⚠️ <%= item.risk_reasons[0] %>
-                            </div>
-                            <% } %>
-                        </div>
                         <% }); %>
                     </div>
                 </div>
-            </div>
             <% } %>
 
-            <% } %>
-        </div>
-
-        <% } else if (is_amber) { %>
-        <!-- ── CLIMA BUENO, SIN PLAN (ámbar) ── -->
-        <div class="agenda-day-card group bg-surface border border-brassdim/30 rounded-2xl p-4 sm:p-5 shadow-panel w-full max-w-full min-w-0 shrink">
-            <div class="flex items-center justify-between gap-2 mb-2">
-                <span class="font-display text-base sm:text-lg font-semibold text-ink flex items-center gap-2 min-w-0">
-                    <span class="truncate"><%= date_str %></span>
-                    <svg class="w-4 h-4 text-brass shrink-0">
-                        <% if (cond === 'rain') { %><use href="#i-cloud-rain"/><% } else if (cond === 'cloudy') { %><use href="#i-cloud"/><% } else if (cond === 'partly') { %><use href="#i-cloud-sun"/><% } else { %><use href="#i-sun"/><% } %>
-                    </svg>
-                </span>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <button type="button" onclick="toggleDayEditor('<%= date_iso %>')" aria-label="Editar día" class="w-9 h-9 sm:w-6 sm:h-6 rounded-md bg-surface2 hover:bg-hairline text-ink3 flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
-                        <svg class="w-3.5 h-3.5 sm:w-3 sm:h-3"><use href="#i-edit"/></svg>
-                    </button>
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-brass/10 text-brass border border-brassdim/30 whitespace-nowrap">
-                        Clima bueno, sin plan
-                    </span>
-                </div>
-            </div>
-            <p class="text-xs text-ink3 mb-4">
-                Jornada <%= start_limit %>:00–<%= end_limit %>:00 ·
-                <span class="text-ink2 font-mono"><%= eval.weather_summary.min_temp %>° - <%= eval.weather_summary.max_temp %>°C</span> ·
-                <span class="text-ink2 font-mono">💧 <%= eval.weather_summary.min_humidity %>% - <%= eval.weather_summary.max_humidity %>%</span>
-                <% if (eval.weather_summary.total_rain_mm && eval.weather_summary.total_rain_mm > 0) { %>
-                    · <span class="text-rust font-mono font-semibold">🌧️ <%= eval.weather_summary.total_rain_mm %> mm</span>
-                <% } %>
-            </p>
-
-            <% if (eval.climate_segments) { %>
-            <div class="rounded-lg border border-hairline bg-canvas/50 p-2.5 mb-3">
-                <div class="tick-row flex items-center justify-between text-[10px] font-mono text-ink3 mb-1.5 px-0.5">
-                    <span><%= start_limit %>:00</span>
-                    <span><%= end_limit %>:00</span>
-                </div>
-                <div class="relative h-8 rounded-md overflow-hidden flex ring-1 ring-hairline">
-                    <% const total_h = Math.max(1, end_limit - start_limit); %>
-                    <% eval.climate_segments.forEach(function(cseg) { %>
-                    <% const width_pct = ((cseg.end_h - cseg.start_h) / total_h) * 100; %>
-                    <% if (cseg.condition === 'rain') { %>
-                    <div class="h-full bg-rust border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= width_pct %>%;" title="Lluvia <%= cseg.start_h %>:00–<%= cseg.end_h %>:00">
-                        <span class="text-[9px] sm:text-[10px] font-mono font-bold text-canvas whitespace-nowrap px-1">LLUVIA</span>
-                    </div>
-                    <% } else if (cseg.condition === 'humid') { %>
-                    <div class="h-full bg-brass border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= width_pct %>%;" title="Humedad <%= cseg.start_h %>:00–<%= cseg.end_h %>:00">
-                        <span class="text-[9px] sm:text-[10px] font-mono font-bold text-canvas whitespace-nowrap px-1">HUMEDAD</span>
-                    </div>
-                    <% } else { %>
-                    <div class="h-full bg-moss border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= width_pct %>%;" title="Libre <%= cseg.start_h %>:00–<%= cseg.end_h %>:00">
-                        <span class="text-[9px] sm:text-[10px] font-mono font-bold text-canvas whitespace-nowrap px-1">LIBRE</span>
-                    </div>
-                    <% } %>
-                    <% }); %>
-                </div>
-            </div>
-            <% } %>
-
-            <% if (eval.free_windows && eval.free_windows.length > 0) { %>
-            <div class="mt-3">
-                <p class="text-[11px] text-ink3 font-semibold uppercase tracking-wider mb-2">Ventanas libres</p>
-                <div class="space-y-1.5">
-                    <% eval.free_windows.forEach(function(w) { %>
-                    <div class="flex items-center justify-between gap-2 bg-canvas/40 border border-hairline rounded-md px-3 py-2">
-                        <span class="text-xs font-medium text-ink"><%= w.start_label %> — <%= w.end_label %></span>
-                        <span class="text-[11px] font-mono text-moss shrink-0"><%= w.duration_hours %>h libres</span>
-                    </div>
-                    <% }); %>
-                </div>
-            </div>
-            <% } %>
-
-            <div class="mt-3 bg-brass/5 border border-brassdim/30 rounded-lg p-2.5 text-xs text-ink2">
-                <strong class="font-semibold text-brass">Motivo de no agendamiento — </strong><%= eval.unassigned_reason || eval.reason %>
-            </div>
-
-            <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
-            <div class="mt-3 pt-3 border-t border-hairline">
-                <p class="text-[11px] text-brass font-semibold uppercase tracking-wider mb-2">⚡ Forzadas</p>
-                <div class="space-y-1.5">
-                    <% eval.forced_tasks.forEach(function(ft) { %>
-                    <div class="flex items-center justify-between gap-2 bg-brass/5 border border-brassdim/30 rounded-md px-3 py-2">
-                        <span class="text-xs font-medium text-ink truncate"><%= ft.task.title %></span>
-                        <span class="text-[11px] font-mono text-brass shrink-0"><%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
-                    </div>
-                    <% }); %>
-                </div>
-            </div>
-            <% } %>
-
-            <!-- PANEL EXPANDIBLE DE CLIMA POR HORA -->
-            <%
-                let hourly_items_amber = eval.hourly_audit;
-                if ((!hourly_items_amber || hourly_items_amber.length === 0) && eval.hourly_forecast && typeof getHourlyClimateAudit === 'function') {
-                    let rawForecasts = eval.hourly_forecast;
-                    if (typeof rawForecasts === 'string') {
-                        try { rawForecasts = JSON.parse(rawForecasts); } catch (e) { rawForecasts = []; }
-                    }
-                    if (Array.isArray(rawForecasts) && rawForecasts.length > 0) {
-                        hourly_items_amber = getHourlyClimateAudit(rawForecasts, eval.window, eval.scheduled_tasks || [], app_settings);
-                    }
-                }
-            %>
-
-            <% if (hourly_items_amber && hourly_items_amber.length > 0) { %>
-            <% const hourly_panel_id_amber = 'hourly-panel-' + date_iso; %>
-            <div class="mt-3 pt-2 border-t border-hairline/60">
-                <button type="button" 
-                        onclick="const el = document.getElementById('<%= hourly_panel_id_amber %>'); el.classList.toggle('hidden');" 
-                        class="inline-flex items-center gap-1.5 text-xs font-semibold text-brass hover:text-brass/80 bg-brass/10 hover:bg-brass/20 border border-brass/30 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer min-h-[36px]"
-                        title="Ver detalle de clima hora por hora">
-                    <svg class="w-4 h-4 text-brass" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <span>Ver detalle horario (24h)</span>
-                    <svg class="w-3.5 h-3.5 text-brass/70"><use href="#i-chevron-down-sm"/></svg>
-                </button>
-
-                <div id="<%= hourly_panel_id_amber %>" class="hidden mt-3 rounded-xl border border-hairline bg-canvas/90 p-3 text-xs shadow-inner overflow-hidden">
-                    <div class="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-hairline">
-                        <span class="font-semibold text-ink text-xs uppercase tracking-wider flex items-center gap-1.5">
-                            <svg class="w-4 h-4 text-brass"><use href="#i-sun"/></svg>
-                            Pronóstico Horario — <%= date_str %>
-                        </span>
-                        <div class="flex items-center gap-2 text-[10px] font-mono text-ink3">
-                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Humedad &gt; <%= app_settings.max_humidity_percent %>%</span>
-                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span> Lluvia &ge; <%= app_settings.min_rain_precipitation_mm %>mm</span>
-                        </div>
-                    </div>
-
-                    <div class="max-h-64 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                        <% hourly_items_amber.forEach(function(item) { %>
-                        <%
-                            const f = item.forecast || item;
-                            const hLabel = item.time_label || (String(f.hour).padStart(2, '0') + ':00');
-                            const isRain = f.precipitation_mm >= app_settings.min_rain_precipitation_mm || f.precipitation_probability >= 30;
-                            const isHumid = f.relative_humidity > app_settings.max_humidity_percent;
-                            const isCuring = item.is_curing;
-                            const isActive = item.is_active_work;
-
-                            let rowBg = 'bg-surface/50 border-hairline/40';
-                            if (isRain) {
-                                rowBg = 'bg-red-500/15 border-red-500/40 text-red-200 font-semibold';
-                            } else if (isHumid) {
-                                rowBg = 'bg-amber-500/15 border-amber-500/40 text-amber-200';
-                            } else if (isActive) {
-                                rowBg = 'bg-moss/10 border-moss/30';
-                            } else if (isCuring) {
-                                rowBg = 'bg-indigo-500/10 border-indigo-500/30';
-                            }
-                        %>
-                        <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs transition-colors <%= rowBg %>">
-                            <div class="flex items-center gap-2 w-28 shrink-0">
-                                <span class="font-mono font-bold text-ink"><%= hLabel %></span>
-                                <% if (item.phase_label) { %>
-                                    <% if (item.phase === 'WORK') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-moss/20 text-moss border border-moss/30 px-1 py-0.5 rounded">TRABAJO</span>
-                                    <% } else if (item.phase === 'SETUP') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-brass/20 text-brass border border-brass/30 px-1 py-0.5 rounded">PREP</span>
-                                    <% } else if (item.phase === 'TEARDOWN') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-chalk/20 text-chalk border border-chalk/30 px-1 py-0.5 rounded">CIERRE</span>
-                                    <% } else if (item.phase === 'CURING') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-1 py-0.5 rounded">CURADO</span>
-                                    <% } %>
-                                <% } %>
-                            </div>
-
-                            <div class="flex items-center gap-3 font-mono text-xs">
-                                <span class="text-ink2 w-14 text-right"><%= f.temperature_c.toFixed(1) %>°C</span>
-                                <span class="w-16 text-right <%= isHumid ? 'text-amber-400 font-bold' : 'text-ink3' %>">
-                                    💧 <%= f.relative_humidity %>%
-                                </span>
-                                <span class="w-24 text-right <%= isRain ? 'text-red-400 font-bold' : 'text-ink3' %>">
-                                    🌧️ <%= f.precipitation_mm %>mm (<%= f.precipitation_probability %>%)
-                                </span>
-                            </div>
-
-                            <% if (item.risk_reasons && item.risk_reasons.length > 0) { %>
-                            <div class="hidden sm:block text-[10px] font-sans font-medium text-red-300 truncate max-w-[140px]" title="<%= item.risk_reasons.join(', ') %>">
-                                ⚠️ <%= item.risk_reasons[0] %>
-                            </div>
-                            <% } %>
-                        </div>
-                        <% }); %>
-                    </div>
-                </div>
-            </div>
-            <% } %>
-        </div>
-
-        <% } else if (is_manual_block) { %>
-        <!-- ── BLOQUEADO MANUALMENTE ── -->
-        <div class="agenda-day-card group bg-surface border border-hairline rounded-2xl p-4 sm:p-5 shadow-panel w-full max-w-full min-w-0 shrink">
-            <div class="flex items-center justify-between gap-2 mb-2">
-                <span class="font-display text-base sm:text-lg font-semibold text-ink2 flex items-center gap-2 min-w-0">
-                    <span class="truncate"><%= date_str %></span>
-                </span>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <button type="button" onclick="toggleDayEditor('<%= date_iso %>')" aria-label="Editar día" class="w-9 h-9 sm:w-6 sm:h-6 rounded-md bg-surface2 hover:bg-hairline text-ink3 flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
-                        <svg class="w-3.5 h-3.5 sm:w-3 sm:h-3"><use href="#i-edit"/></svg>
-                    </button>
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-surface2 text-ink3 border border-hairline whitespace-nowrap">
-                        Bloqueado manualmente
-                    </span>
-                </div>
-            </div>
-            <div class="bg-canvas/40 border border-hairline rounded-lg px-3.5 py-2.5 text-xs text-ink2">
-                <strong class="font-semibold text-ink2">Motivo — </strong><%= eval.unassigned_reason || eval.reason %>
-            </div>
-
-            <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
-            <div class="mt-3 pt-3 border-t border-hairline">
-                <p class="text-[11px] text-brass font-semibold uppercase tracking-wider mb-2">⚡ Forzadas a pesar del bloqueo</p>
-                <div class="space-y-1.5">
-                    <% eval.forced_tasks.forEach(function(ft) { %>
-                    <div class="flex items-center justify-between gap-2 bg-brass/5 border border-brassdim/30 rounded-md px-3 py-2">
-                        <span class="text-xs font-medium text-ink truncate"><%= ft.task.title %></span>
-                        <span class="text-[11px] font-mono text-brass shrink-0"><%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
-                    </div>
-                    <% }); %>
-                </div>
-            </div>
-            <% } %>
-
-            <!-- PANEL EXPANDIBLE DE CLIMA POR HORA -->
-            <%
-                let hourly_items_block = eval.hourly_audit;
-                if ((!hourly_items_block || hourly_items_block.length === 0) && eval.hourly_forecast && typeof getHourlyClimateAudit === 'function') {
-                    let rawForecasts = eval.hourly_forecast;
-                    if (typeof rawForecasts === 'string') {
-                        try { rawForecasts = JSON.parse(rawForecasts); } catch (e) { rawForecasts = []; }
-                    }
-                    if (Array.isArray(rawForecasts) && rawForecasts.length > 0) {
-                        hourly_items_block = getHourlyClimateAudit(rawForecasts, eval.window, eval.scheduled_tasks || [], app_settings);
-                    }
-                }
-            %>
-
-            <% if (hourly_items_block && hourly_items_block.length > 0) { %>
-            <% const hourly_panel_id_block = 'hourly-panel-' + date_iso; %>
-            <div class="mt-3 pt-2 border-t border-hairline/60">
-                <button type="button" 
-                        onclick="const el = document.getElementById('<%= hourly_panel_id_block %>'); el.classList.toggle('hidden');" 
-                        class="inline-flex items-center gap-1.5 text-xs font-semibold text-brass hover:text-brass/80 bg-brass/10 hover:bg-brass/20 border border-brass/30 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer min-h-[36px]"
-                        title="Ver detalle de clima hora por hora">
-                    <svg class="w-4 h-4 text-brass" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <span>Ver detalle horario (24h)</span>
-                    <svg class="w-3.5 h-3.5 text-brass/70"><use href="#i-chevron-down-sm"/></svg>
-                </button>
-
-                <div id="<%= hourly_panel_id_block %>" class="hidden mt-3 rounded-xl border border-hairline bg-canvas/90 p-3 text-xs shadow-inner overflow-hidden">
-                    <div class="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-hairline">
-                        <span class="font-semibold text-ink text-xs uppercase tracking-wider flex items-center gap-1.5">
-                            <svg class="w-4 h-4 text-brass"><use href="#i-sun"/></svg>
-                            Pronóstico Horario — <%= date_str %>
-                        </span>
-                        <div class="flex items-center gap-2 text-[10px] font-mono text-ink3">
-                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Humedad &gt; <%= app_settings.max_humidity_percent %>%</span>
-                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span> Lluvia &ge; <%= app_settings.min_rain_precipitation_mm %>mm</span>
-                        </div>
-                    </div>
-
-                    <div class="max-h-64 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                        <% hourly_items_block.forEach(function(item) { %>
-                        <%
-                            const f = item.forecast || item;
-                            const hLabel = item.time_label || (String(f.hour).padStart(2, '0') + ':00');
-                            const isRain = f.precipitation_mm >= app_settings.min_rain_precipitation_mm || f.precipitation_probability >= 30;
-                            const isHumid = f.relative_humidity > app_settings.max_humidity_percent;
-                            const isCuring = item.is_curing;
-                            const isActive = item.is_active_work;
-
-                            let rowBg = 'bg-surface/50 border-hairline/40';
-                            if (isRain) {
-                                rowBg = 'bg-red-500/15 border-red-500/40 text-red-200 font-semibold';
-                            } else if (isHumid) {
-                                rowBg = 'bg-amber-500/15 border-amber-500/40 text-amber-200';
-                            } else if (isActive) {
-                                rowBg = 'bg-moss/10 border-moss/30';
-                            } else if (isCuring) {
-                                rowBg = 'bg-indigo-500/10 border-indigo-500/30';
-                            }
-                        %>
-                        <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs transition-colors <%= rowBg %>">
-                            <div class="flex items-center gap-2 w-28 shrink-0">
-                                <span class="font-mono font-bold text-ink"><%= hLabel %></span>
-                                <% if (item.phase_label) { %>
-                                    <% if (item.phase === 'WORK') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-moss/20 text-moss border border-moss/30 px-1 py-0.5 rounded">TRABAJO</span>
-                                    <% } else if (item.phase === 'SETUP') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-brass/20 text-brass border border-brass/30 px-1 py-0.5 rounded">PREP</span>
-                                    <% } else if (item.phase === 'TEARDOWN') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-chalk/20 text-chalk border border-chalk/30 px-1 py-0.5 rounded">CIERRE</span>
-                                    <% } else if (item.phase === 'CURING') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-1 py-0.5 rounded">CURADO</span>
-                                    <% } %>
-                                <% } %>
-                            </div>
-
-                            <div class="flex items-center gap-3 font-mono text-xs">
-                                <span class="text-ink2 w-14 text-right"><%= f.temperature_c.toFixed(1) %>°C</span>
-                                <span class="w-16 text-right <%= isHumid ? 'text-amber-400 font-bold' : 'text-ink3' %>">
-                                    💧 <%= f.relative_humidity %>%
-                                </span>
-                                <span class="w-24 text-right <%= isRain ? 'text-red-400 font-bold' : 'text-ink3' %>">
-                                    🌧️ <%= f.precipitation_mm %>mm (<%= f.precipitation_probability %>%)
-                                </span>
-                            </div>
-
-                            <% if (item.risk_reasons && item.risk_reasons.length > 0) { %>
-                            <div class="hidden sm:block text-[10px] font-sans font-medium text-red-300 truncate max-w-[140px]" title="<%= item.risk_reasons.join(', ') %>">
-                                ⚠️ <%= item.risk_reasons[0] %>
-                            </div>
-                            <% } %>
-                        </div>
-                        <% }); %>
-                    </div>
-                </div>
-            </div>
-            <% } %>
-        </div>
-
-        <% } else { %>
-        <!-- ── DÍA SUSPENDIDO ── -->
-        <div class="agenda-day-card group bg-surface border border-rust/20 rounded-2xl p-4 sm:p-5 shadow-panel w-full max-w-full min-w-0 shrink">
-            <div class="flex items-center justify-between gap-2 mb-2">
-                <span class="font-display text-base sm:text-lg font-semibold text-ink2 flex items-center gap-2 min-w-0">
-                    <span class="truncate"><%= date_str %></span>
-                    <svg class="w-4 h-4 text-ink3 shrink-0">
-                        <% if (cond === 'rain') { %><use href="#i-cloud-rain"/><% } else if (cond === 'cloudy') { %><use href="#i-cloud"/><% } else if (cond === 'partly') { %><use href="#i-cloud-sun"/><% } else { %><use href="#i-sun"/><% } %>
-                    </svg>
-                </span>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <button type="button" onclick="toggleDayEditor('<%= date_iso %>')" aria-label="Editar día" class="w-9 h-9 sm:w-6 sm:h-6 rounded-md bg-surface2 hover:bg-hairline text-ink3 flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200">
-                        <svg class="w-3.5 h-3.5 sm:w-3 sm:h-3"><use href="#i-edit"/></svg>
-                    </button>
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rust/10 text-rust border border-rust/25 whitespace-nowrap">
-                        Suspendido
-                    </span>
-                </div>
-            </div>
-            <p class="text-xs text-ink3 mb-3">
-                Jornada <%= start_limit %>:00–<%= end_limit %>:00 ·
-                <span class="text-ink2 font-mono"><%= eval.weather_summary.min_temp %>° - <%= eval.weather_summary.max_temp %>°C</span> ·
-                <span class="text-ink2 font-mono">💧 <%= eval.weather_summary.min_humidity %>% - <%= eval.weather_summary.max_humidity %>%</span>
-                <% if (eval.weather_summary.total_rain_mm && eval.weather_summary.total_rain_mm > 0) { %>
-                    · <span class="text-rust font-mono font-semibold">🌧️ <%= eval.weather_summary.total_rain_mm %> mm</span>
-                <% } %>
-            </p>
-
-            <% if (eval.climate_segments) { %>
-            <div class="mb-3">
-                <div class="rounded-lg border border-hairline bg-canvas/50 p-2.5">
-                    <div class="tick-row flex items-center justify-between text-[10px] font-mono text-ink3 mb-1.5 px-0.5">
-                        <span><%= start_limit %>:00</span>
-                        <span><%= end_limit %>:00</span>
-                    </div>
-                    <div class="relative h-8 rounded-md overflow-hidden flex ring-1 ring-hairline">
-                        <% const total_h = Math.max(1, end_limit - start_limit); %>
-                        <% eval.climate_segments.forEach(function(cseg) { %>
-                        <% const width_pct = ((cseg.end_h - cseg.start_h) / total_h) * 100; %>
-                        <% if (cseg.condition === 'rain') { %>
-                        <div class="h-full bg-rust border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= width_pct %>%;" title="Lluvia <%= cseg.start_h %>:00–<%= cseg.end_h %>:00">
-                            <span class="text-[9px] sm:text-[10px] font-mono font-bold text-canvas whitespace-nowrap px-1">LLUVIA</span>
-                        </div>
-                        <% } else if (cseg.condition === 'humid') { %>
-                        <div class="h-full bg-brass border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= width_pct %>%;" title="Humedad <%= cseg.start_h %>:00–<%= cseg.end_h %>:00">
-                            <span class="text-[9px] sm:text-[10px] font-mono font-bold text-canvas whitespace-nowrap px-1">HUMEDAD</span>
-                        </div>
-                        <% } else { %>
-                        <div class="h-full bg-moss border-r border-canvas flex items-center justify-center overflow-hidden" style="width: <%= width_pct %>%;" title="Libre <%= cseg.start_h %>:00–<%= cseg.end_h %>:00">
-                            <span class="text-[9px] sm:text-[10px] font-mono font-bold text-canvas whitespace-nowrap px-1">LIBRE</span>
-                        </div>
-                        <% } %>
-                        <% }); %>
-                    </div>
-                </div>
-            </div>
-            <% } %>
-
-            <div class="bg-canvas/40 border border-rust/20 rounded-lg px-3.5 py-2.5 text-xs text-ink2">
-                <strong class="font-semibold text-rust">Motivo de no agendamiento — </strong><%= eval.unassigned_reason || eval.reason %>
-            </div>
-
-            <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
-            <div class="mt-3 pt-3 border-t border-hairline">
-                <p class="text-[11px] text-brass font-semibold uppercase tracking-wider mb-2">⚡ Forzadas a pesar del bloqueo</p>
-                <div class="space-y-1.5">
-                    <% eval.forced_tasks.forEach(function(ft) { %>
-                    <div class="flex items-center justify-between gap-2 bg-brass/5 border border-brassdim/30 rounded-md px-3 py-2">
-                        <span class="text-xs font-medium text-ink truncate"><%= ft.task.title %></span>
-                        <span class="text-[11px] font-mono text-brass shrink-0"><%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
-                    </div>
-                    <% }); %>
-                </div>
-            </div>
-            <% } %>
-
-            <!-- PANEL EXPANDIBLE DE CLIMA POR HORA -->
-            <%
-                let hourly_items_susp = eval.hourly_audit;
-                if ((!hourly_items_susp || hourly_items_susp.length === 0) && eval.hourly_forecast && typeof getHourlyClimateAudit === 'function') {
-                    let rawForecasts = eval.hourly_forecast;
-                    if (typeof rawForecasts === 'string') {
-                        try { rawForecasts = JSON.parse(rawForecasts); } catch (e) { rawForecasts = []; }
-                    }
-                    if (Array.isArray(rawForecasts) && rawForecasts.length > 0) {
-                        hourly_items_susp = getHourlyClimateAudit(rawForecasts, eval.window, eval.scheduled_tasks || [], app_settings);
-                    }
-                }
-            %>
-
-            <% if (hourly_items_susp && hourly_items_susp.length > 0) { %>
-            <% const hourly_panel_id_susp = 'hourly-panel-' + date_iso; %>
-            <div class="mt-3 pt-2 border-t border-hairline/60">
-                <button type="button" 
-                        onclick="const el = document.getElementById('<%= hourly_panel_id_susp %>'); el.classList.toggle('hidden');" 
-                        class="inline-flex items-center gap-1.5 text-xs font-semibold text-brass hover:text-brass/80 bg-brass/10 hover:bg-brass/20 border border-brass/30 px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer min-h-[36px]"
-                        title="Ver detalle de clima hora por hora">
-                    <svg class="w-4 h-4 text-brass" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                    </svg>
-                    <span>Ver detalle horario (24h)</span>
-                    <svg class="w-3.5 h-3.5 text-brass/70"><use href="#i-chevron-down-sm"/></svg>
-                </button>
-
-                <div id="<%= hourly_panel_id_susp %>" class="hidden mt-3 rounded-xl border border-hairline bg-canvas/90 p-3 text-xs shadow-inner overflow-hidden">
-                    <div class="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-hairline">
-                        <span class="font-semibold text-ink text-xs uppercase tracking-wider flex items-center gap-1.5">
-                            <svg class="w-4 h-4 text-brass"><use href="#i-sun"/></svg>
-                            Pronóstico Horario — <%= date_str %>
-                        </span>
-                        <div class="flex items-center gap-2 text-[10px] font-mono text-ink3">
-                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Humedad &gt; <%= app_settings.max_humidity_percent %>%</span>
-                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span> Lluvia &ge; <%= app_settings.min_rain_precipitation_mm %>mm</span>
-                        </div>
-                    </div>
-
-                    <div class="max-h-64 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
-                        <% hourly_items_susp.forEach(function(item) { %>
-                        <%
-                            const f = item.forecast || item;
-                            const hLabel = item.time_label || (String(f.hour).padStart(2, '0') + ':00');
-                            const isRain = f.precipitation_mm >= app_settings.min_rain_precipitation_mm || f.precipitation_probability >= 30;
-                            const isHumid = f.relative_humidity > app_settings.max_humidity_percent;
-                            const isCuring = item.is_curing;
-                            const isActive = item.is_active_work;
-
-                            let rowBg = 'bg-surface/50 border-hairline/40';
-                            if (isRain) {
-                                rowBg = 'bg-red-500/15 border-red-500/40 text-red-200 font-semibold';
-                            } else if (isHumid) {
-                                rowBg = 'bg-amber-500/15 border-amber-500/40 text-amber-200';
-                            } else if (isActive) {
-                                rowBg = 'bg-moss/10 border-moss/30';
-                            } else if (isCuring) {
-                                rowBg = 'bg-indigo-500/10 border-indigo-500/30';
-                            }
-                        %>
-                        <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs transition-colors <%= rowBg %>">
-                            <div class="flex items-center gap-2 w-28 shrink-0">
-                                <span class="font-mono font-bold text-ink"><%= hLabel %></span>
-                                <% if (item.phase_label) { %>
-                                    <% if (item.phase === 'WORK') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-moss/20 text-moss border border-moss/30 px-1 py-0.5 rounded">TRABAJO</span>
-                                    <% } else if (item.phase === 'SETUP') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-brass/20 text-brass border border-brass/30 px-1 py-0.5 rounded">PREP</span>
-                                    <% } else if (item.phase === 'TEARDOWN') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-chalk/20 text-chalk border border-chalk/30 px-1 py-0.5 rounded">CIERRE</span>
-                                    <% } else if (item.phase === 'CURING') { %>
-                                        <span class="text-[9px] font-mono font-bold bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 px-1 py-0.5 rounded">CURADO</span>
-                                    <% } %>
-                                <% } %>
-                            </div>
-
-                            <div class="flex items-center gap-3 font-mono text-xs">
-                                <span class="text-ink2 w-14 text-right"><%= f.temperature_c.toFixed(1) %>°C</span>
-                                <span class="w-16 text-right <%= isHumid ? 'text-amber-400 font-bold' : 'text-ink3' %>">
-                                    💧 <%= f.relative_humidity %>%
-                                </span>
-                                <span class="w-24 text-right <%= isRain ? 'text-red-400 font-bold' : 'text-ink3' %>">
-                                    🌧️ <%= f.precipitation_mm %>mm (<%= f.precipitation_probability %>%)
-                                </span>
-                            </div>
-
-                            <% if (item.risk_reasons && item.risk_reasons.length > 0) { %>
-                            <div class="hidden sm:block text-[10px] font-sans font-medium text-red-300 truncate max-w-[140px]" title="<%= item.risk_reasons.join(', ') %>">
-                                ⚠️ <%= item.risk_reasons[0] %>
-                            </div>
-                            <% } %>
-                        </div>
-                        <% }); %>
-                    </div>
-                </div>
-            </div>
-            <% } %>
-        </div>
-        <% } %>
+        </article>
 
         <!-- MODAL EDITOR DE DÍA -->
         <div id="day-editor-<%= date_iso %>" class="fixed inset-0 z-[120] bg-canvas/85 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -879,7 +394,7 @@
                     <div class="space-y-2 mb-3">
                         <% eval.forced_tasks.forEach(function(ft) { %>
                         <div class="flex items-center justify-between gap-2 bg-brass/5 border border-brassdim/30 rounded-lg px-3 py-2">
-                            <span class="text-xs text-ink2">⚡ <strong class="text-ink font-medium"><%= ft.task.title %></strong> a las <%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
+                            <span class="text-xs text-ink2">⚡ <strong class="text-ink font-medium"><%= ft.task ? ft.task.title : 'Tarea' %></strong> a las <%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
                             <form action="/day-override/forced-task/<%= ft.id || ft.forced_id %>/delete" method="post" onsubmit="submitDeleteForcedTaskForm(event)">
                                 <button type="submit" aria-label="Quitar forzada" class="w-9 h-9 sm:w-6 sm:h-6 rounded-md text-rust hover:bg-rust/10 flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0"><svg class="w-3.5 h-3.5"><use href="#i-close"/></svg></button>
                             </form>

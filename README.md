@@ -412,37 +412,90 @@ A continuación se resumen los incidentes operacionales más relevantes experime
 
 ## 📡 12. Especificación de Endpoints REST (API Reference)
 
-### 🔐 Autenticación y Sesión
-- `POST /login`: Inicia sesión y establece la cookie firmada `workshop_token`.
-- `POST /register`: Crea una cuenta de usuario e inicializa sus parámetros.
-- `GET /logout`: Destruye la sesión actual y redirige a `/login`.
-- `GET /api/auth/status`: Retorna el estado de autenticación del usuario.
+A continuación se detallan todos los endpoints expuestos en `server.ts`, verificados contra el código fuente real:
 
-### 📋 Gestión de Tareas y Backlog
-- `GET /tasks/history`: Obtiene el historial de tareas únicas para autocompletado.
-- `POST /tasks/add`: Agrega una tarea al backlog del proyecto activo.
-- `POST /tasks/:id/update`: Actualiza título, categoría, horas de trabajo y curado.
-- `POST /tasks/:id/delete`: Elimina una tarea.
-- `POST /tasks/:id/toggle-active`: Activa o pausa una tarea en el agendamiento.
-- `POST /tasks/reorder`: Reordena secuencialmente las tareas del backlog.
-- `POST /tasks/import`: Importación masiva JSON de tareas asociadas a un proyecto.
+### 🔐 Sistema, Autenticación y Administración
+- `GET /health`: Endpoint de estado del servidor (retorna status OK y timestamp ISO).
+- `GET /manifest.json`: Servidor de manifiesto Web App (PWA).
+- `GET /sw.js`: Service Worker cliente.
+- `GET /.well-known/assetlinks.json`: Archivo Digital Asset Links para compatibilidad PWA/Android.
+- `GET /login`: Renderiza la vista HTML de inicio de sesión.
+- `POST /login`: Procesa las credenciales de acceso (valida PBKDF2 de 4 partes y migra hashes antiguos).
+- `GET /register`: Renderiza la vista HTML de registro.
+- `POST /register`: Crea una nueva cuenta de usuario y le asigna configuración por defecto.
+- `GET /logout`: Destruye la cookie de sesión `workshop_token` y redirige a `/login`.
+- `GET /api/auth/status`: Retorna el estado de autenticación del usuario actual y si requiere cambio obligatorio de clave.
+- `POST /api/user/change-password`: Cambia la contraseña del usuario tras validar la clave actual.
+- `POST /api/admin/backup`: Endpoint administrativo para generación y descarga de backups SQLite.
 
-### 📁 Proyectos y Materiales
-- `POST /projects/add`: Crea un nuevo proyecto.
-- `POST /projects/:id/toggle`: Alterna el estado de activación de un proyecto.
-- `GET /api/materials`: Obtiene los materiales e insumos del usuario/proyecto.
-- `POST /materials/add`: Registra un nuevo material asociado a un proyecto.
-- `POST /materials/:id/toggle`: Alterna el estado del material entre `to_buy` y `in_stock`.
-- `POST /materials/:id/update`: Actualiza datos de un material.
-- `POST /materials/:id/delete`: Elimina un material.
+### 📁 Proyectos
+- `GET /`: Renderiza el Dashboard principal de la aplicación (incluye las vistas de Planificación, Taller e Inventario).
+- `POST /projects/active`: Define el proyecto activo para la sesión del usuario.
+- `POST /projects/add`: Crea un nuevo proyecto en el taller.
+- `POST /projects/:id/toggle`: Alterna el estado de activación de un proyecto (`is_active`).
+- `POST /projects/:id/update`: Actualiza el nombre y la descripción de un proyecto.
 
-### 📆 Evaluación, Agenda y Check-in
-- `POST /evaluation/run`: Dispara la evaluación climática del horizonte multi-día.
-- `POST /api/checkin/resolve`: Procesa el cierre de jornada y actualiza el estado de las tareas.
-- `POST /calendar/create`: Fuerza la sincronización espejo hacia Google Calendar.
+### 📋 Backlog de Tareas y Sugerencias
+- `POST /tasks/add`: Agrega una nueva tarea al backlog del proyecto activo.
+- `POST /tasks/:id/activate-to-backlog`: Pasa una tarea desde plantilla/disponible a activa en el backlog.
+- `POST /tasks/:id/toggle-active`: Activa o pausa una tarea en el flujo de agendamiento.
+- `POST /tasks/:id/update`: Modifica título, categoría, horas de trabajo activo y horas de curado pasivo.
+- `POST /tasks/:id/update_status`: Actualiza el estado de la tarea (`pending`, `in_progress`, `completed`).
+- `POST /tasks/:id/delete`: Elimina una tarea del backlog.
+- `POST /tasks/:id/move-up`: Desplaza una tarea un lugar hacia arriba en el backlog.
+- `POST /tasks/:id/move-down`: Desplaza una tarea un lugar hacia abajo en el backlog.
+- `POST /tasks/reorder`: Reordena secuencialmente las tareas mediante un arreglo JSON con la lista de IDs.
+- `POST /tasks/import`: Importación masiva de tareas en formato JSON.
+- `GET /tasks/history`: Retorna el historial de títulos de tareas previas para autocompletado en el frontend.
+- `GET /tasks/suggestions`: Proporciona sugerencias de tareas comunes agrupadas por categoría/proyecto.
 
-### ⚙️ Configuración
-- `POST /settings/update`: Actualiza parámetros operacionales, coordenadas y vinculación de Telegram.
+### 📑 Plantillas de Proyecto
+- `POST /project-templates/save`: Guarda las tareas del proyecto activo como una plantilla reutilizable.
+- `POST /project-templates/:id/apply`: Aplica una plantilla previamente guardada al proyecto actual.
+- `POST /project-templates/:id/delete`: Elimina una plantilla de proyecto.
+
+### 📦 Insumos y Materiales
+- `GET /api/materials`: Obtiene la lista de materiales e insumos asociados al usuario/proyecto.
+- `POST /materials/add`: Agrega un nuevo material al inventario del proyecto.
+- `POST /materials/:id/toggle`: Alterna el estado del material entre `to_buy` (Por Comprar) e `in_stock` (En Taller).
+- `POST /materials/:id/update`: Edita el nombre, cantidad, unidad y categoría de un material.
+- `POST /materials/:id/set-status`: Establece explícitamente el estado del material (`to_buy` / `in_stock`).
+- `POST /materials/:id/delete`: Elimina un material del inventario.
+- `POST /materials/import`: Importación masiva de materiales vía JSON.
+
+### 🛠️ Herramientas
+- `GET /api/tools`: Obtiene el listado de herramientas registradas por el usuario.
+- `POST /tools/add`: Registra una nueva herramienta en el taller.
+- `POST /tools/:id/update`: Edita el nombre, categoría y estado de una herramienta.
+- `POST /tools/:id/set-status`: Actualiza explícitamente el estado de la herramienta (`to_buy` [Por Comprar] o `in_stock` [En Taller]).
+- `POST /tools/:id/delete`: Elimina una herramienta del catálogo.
+- `GET /api/inventory/export-context`: Exporta un resumen consolidado de materiales y herramientas en formato JSON para asistentes de IA o reportes.
+
+### 🧮 Calculadora de Offsets / Tiempos
+- `GET /api/calculator/offsets`: Obtiene los desplazamientos/offsets de tiempo preconfigurados.
+- `POST /calculator/offsets/add`: Agrega un nuevo offset de cálculo.
+- `POST /calculator/offsets/:id/update`: Edita un offset de cálculo existente.
+- `POST /calculator/offsets/:id/delete`: Elimina un offset de cálculo.
+
+### 📆 Sobreescrituras Manuales por Día (`day_overrides`)
+- `POST /day-override/:override_date/save`: Registra o actualiza el estado forzado (`VIABLE` / `BLOCKED`), horarios personalizados o notas para un día específico.
+- `POST /day-override/:override_date/clear`: Elimina la sobreescritura manual de una fecha, retornando a la evaluación meteorológica automática.
+- `POST /day-override/:override_date/force-task`: Fuerza la inclusión manual de una tarea específica en un día determinado.
+- `POST /day-override/forced-task/:forced_id/delete`: Elimina una tarea asignada manualmente a una fecha.
+
+### ☀️ Evaluación Climática, Check-in y Calendario
+- `POST /evaluation/run`, `POST /evaluation/force_run`, `POST /evaluar`, `POST /api/evaluate`: Endpoints alias que ejecutan el controlador `handleEvaluationRequest` para evaluar el horizonte multi-día.
+- `POST /evaluation/force_checkin`: Fuerza la emisión del prompt de check-in nocturno por Telegram (exclusivo para pruebas/desarrollo).
+- `POST /api/checkin/end_shift`: Endpoint disparado por el botón "Término de la Jornada". Verifica disponibilidad de Telegram o indica a la UI que despliegue el modal web de fallback.
+- `POST /api/checkin/resolve`: Procesa la resolución de tareas del check-in (completar, postergar) y re-evalúa silenciosamente el horizonte.
+- `POST /calendar/create`: Dispara la sincronización espejo hacia Google Calendar API v3.
+
+### ⚙️ Configuración del Sistema y Telegram
+- `GET /api/timezone`: Retorna la zona horaria IANA calculada según las coordenadas del taller (`tz-lookup`).
+- `POST /settings/update`: Guarda los parámetros operacionales, ubicación geográfica del taller y preferencias.
+- `POST /settings/telegram/generate-code`: Genera un código OTP de 6 dígitos para vinculación de Telegram.
+- `POST /settings/telegram/unlink`: Desvincula la cuenta de Telegram del usuario (`telegram_chat_id = NULL`).
+- `POST /webhook/telegram`: Webhook para recepción de mensajes e interacciones inline del Bot de Telegram.
 
 ---
 
@@ -489,7 +542,7 @@ AGENDAPP/
     └── components/               # Componentes EJS modulares
         ├── agenda.ejs            # Componente de línea de tiempo y auditoría horaria
         ├── backlog.ejs           # Componente de backlog de tareas
-        ├── materials.ejs         # Componente de materiales e insumos
+        ├── materials.ejs         # Componente unificado de Inventario (pestañas Materiales e Insumos + Herramientas)
         └── settings_modal.ejs    # Modal de configuración operacional
 ```
 
@@ -505,3 +558,4 @@ AGENDAPP/
 | `src/scheduler.ts` | Daemon en segundo plano, cerrojos de concurrencia y tickers de alertas. | `src/db.ts`, `src/evaluator.ts`, `src/weatherService.ts`, `src/telegramBot.ts` |
 | `src/telegramBot.ts` | Bot de Telegram, desvinculación automática de duplicados y callbacks inline. | `src/db.ts`, HTTP fetch API |
 | `src/weatherService.ts` | Ingesta de pronósticos de Open-Meteo con cache local y fallback a snapshot. | HTTP fetch API, `src/types.ts` |
+| `views/components/materials.ejs` | Vista de Inventario que renderiza tanto Materiales/Insumos como Herramientas (pestaña 'Por Comprar' y 'En Taller'). | EJS, Tailwind CSS |

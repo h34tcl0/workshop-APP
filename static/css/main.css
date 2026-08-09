@@ -11,6 +11,166 @@ body {
     background-size: 28px 28px;
 }
 .font-display { font-family: 'Fraunces', serif; font-variation-settings: 'opsz' 60; }
+.font-sans-inst { font-family: 'Instrument Sans', 'IBM Plex Sans', system-ui, sans-serif; }
+.font-mono-jb { font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace; }
+
+/* ── WEATHER CARD REDESIGN STYLES ── */
+:root {
+  --w-bg: #0d141c;
+  --w-s1: #131c27;
+  --w-s2: #1a2532;
+  --w-bd: #2b3a4b;
+  --w-t1: #e9f1f8;
+  --w-t2: #9cb1c3;
+  --w-amber: #f4a83a;
+  --w-amber-hi: #ffc76a;
+  --w-sky: #6db5e6;
+  --w-rain: #4d9fd8;
+  --w-temp: #ff7d5c;
+  --w-ok: #63cf8e;
+  --w-warn: #e6c452;
+  --w-rust: #eb5757;
+}
+
+.weather-card {
+  background: var(--w-s1);
+  border: 1px solid var(--w-bd);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 16px 40px rgba(0, 0, 0, 0.45);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.weather-card-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px 12px;
+}
+
+.weather-card.sunny .weather-card-head {
+  background: linear-gradient(180deg, rgba(244, 168, 58, 0.22), rgba(244, 168, 58, 0.03) 75%, transparent);
+}
+
+.weather-card.rainy .weather-card-head {
+  background: linear-gradient(180deg, rgba(109, 181, 230, 0.18), rgba(109, 181, 230, 0.03) 75%, transparent);
+}
+
+.weather-card.blocked .weather-card-head {
+  background: linear-gradient(180deg, rgba(235, 87, 87, 0.18), rgba(235, 87, 87, 0.03) 75%, transparent);
+}
+
+.weather-ico-btn {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 12px;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.15s ease, filter 0.15s ease;
+}
+.weather-ico-btn:hover {
+  transform: scale(1.18);
+  background: rgba(255, 255, 255, 0.08);
+  filter: drop-shadow(0 0 8px rgba(109, 181, 230, 0.4));
+}
+
+.ring-container {
+  position: relative;
+  cursor: pointer;
+}
+
+.ring-tooltip {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 8px;
+  width: 230px;
+  background: #1a2532;
+  border: 1px solid #2b3a4b;
+  color: #e9f1f8;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  line-height: 1.35;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+  z-index: 50;
+  transition: opacity 0.2s ease, visibility 0.2s ease, transform 0.2s ease;
+  transform: translateY(-4px);
+  pointer-events: none;
+}
+
+.ring-container:hover .ring-tooltip,
+.ring-container:focus-within .ring-tooltip {
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* Phase Pills */
+.pill-phase {
+  font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.pill-warm {
+  background: color-mix(in srgb, var(--w-amber) 16%, transparent);
+  color: var(--w-amber-hi);
+  border: 1px solid color-mix(in srgb, var(--w-amber) 40%, transparent);
+}
+.pill-cool {
+  background: color-mix(in srgb, var(--w-sky) 14%, transparent);
+  color: var(--w-sky);
+  border: 1px solid color-mix(in srgb, var(--w-sky) 40%, transparent);
+}
+
+/* Agenda Task Rows */
+.agenda-task-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--w-bd);
+  border-radius: 12px;
+  background: var(--w-s1);
+  margin-bottom: 6px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+.agenda-task-row:hover {
+  background: var(--w-s2);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+.agenda-task-row .time {
+  font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11.5px;
+  color: var(--w-sky);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.agenda-task-row .task-title {
+  font-size: 12.5px;
+  color: var(--w-t1);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agenda-task-row .dur {
+  font-family: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  background: var(--w-s2);
+  border: 1px solid var(--w-bd);
+  border-radius: 8px;
+  padding: 3px 8px;
+  color: var(--w-t2);
+  white-space: nowrap;
+}
 .hatch {
     background-image: repeating-linear-gradient(
         45deg,
