@@ -60,6 +60,15 @@ body {
   background: linear-gradient(180deg, rgba(235, 87, 87, 0.18), rgba(235, 87, 87, 0.03) 75%, transparent);
 }
 
+.arc {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  height: auto;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 .weather-ico-btn {
   cursor: pointer;
   display: inline-flex;

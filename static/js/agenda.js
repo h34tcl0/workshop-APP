@@ -16,8 +16,69 @@ function toggleHourlyPanel(dateIso) {
     }
 }
 
+// ── Posicionamiento dinámico del marcador en vivo sobre el arco meteorológico ──
+function getLocalDateIso() {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function getLocalNowHours() {
+    const d = new Date();
+    return d.getHours() + (d.getMinutes() / 60) + (d.getSeconds() / 3600);
+}
+
+function updateArcSunMarkers() {
+    const todayIso = getLocalDateIso();
+    const nowH = getLocalNowHours();
+    const arcs = document.querySelectorAll('svg.arc[data-date]');
+
+    arcs.forEach(svg => {
+        const dateIso = svg.dataset.date;
+        const startH = parseFloat(svg.dataset.windowStart);
+        const endH = parseFloat(svg.dataset.windowEnd);
+        const marker = svg.querySelector('.sun-marker');
+
+        if (!marker) return;
+
+        const isToday = (dateIso === todayIso);
+        const hasWindow = !isNaN(startH) && !isNaN(endH) && endH > startH;
+        const inWindow = hasWindow && nowH >= startH && nowH <= endH;
+
+        if (isToday && inWindow) {
+            const progress = (nowH - startH) / (endH - startH);
+            const clampedProgress = Math.max(0, Math.min(1, progress));
+            const angle = Math.PI - (clampedProgress * Math.PI);
+            const cx = (160 + 140 * Math.cos(angle)).toFixed(2);
+            const cy = (160 - 140 * Math.sin(angle)).toFixed(2);
+
+            marker.style.display = 'block';
+            const circles = marker.querySelectorAll('circle');
+            circles.forEach(c => {
+                c.setAttribute('cx', cx);
+                c.setAttribute('cy', cy);
+            });
+        } else {
+            marker.style.display = 'none';
+        }
+    });
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        updateArcSunMarkers();
+        setInterval(updateArcSunMarkers, 30000);
+    });
+} else {
+    updateArcSunMarkers();
+    setInterval(updateArcSunMarkers, 30000);
+}
+
 Object.assign(window, {
     toggleDayEditor,
     toggleAssignedTasks,
-    toggleHourlyPanel
+    toggleHourlyPanel,
+    updateArcSunMarkers
 });

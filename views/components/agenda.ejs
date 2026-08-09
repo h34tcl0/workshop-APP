@@ -146,7 +146,10 @@
             </div>
 
             <!-- ARCO METEOROLÓGICO Y VENTANA DE TRABAJO -->
-            <svg class="arc block w-[calc(100%-40px)] mx-auto mt-1" viewBox="0 0 320 170">
+            <svg class="arc block w-full max-w-[300px] mx-auto mt-1" viewBox="0 0 320 170"
+                 data-date="<%= date_iso %>"
+                 data-window-start="<%= (is_viable && eval.window) ? eval.window.start_hour : '' %>"
+                 data-window-end="<%= (is_viable && eval.window) ? eval.window.end_hour : '' %>">
                 <defs>
                     <linearGradient id="g-<%= date_iso %>" x1="0" y1="0" x2="1" y2="0">
                         <stop offset="0" stop-color="var(--w-temp)"/>
@@ -165,10 +168,10 @@
                     <line x1="160" y1="30" x2="160" y2="38" transform="rotate(50 160 160)"/>
                     <line x1="160" y1="30" x2="160" y2="38" transform="rotate(75 160 160)"/>
                 </g>
-                <% if (is_viable) { %>
-                    <circle class="sun" cx="160" cy="20" r="16" fill="var(--w-amber)" opacity="0.25"/>
-                    <circle class="sun" cx="160" cy="20" r="8" fill="var(--w-amber-hi)"/>
-                <% } %>
+                <g class="sun-marker" style="display: none;">
+                    <circle class="sun-outer" cx="160" cy="20" r="16" fill="var(--w-amber)" opacity="0.25"/>
+                    <circle class="sun-inner" cx="160" cy="20" r="8" fill="var(--w-amber-hi)"/>
+                </g>
             </svg>
 
             <div class="win text-center -mt-11 mb-3">
