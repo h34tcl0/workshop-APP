@@ -585,7 +585,7 @@ export function evaluateDayFeasibility(
     const setupEnd = currH + cfg.setup_hours;
     timeline.push({
       time_range: `${formatHour(currH)} — ${formatHour(setupEnd)}`,
-      title: "🛠️ Setup / Preparación de taller",
+      title: "Setup / Preparación de taller",
       duration: `${cfg.setup_hours.toFixed(1)}h`
     });
     currH = setupEnd;
@@ -610,7 +610,7 @@ export function evaluateDayFeasibility(
         if (i < bestScheduledTasks.length - 1) {
           timeline.push({
             time_range: `${formatHour(tEnd)} — ${formatHour(cEnd)}`,
-            title: "🧪 Curado / Secado (bloquea el inicio de la siguiente tarea)",
+            title: "Curado / Secado (bloquea el inicio de la siguiente tarea)",
             duration: `${cDur.toFixed(1)}h`
           });
           currH = cEnd;
@@ -621,14 +621,14 @@ export function evaluateDayFeasibility(
     const teardownEnd = currH + cfg.teardown_hours;
     timeline.push({
       time_range: `${formatHour(currH)} — ${formatHour(teardownEnd)}`,
-      title: "🧹 Teardown / Guardado de herramientas",
+      title: "Teardown / Guardado de herramientas",
       duration: `${cfg.teardown_hours.toFixed(1)}h`
     });
 
     if (maxCuringEnd > teardownEnd) {
       timeline.push({
         time_range: `${formatHour(teardownEnd)} — ${formatHourCrossDay(maxCuringEnd)}`,
-        title: "🧪 Curado / Secado pasivo en taller",
+        title: "Curado / Secado pasivo en taller",
         duration: `${(maxCuringEnd - teardownEnd).toFixed(1)}h`
       });
     }

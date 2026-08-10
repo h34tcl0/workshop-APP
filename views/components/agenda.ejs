@@ -185,10 +185,10 @@
                 <span>·</span>
                 <span class="text-[var(--w-t1)]"><%= eval.weather_summary ? eval.weather_summary.min_temp : 0 %>°–<%= eval.weather_summary ? eval.weather_summary.max_temp : 0 %>°C</span>
                 <span>·</span>
-                <span class="text-[var(--w-t1)]">💧 <%= eval.weather_summary ? eval.weather_summary.min_humidity : 0 %>%–<%= eval.weather_summary ? eval.weather_summary.max_humidity : 0 %>%</span>
+                <span class="text-[var(--w-t1)]">Humedad <%= eval.weather_summary ? eval.weather_summary.min_humidity : 0 %>%–<%= eval.weather_summary ? eval.weather_summary.max_humidity : 0 %>%</span>
                 <% if (eval.weather_summary && eval.weather_summary.total_rain_mm > 0) { %>
                     <span>·</span>
-                    <span class="text-[var(--w-rust)] font-semibold">🌧️ <%= eval.weather_summary.total_rain_mm %> mm</span>
+                    <span class="text-[var(--w-rust)] font-semibold">Lluvia <%= eval.weather_summary.total_rain_mm %> mm</span>
                 <% } %>
             </div>
 
@@ -242,13 +242,14 @@
             <% if (is_viable && eval.timeline && eval.timeline.length > 0) { %>
                 <div class="crono px-4 sm:px-5 pt-3 pb-3.5 border-t border-[var(--w-bd)]">
                     <h4 class="text-[10.5px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-2 flex items-center justify-between">
-                        <span>📋 Tareas Agendadas</span>
+                        <span>Tareas Agendadas</span>
                     </h4>
                     <% eval.timeline.forEach(function(act) { %>
                         <% 
                             const isSetup = act.title.includes('Setup') || act.title.includes('Preparación');
                             const isTeardown = act.title.includes('Teardown') || act.title.includes('Guardado') || act.title.includes('Cierre');
                             const isCuring = act.title.includes('Curado') || act.title.includes('Secado');
+                            const displayTitle = (act.title || '').replace(/^[^\p{L}\p{N}#\[]+/u, '').trim();
                         %>
                         <div class="agenda-task-row">
                             <!-- Mobile Line 1: Range + Duration -->
@@ -265,7 +266,7 @@
                                 <% if (act.project_name) { %>
                                     <span class="text-[var(--w-amber-hi)] font-bold text-[10px] bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/20 px-1.5 py-0.5 rounded shrink-0 max-w-[45%] sm:max-w-[40%] truncate" title="<%= act.project_name %>">[<%= act.project_name %>]</span>
                                 <% } %>
-                                <span class="truncate text-[var(--w-t1)] text-xs font-medium min-w-0 flex-1" title="<%= act.title %>"><%= act.title %></span>
+                                <span class="truncate text-[var(--w-t1)] text-xs font-medium min-w-0 flex-1" title="<%= displayTitle %>"><%= displayTitle %></span>
                             </span>
 
                             <!-- Desktop Duration Column -->
@@ -283,7 +284,7 @@
             <!-- TAREAS FORZADAS (si existen) -->
             <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
                 <div class="px-4 sm:px-5 pb-3">
-                    <p class="text-[10.5px] text-[var(--w-amber-hi)] font-semibold uppercase tracking-wider mb-2">⚡ Tareas Forzadas Manuales</p>
+                    <p class="text-[10.5px] text-[var(--w-amber-hi)] font-semibold uppercase tracking-wider mb-2">Tareas Forzadas Manuales</p>
                     <div class="space-y-1.5">
                         <% eval.forced_tasks.forEach(function(ft) { %>
                             <div class="flex items-center justify-between gap-2 bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/30 rounded-xl px-3 py-2 text-xs">
