@@ -193,7 +193,7 @@
             </div>
 
             <!-- ARCO METEOROLÓGICO Y VENTANA DE TRABAJO -->
-            <svg class="arc block w-full max-w-[300px] mx-auto mt-1" viewBox="0 0 320 170"
+            <svg class="arc block w-full max-w-[260px] sm:max-w-[280px] mx-auto mt-1" viewBox="0 0 320 170"
                  data-date="<%= date_iso %>"
                  data-window-start="<%= (is_viable && eval.window) ? eval.window.start_hour : '' %>"
                  data-window-end="<%= (is_viable && eval.window) ? eval.window.end_hour : '' %>">
@@ -221,15 +221,15 @@
                 </g>
             </svg>
 
-            <div class="win text-center -mt-11 mb-3">
-                <div class="text-[10px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-0.5">VENTANA DE TRABAJO REAL</div>
-                <div class="font-mono-jb text-xl font-bold <%= is_viable ? 'text-[var(--w-amber-hi)]' : 'text-[var(--w-sky)]' %>">
+            <div class="win text-center -mt-9 mb-2.5">
+                <div class="text-[9.5px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-0.5">VENTANA DE TRABAJO REAL</div>
+                <div class="font-mono-jb text-lg sm:text-xl font-bold <%= is_viable ? 'text-[var(--w-amber-hi)]' : 'text-[var(--w-sky)]' %>">
                     <%= is_viable ? (eval.window.start_time + ' — ' + eval.window.end_time) : '00:00 — 00:00' %>
                 </div>
             </div>
 
             <!-- RESUMEN DE FASES (Cálido = operario presente, Frío = taller autónomo) -->
-            <div class="phases flex items-center justify-center gap-2 px-5 mb-4 flex-wrap">
+            <div class="phases flex items-center justify-center gap-1.5 px-4 mb-3 flex-wrap">
                 <span class="pill-phase pill-warm">PREP</span>
                 <span class="pill-phase pill-warm">
                     <%= (is_viable && eval.window) ? (Math.max(1, (eval.window.end_hour - eval.window.start_hour - 2)) + 'H TRABAJO') : 'TRABAJO' %>
@@ -240,8 +240,8 @@
 
             <!-- UNIFICADA LISTA DE TAREAS AGENDADAS CON RANGOS HORARIOS EXACTOS -->
             <% if (is_viable && eval.timeline && eval.timeline.length > 0) { %>
-                <div class="crono px-5 pt-3 pb-4 border-t border-[var(--w-bd)]">
-                    <h4 class="text-[10.5px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-2.5 flex items-center justify-between">
+                <div class="crono px-4 sm:px-5 pt-3 pb-3.5 border-t border-[var(--w-bd)]">
+                    <h4 class="text-[10.5px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-2 flex items-center justify-between">
                         <span>📋 Tareas Agendadas</span>
                     </h4>
                     <% eval.timeline.forEach(function(act) { %>
@@ -249,23 +249,42 @@
                             const isSetup = act.title.includes('Setup') || act.title.includes('Preparación');
                             const isTeardown = act.title.includes('Teardown') || act.title.includes('Guardado') || act.title.includes('Cierre');
                             const isCuring = act.title.includes('Curado') || act.title.includes('Secado');
-                            const icon = isSetup ? '🛠️' : (isTeardown ? '🧹' : (isCuring ? '🌙' : '📝'));
                         %>
                         <div class="agenda-task-row">
-                            <span class="time"><%= act.time_range %></span>
+                            <!-- Mobile Line 1: Range + Duration -->
+                            <div class="flex items-center justify-between w-full sm:hidden">
+                                <span class="time"><%= act.time_range %></span>
+                                <span class="dur"><%= isCuring ? ('+' + act.duration) : act.duration %></span>
+                            </div>
+
+                            <!-- Desktop Time Column -->
+                            <span class="time hidden sm:inline-block"><%= act.time_range %></span>
+
+                            <!-- Task Title, Project Badge, Vector SVG Icon -->
                             <span class="task-title flex items-center gap-1.5 min-w-0">
-                                <span class="shrink-0"><%= icon %></span>
-                                <% if (act.project_name) { %>
-                                    <span class="text-[var(--w-amber-hi)] font-bold text-[10px] bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/20 px-1.5 py-0.5 rounded shrink-0 max-w-[35%] truncate" title="<%= act.project_name %>">[<%= act.project_name %>]</span>
+                                <% if (isSetup) { %>
+                                    <svg class="w-3.5 h-3.5 text-[var(--w-amber-hi)] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.9 6.91a2.12 2.12 0 0 1-3-3l6.91-6.9a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                                <% } else if (isTeardown) { %>
+                                    <svg class="w-3.5 h-3.5 text-[var(--w-sky)] shrink-0"><use href="#i-box"/></svg>
+                                <% } else if (isCuring) { %>
+                                    <svg class="w-3.5 h-3.5 text-[var(--w-sky)] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
+                                <% } else { %>
+                                    <svg class="w-3.5 h-3.5 text-[var(--w-amber)] shrink-0"><use href="#i-zap"/></svg>
                                 <% } %>
-                                <span class="truncate" title="<%= act.title %>"><%= act.title %></span>
+
+                                <% if (act.project_name) { %>
+                                    <span class="text-[var(--w-amber-hi)] font-bold text-[10px] bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/20 px-1.5 py-0.5 rounded shrink-0 max-w-[40%] sm:max-w-[35%] truncate" title="<%= act.project_name %>">[<%= act.project_name %>]</span>
+                                <% } %>
+                                <span class="truncate text-[var(--w-t1)] text-xs font-medium" title="<%= act.title %>"><%= act.title %></span>
                             </span>
-                            <span class="dur"><%= isCuring ? ('+' + act.duration) : act.duration %></span>
+
+                            <!-- Desktop Duration Column -->
+                            <span class="dur hidden sm:inline-block"><%= isCuring ? ('+' + act.duration) : act.duration %></span>
                         </div>
                     <% }); %>
                 </div>
             <% } else { %>
-                <div class="note mx-5 mb-4 p-3 rounded-xl text-xs text-[var(--w-t2)] border border-[var(--w-bd)] bg-[var(--w-s2)]/40">
+                <div class="note mx-4 sm:mx-5 mb-3.5 p-3 rounded-xl text-xs text-[var(--w-t2)] border border-[var(--w-bd)] bg-[var(--w-s2)]/40">
                     <b class="text-[var(--w-sky)]">Estado de jornada — </b> 
                     <%= eval.unassigned_reason || eval.cutoff_reason || eval.reason || 'Sin tareas agendadas para esta jornada.' %>
                 </div>
@@ -273,7 +292,7 @@
 
             <!-- TAREAS FORZADAS (si existen) -->
             <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
-                <div class="px-5 pb-3">
+                <div class="px-4 sm:px-5 pb-3">
                     <p class="text-[10.5px] text-[var(--w-amber-hi)] font-semibold uppercase tracking-wider mb-2">⚡ Tareas Forzadas Manuales</p>
                     <div class="space-y-1.5">
                         <% eval.forced_tasks.forEach(function(ft) { %>
@@ -302,19 +321,19 @@
 
             <% if (hourly_items && hourly_items.length > 0) { %>
                 <% const hourly_panel_id = 'hourly-panel-' + date_iso; %>
-                <div id="<%= hourly_panel_id %>" class="hidden border-t border-[var(--w-bd)] bg-[var(--w-bg)]/95 p-4 text-xs shadow-inner">
-                    <div class="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-[var(--w-bd)]">
-                        <span class="font-semibold text-[var(--w-t1)] text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <div id="<%= hourly_panel_id %>" class="hidden border-t border-[var(--w-bd)] bg-[var(--w-s2)]/90 p-3 sm:p-4 text-xs shadow-inner rounded-b-2xl">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5 pb-2 border-b border-[var(--w-bd)] text-[11px] sm:text-xs">
+                        <span class="font-semibold text-[var(--w-t1)] uppercase tracking-wider flex items-center gap-1.5">
                             <span><%= ico_emoji %></span>
                             Pronóstico Horario (24h) — <%= date_str %>
                         </span>
-                        <div class="flex items-center gap-2 text-[10px] font-mono-jb text-[var(--w-t2)]">
-                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Humedad &gt; <%= app_settings.max_humidity_percent %>%</span>
-                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span> Lluvia &ge; <%= app_settings.min_rain_precipitation_mm %>mm</span>
+                        <div class="flex flex-wrap items-center gap-2 text-[10px] font-mono-jb text-[var(--w-t2)]">
+                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[var(--w-warn)] shrink-0"></span> Humedad &gt; <%= app_settings.max_humidity_percent %>%</span>
+                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[var(--w-rust)] shrink-0"></span> Lluvia &ge; <%= app_settings.min_rain_precipitation_mm %>mm</span>
                         </div>
                     </div>
 
-                    <div class="max-h-64 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+                    <div class="max-h-64 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
                         <% hourly_items.forEach(function(item) { %>
                             <%
                                 const f = item.forecast || item;
@@ -325,54 +344,54 @@
                                 const isCuring = item.is_curing;
                                 const isActive = item.is_active_work;
 
-                                let rowBg = 'bg-[var(--w-s1)] border-[var(--w-bd)]';
+                                let rowBg = 'bg-[var(--w-s1)] border-[var(--w-bd)] text-[var(--w-t2)]';
                                 if (isRain) {
-                                    rowBg = 'bg-red-500/15 border-red-500/40 text-red-200 font-semibold';
+                                    rowBg = 'bg-[var(--w-rust)]/15 border-[var(--w-rust)]/40 text-[var(--w-t1)] font-semibold';
                                 } else if (isHumid) {
-                                    rowBg = 'bg-amber-500/15 border-amber-500/40 text-amber-200';
+                                    rowBg = 'bg-[var(--w-warn)]/15 border-[var(--w-warn)]/40 text-[var(--w-t1)]';
                                 } else if (isProbWarning) {
-                                    rowBg = 'bg-amber-500/10 border-amber-500/30 text-amber-200';
+                                    rowBg = 'bg-[var(--w-warn)]/10 border-[var(--w-warn)]/30 text-[var(--w-t1)]';
                                 } else if (isActive) {
-                                    rowBg = 'bg-emerald-500/10 border-emerald-500/30';
+                                    rowBg = 'bg-[var(--w-amber)]/10 border-[var(--w-amber)]/30 text-[var(--w-t1)]';
                                 } else if (isCuring) {
-                                    rowBg = 'bg-sky-500/10 border-sky-500/30';
+                                    rowBg = 'bg-[var(--w-sky)]/10 border-[var(--w-sky)]/30 text-[var(--w-t1)]';
                                 }
                             %>
-                            <div class="flex items-center justify-between px-2.5 py-1.5 rounded-lg border text-xs transition-colors <%= rowBg %>">
-                                <div class="flex items-center gap-2 w-28 shrink-0">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs transition-colors min-w-0 <%= rowBg %>">
+                                <div class="flex items-center gap-2 shrink-0">
                                     <span class="font-mono-jb font-bold text-[var(--w-t1)]"><%= hLabel %></span>
                                     <% if (item.phase_label) { %>
                                         <% if (item.phase === 'WORK') { %>
-                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-amber)]/20 text-[var(--w-amber-hi)] border border-[var(--w-amber)]/30 px-1 py-0.5 rounded">TRABAJO</span>
+                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-amber)]/20 text-[var(--w-amber-hi)] border border-[var(--w-amber)]/30 px-1.5 py-0.5 rounded shrink-0">TRABAJO</span>
                                         <% } else if (item.phase === 'SETUP') { %>
-                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-amber)]/20 text-[var(--w-amber-hi)] border border-[var(--w-amber)]/30 px-1 py-0.5 rounded">PREP</span>
+                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-amber)]/20 text-[var(--w-amber-hi)] border border-[var(--w-amber)]/30 px-1.5 py-0.5 rounded shrink-0">PREP</span>
                                         <% } else if (item.phase === 'TEARDOWN') { %>
-                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-sky)]/20 text-[var(--w-sky)] border border-[var(--w-sky)]/30 px-1 py-0.5 rounded">CIERRE</span>
+                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-sky)]/20 text-[var(--w-sky)] border border-[var(--w-sky)]/30 px-1.5 py-0.5 rounded shrink-0">CIERRE</span>
                                         <% } else if (item.phase === 'CURING') { %>
-                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-sky)]/20 text-[var(--w-sky)] border border-[var(--w-sky)]/30 px-1 py-0.5 rounded">CURADO</span>
+                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-sky)]/20 text-[var(--w-sky)] border border-[var(--w-sky)]/30 px-1.5 py-0.5 rounded shrink-0">CURADO</span>
                                         <% } %>
                                     <% } %>
                                 </div>
 
-                                <div class="flex items-center gap-3 font-mono-jb text-xs">
-                                    <span class="text-[var(--w-t2)] w-14 text-right"><%= (f.temperature_c != null) ? f.temperature_c.toFixed(1) : 0 %>°C</span>
-                                    <span class="w-16 text-right <%= isHumid ? 'text-amber-400 font-bold' : 'text-[var(--w-t2)]' %>">
+                                <div class="flex items-center justify-between sm:justify-end gap-2.5 font-mono-jb text-[11px] sm:text-xs min-w-0 flex-1">
+                                    <span class="text-[var(--w-t2)] shrink-0"><%= (f.temperature_c != null) ? f.temperature_c.toFixed(1) : 0 %>°C</span>
+                                    <span class="shrink-0 <%= isHumid ? 'text-[var(--w-warn)] font-bold' : 'text-[var(--w-t2)]' %>">
                                         💧 <%= f.relative_humidity %>%
                                     </span>
-                                    <span class="w-28 text-right <%= isRain ? 'text-red-400 font-bold' : (isProbWarning ? 'text-amber-300' : 'text-[var(--w-t2)]') %>">
+                                    <span class="shrink-0 <%= isRain ? 'text-[var(--w-rust)] font-bold' : (isProbWarning ? 'text-[var(--w-warn)]' : 'text-[var(--w-t2)]') %>">
                                         🌧️ <%= f.precipitation_mm %>mm (<%= f.precipitation_probability %>%)
                                     </span>
                                 </div>
 
                                 <% if (item.risk_reasons && item.risk_reasons.length > 0) { %>
-                                    <div class="hidden sm:flex items-center gap-1 text-[10px] font-sans font-medium">
+                                    <div class="flex flex-wrap items-center gap-1 text-[10px] font-sans font-medium shrink-0">
                                         <% item.risk_reasons.forEach(function(r) { %>
                                             <% if (r.includes('Probabilidad')) { %>
-                                                <span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0" title="<%= r %>">
+                                                <span class="px-1.5 py-0.5 rounded bg-[var(--w-warn)]/20 text-[var(--w-warn)] border border-[var(--w-warn)]/30 shrink-0" title="<%= r %>">
                                                     ⚡ <%= r %>
                                                 </span>
                                             <% } else { %>
-                                                <span class="px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30 shrink-0" title="<%= r %>">
+                                                <span class="px-1.5 py-0.5 rounded bg-[var(--w-rust)]/20 text-[var(--w-rust)] border border-[var(--w-rust)]/30 shrink-0" title="<%= r %>">
                                                     ⚠️ <%= r %>
                                                 </span>
                                             <% } %>

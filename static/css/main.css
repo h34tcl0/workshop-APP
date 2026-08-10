@@ -44,8 +44,8 @@ body {
 .weather-card-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 18px 20px 12px;
+  gap: 10px;
+  padding: 14px 16px 10px;
 }
 
 .weather-card.sunny .weather-card-head {
@@ -141,16 +141,23 @@ body {
 
 /* Agenda Task Rows */
 .agenda-task-row {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 10px;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 12px;
   border: 1px solid var(--w-bd);
   border-radius: 12px;
   background: var(--w-s1);
   margin-bottom: 6px;
   transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+@media (min-width: 640px) {
+  .agenda-task-row {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+    align-items: center;
+  }
 }
 .agenda-task-row:hover {
   background: var(--w-s2);
