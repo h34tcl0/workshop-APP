@@ -87,6 +87,21 @@ body {
 .ring-container {
   position: relative;
   cursor: pointer;
+  outline: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 9999px;
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+.ring-container:hover {
+  transform: scale(1.06);
+  filter: drop-shadow(0 0 6px rgba(109, 181, 230, 0.3));
+}
+.ring-container:focus,
+.ring-container:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 0 8px rgba(109, 181, 230, 0.5));
 }
 
 .ring-tooltip {
