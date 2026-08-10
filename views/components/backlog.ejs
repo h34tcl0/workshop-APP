@@ -1,15 +1,5 @@
 <!-- LEFT COLUMN: BACKLOG -->
 <div class="space-y-5 min-w-0">
-    <div class="flex items-center justify-between">
-        <h2 class="font-display text-lg sm:text-xl font-semibold flex items-baseline gap-2">
-            <span class="text-[11px] font-mono font-semibold tracking-widest text-brass uppercase">01</span>
-            Backlog de tareas
-        </h2>
-        <span class="text-[11px] font-mono text-ink3 bg-surface border border-hairline px-2.5 py-1 rounded-full">
-            <%= tasks.length %> tarea<%= tasks.length !== 1 ? 's' : '' %>
-        </span>
-    </div>
-
     <div class="pill-switch relative bg-surface border border-hairline rounded-full p-1 flex min-h-[44px]">
         <div id="pill-indicator" class="pill-indicator"></div>
         <button type="button" onclick="switchTab('manual')" id="tab-btn-manual" class="relative z-10 flex-1 py-2.5 rounded-full text-sm font-semibold text-center text-canvas min-h-[44px] flex items-center justify-center">Modo manual</button>

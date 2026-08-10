@@ -12,23 +12,17 @@
       const toolsBroken = allTools.filter(t => t.status === 'broken').length;
     %>
 
-    <!-- HEADER DE INVENTARIO Y BARRAS DE ACCIÓN -->
-    <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-surface border border-hairline rounded-2xl p-5 shadow-panel">
-        <div>
-            <div class="flex items-center gap-2">
-                <span class="text-[11px] font-mono font-semibold tracking-widest text-brass uppercase">LOGÍSTICA E INVENTARIO OS</span>
-            </div>
-            <h2 class="font-display text-xl font-bold text-ink mt-1 flex items-center gap-2">
-                <svg class="w-5 h-5 text-brass"><use href="#i-box"/></svg>
-                Inventario de Taller y Herramientas
-            </h2>
-            <p class="text-xs text-ink2 mt-0.5">Control global de insumos, stock de materiales, herramental y contexto formateado para IA</p>
+    <!-- BARRAS DE ACCIÓN DE INVENTARIO -->
+    <div class="flex flex-wrap items-center justify-between gap-3 bg-surface border border-hairline rounded-2xl p-4 sm:p-5 shadow-panel">
+        <div class="flex items-center gap-2 text-xs font-semibold text-ink2">
+            <svg class="w-4.5 h-4.5 text-brass"><use href="#i-box"/></svg>
+            <span>Gestión de Insumos & Herramientas</span>
         </div>
 
         <div class="flex items-center gap-2 flex-wrap shrink-0">
             <button type="button" onclick="openAiExportModal()" class="flex items-center gap-1.5 bg-brass/10 hover:bg-brass/20 text-brass border border-brass/30 px-3.5 py-2 rounded-xl text-xs font-bold transition-colors shadow-sm">
                 <svg class="w-4 h-4"><use href="#i-terminal"/></svg>
-                📋 Exportar Contexto para IA
+                Exportar Contexto IA
             </button>
             <button type="button" onclick="toggleAddToolForm()" class="flex items-center gap-1.5 bg-surface2 hover:bg-hairline text-ink border border-hairline px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors">
                 <svg class="w-4 h-4 text-chalk"><use href="#i-plus"/></svg> Nueva Herramienta

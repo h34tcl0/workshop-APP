@@ -37,21 +37,21 @@
                         mono: ['"IBM Plex Mono"', 'monospace'],
                     },
                     colors: {
-                        canvas: '#020617', // slate-950
-                        surface: '#0f172a', // slate-900
-                        surface2: '#1e293b', // slate-800
-                        hairline: '#334155', // slate-700
-                        ink: '#f8fafc', // slate-50
-                        ink2: '#94a3b8', // slate-400
+                        canvas: '#080d14', // dark canvas matching weather background
+                        surface: '#131c27', // var(--w-s1) - Weather card background
+                        surface2: '#1a2532', // var(--w-s2) - Card inner items / inputs
+                        hairline: '#2b3a4b', // var(--w-bd) - Weather card border
+                        ink: '#e9f1f8', // var(--w-t1)
+                        ink2: '#9cb1c3', // var(--w-t2)
                         ink3: '#64748b', // slate-500
-                        brass: '#6366f1', // indigo-500
-                        brassdim: '#4f46e5', // indigo-600
-                        moss: '#10b981', // emerald-500
-                        rust: '#f43f5e', // rose-500
-                        chalk: '#38bdf8', // sky-400
+                        brass: '#f4a83a', // var(--w-amber)
+                        brassdim: '#d98e25',
+                        moss: '#63cf8e', // var(--w-ok)
+                        rust: '#eb5757', // var(--w-rust)
+                        chalk: '#6db5e6', // var(--w-sky)
                     },
                     boxShadow: {
-                        panel: '0 1px 0 0 rgba(255,255,255,0.05) inset, 0 12px 30px -18px rgba(0,0,0,0.8)',
+                        panel: 'inset 0 1px 0 rgba(255,255,255,0.05), 0 16px 40px rgba(0,0,0,0.45)',
                     }
                 },
             },
@@ -204,12 +204,12 @@
     </svg>
 
     <!-- HEADER -->
-    <header class="border-b border-hairline bg-canvas/90 backdrop-blur-sm sticky top-0 z-50 w-full max-w-full">
+    <header class="sticky top-0 z-50 w-full max-w-[1440px] mx-auto px-2.5 sm:px-6 pt-2.5 sm:pt-3">
         <div
-            class="max-w-[1440px] mx-auto px-2.5 sm:px-6 flex flex-wrap md:flex-nowrap items-center justify-between gap-1.5 sm:gap-4 py-2 md:py-0 min-h-[3.5rem] md:h-16 w-full min-w-0">
-            <div class="flex items-center gap-2 shrink-0 min-w-0">
+            class="bg-surface border border-hairline rounded-2xl shadow-panel px-3.5 sm:px-6 py-2.5 sm:py-3 flex flex-wrap md:flex-nowrap items-center justify-between gap-2 sm:gap-4 w-full min-w-0">
+            <div class="flex items-center gap-2.5 shrink-0 min-w-0">
                 <div
-                    class="w-8 h-8 md:w-10 md:h-10 shrink-0 rounded-lg bg-surface2 border border-hairline flex items-center justify-center text-brass">
+                    class="w-8 h-8 md:w-10 md:h-10 shrink-0 rounded-xl bg-surface2 border border-hairline flex items-center justify-center text-brass shadow-xs">
                     <svg class="w-4 h-4 md:w-5 md:h-5">
                         <use href="#i-mark" />
                     </svg>
@@ -227,10 +227,10 @@
                 <%- include('components/mode_switcher') %>
 
                 <form id="eval-form" action="/evaluation/force_run" method="post"
-                    class="flex items-center gap-1 bg-surface border border-hairline rounded-lg p-1 sm:px-2 sm:py-1.5 shrink-0 max-w-full">
+                    class="flex items-center gap-1 bg-surface2 border border-hairline rounded-xl p-1 sm:px-2 sm:py-1.5 shrink-0 max-w-full">
                     <span class="text-[11px] text-ink3 font-medium hidden lg:inline whitespace-nowrap">Escenario</span>
                     <select name="scenario" id="scenario"
-                        class="bg-surface2 text-ink border border-hairline rounded-md px-1 sm:px-2 py-1 text-[11px] sm:text-xs focus:outline-none cursor-pointer max-w-[80px] xs:max-w-[100px] sm:max-w-none truncate">
+                        class="bg-surface text-ink border border-hairline rounded-lg px-1 sm:px-2 py-1 text-[11px] sm:text-xs focus:outline-none cursor-pointer max-w-[80px] xs:max-w-[100px] sm:max-w-none truncate">
                         <option value="" <%= current_scenario === 'real' || !current_scenario ? 'selected' : '' %>>Clima real</option>
                         <option value="sunny" <%= current_scenario === 'sunny' ? 'selected' : '' %>>Soleado</option>
                         <option value="rainy" <%= current_scenario === 'rainy' ? 'selected' : '' %>>Lluvia</option>
@@ -239,21 +239,21 @@
                         <option value="intermittent_rain" <%= current_scenario === 'intermittent_rain' ? 'selected' : '' %>>Lluvia interm.</option>
                     </select>
                     <button type="submit" id="eval-btn"
-                        class="bg-brass hover:bg-brassdim text-canvas text-[11px] sm:text-xs font-semibold px-1.5 sm:px-2 py-1 rounded-md transition-colors whitespace-nowrap">
+                        class="bg-brass hover:bg-brassdim text-canvas text-[11px] sm:text-xs font-semibold px-2 py-1 rounded-lg transition-colors whitespace-nowrap">
                         Evaluar
                     </button>
                 </form>
 
                 <button type="button" onclick="openSettingsModal()" aria-label="Configuración"
-                    class="flex items-center gap-1.5 bg-surface hover:bg-surface2 border border-hairline hover:border-brassdim text-ink2 hover:text-ink p-1.5 sm:p-2 md:px-3 md:py-2 rounded-lg text-xs md:text-sm font-medium transition-colors shrink-0">
-                    <svg class="w-4 h-4 shrink-0">
+                    class="flex items-center gap-1.5 bg-surface2 hover:bg-hairline border border-hairline text-ink2 hover:text-ink p-1.5 sm:p-2 md:px-3 md:py-2 rounded-xl text-xs md:text-sm font-medium transition-colors shrink-0">
+                    <svg class="w-4 h-4 shrink-0 text-brass">
                         <use href="#i-gear" />
                     </svg>
                     <span class="hidden md:inline">Configuración</span>
                 </button>
 
                 <% if (locals.user) { %>
-                <div class="flex items-center gap-2 bg-surface border border-hairline rounded-lg px-2 py-1 sm:px-2.5 sm:py-1.5 text-xs text-ink2 shrink-0">
+                <div class="flex items-center gap-2 bg-surface2 border border-hairline rounded-xl px-2.5 py-1.5 text-xs text-ink2 shrink-0">
                     <span class="hidden xl:inline text-ink font-medium"><%= user.email %></span>
                     <a href="/logout" title="Cerrar sesión" class="text-rust hover:text-rust/80 font-semibold transition-colors flex items-center gap-1">
                         <span>Salir</span>
