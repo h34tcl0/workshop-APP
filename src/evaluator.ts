@@ -20,7 +20,7 @@ import { getSpanishDate, formatHour, formatHourCrossDay } from "./dateUtils.js";
 const MIN_RAIN_PROBABILITY_PERCENT = 30;
 
 export function isRainyForecast(wf: HourlyForecast, minRainMm = 0.2): boolean {
-  return wf.precipitation_mm >= minRainMm || wf.precipitation_probability >= MIN_RAIN_PROBABILITY_PERCENT;
+  return wf.precipitation_mm >= minRainMm;
 }
 
 export function computeHourlyClimateMap(
@@ -331,12 +331,14 @@ export function getHourlyClimateAudit(
       risk_reasons.push(`Humedad ${f.relative_humidity}% (límite ${cfg.max_humidity_percent}%)`);
     }
 
-    if (f.precipitation_mm >= cfg.min_rain_precipitation_mm || f.precipitation_probability >= 30) {
+    if (f.precipitation_mm >= cfg.min_rain_precipitation_mm) {
       has_rain_risk = true;
       const rainMsg = isCuring
         ? `Lluvia en curado pasivo: ${f.precipitation_mm}mm (${f.precipitation_probability}%)`
         : `Lluvia ${f.precipitation_mm}mm (${f.precipitation_probability}%)`;
       risk_reasons.push(rainMsg);
+    } else if (f.precipitation_probability >= 50) {
+      risk_reasons.push(`Probabilidad de lluvia (${f.precipitation_probability}%)`);
     }
 
     if (isActiveWork || isCuring) {
