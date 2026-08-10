@@ -260,22 +260,12 @@
                             <!-- Desktop Time Column -->
                             <span class="time hidden sm:inline-block"><%= act.time_range %></span>
 
-                            <!-- Task Title, Project Badge, Vector SVG Icon -->
-                            <span class="task-title flex items-center gap-1.5 min-w-0">
-                                <% if (isSetup) { %>
-                                    <svg class="w-3.5 h-3.5 text-[var(--w-amber-hi)] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.9 6.91a2.12 2.12 0 0 1-3-3l6.91-6.9a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                                <% } else if (isTeardown) { %>
-                                    <svg class="w-3.5 h-3.5 text-[var(--w-sky)] shrink-0"><use href="#i-box"/></svg>
-                                <% } else if (isCuring) { %>
-                                    <svg class="w-3.5 h-3.5 text-[var(--w-sky)] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>
-                                <% } else { %>
-                                    <svg class="w-3.5 h-3.5 text-[var(--w-amber)] shrink-0"><use href="#i-zap"/></svg>
-                                <% } %>
-
+                            <!-- Task Title & Project Badge (Without Icon) -->
+                            <span class="task-title flex items-center gap-1.5 min-w-0 flex-1">
                                 <% if (act.project_name) { %>
-                                    <span class="text-[var(--w-amber-hi)] font-bold text-[10px] bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/20 px-1.5 py-0.5 rounded shrink-0 max-w-[40%] sm:max-w-[35%] truncate" title="<%= act.project_name %>">[<%= act.project_name %>]</span>
+                                    <span class="text-[var(--w-amber-hi)] font-bold text-[10px] bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/20 px-1.5 py-0.5 rounded shrink-0 max-w-[45%] sm:max-w-[40%] truncate" title="<%= act.project_name %>">[<%= act.project_name %>]</span>
                                 <% } %>
-                                <span class="truncate text-[var(--w-t1)] text-xs font-medium" title="<%= act.title %>"><%= act.title %></span>
+                                <span class="truncate text-[var(--w-t1)] text-xs font-medium min-w-0 flex-1" title="<%= act.title %>"><%= act.title %></span>
                             </span>
 
                             <!-- Desktop Duration Column -->
