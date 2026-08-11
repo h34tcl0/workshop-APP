@@ -563,9 +563,9 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
 
     const locPrefix = `📍 *Taller (${appSettings.latitude.toFixed(2)}, ${appSettings.longitude.toFixed(2)}):* `;
 
-    // Extraer hora de lluvia previamente alertada si existe
-    let previousRainHour: number | null = null;
-    if (dailyLog.weather_alert_message && dailyLog.weather_alert_message.includes("Lluvia_Hour:")) {
+    // Extraer hora de lluvia previamente alertada de la columna dedicada (o fallback de mensaje legado)
+    let previousRainHour: number | null = dailyLog.last_rain_alert_hour ?? null;
+    if (previousRainHour == null && dailyLog.weather_alert_message && dailyLog.weather_alert_message.includes("Lluvia_Hour:")) {
       const match = dailyLog.weather_alert_message.match(/Lluvia_Hour:(\d+)/);
       if (match) previousRainHour = parseInt(match[1], 10);
     }
@@ -579,27 +579,27 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
       const criticalTimeStr = `${String(rainHour).padStart(2, "0")}:00`;
       const precipMm = rainForecast.precipitation_mm || 0;
 
-      let detailsText = isRainAdvanced
+      const detailsText = isRainAdvanced
         ? `🚨 *¡ALERTA URGENTE DE LLUVIA ADELANTADA!*\n${locPrefix}La lluvia se ha ADELANTADO a las ${criticalTimeStr} hrs (prevista antes a las ${String(previousRainHour).padStart(2, "0")}:00 hrs). Precipitación: ${precipMm.toFixed(1)} mm.`
         : `🌧️ *¡ALERTA DE LLUVIA EN TALLER!*\n${locPrefix}Se pronostica lluvia a las ${criticalTimeStr} hrs (Precipitación: ${precipMm.toFixed(1)} mm).`;
 
-      detailsText += `\n<!-- Lluvia_Hour:${rainHour} -->`;
+      // Intentar envío de ráfaga
+      await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, detailsText);
 
-      const sent = await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, detailsText);
-      if (sent) {
-        const nowIso = now.toISOString();
-        store.updateDailyLog(userId, dailyLog.id, {
-          intraday_alert_triggered: true,
-          intraday_alert_acknowledged: false, // Forzar nueva confirmación si es nueva o si la lluvia se adelantó
-          intraday_alert_last_sent_at: nowIso,
-          intraday_alert_burst_count: 1,
-          weather_alert_sent: true,
-          weather_alert_message: detailsText,
-          weather_alert_last_sent_at: nowIso,
-          weather_alert_retry_count: 1
-        });
-        console.log(`[Scheduler] Intraday Rain Emergency Alert triggered for User #${userId} on ${todayIso}: ${detailsText}`);
-      }
+      // Persistencia atómica e incondicional del estado de alerta
+      const nowIso = now.toISOString();
+      store.updateDailyLog(userId, dailyLog.id, {
+        intraday_alert_triggered: true,
+        intraday_alert_acknowledged: false, // Forzar nueva confirmación si es nueva o si la lluvia se adelantó
+        intraday_alert_last_sent_at: nowIso,
+        intraday_alert_burst_count: 1,
+        weather_alert_sent: true,
+        weather_alert_message: detailsText,
+        weather_alert_last_sent_at: nowIso,
+        weather_alert_retry_count: 1,
+        last_rain_alert_hour: rainHour
+      });
+      console.log(`[Scheduler] Intraday Rain Emergency Alert triggered for User #${userId} on ${todayIso}: ${detailsText}`);
       return;
     }
 
@@ -612,18 +612,17 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
 
       if (elapsedMs >= FIVE_MIN_MS) {
         const alertMsg = dailyLog.weather_alert_message || "Cambio climático imprevisto detectado en taller.";
-        const sent = await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, alertMsg);
-        if (sent) {
-          const nowIso = now.toISOString();
-          const burstCount = (dailyLog.intraday_alert_burst_count || 0) + 1;
-          store.updateDailyLog(userId, dailyLog.id, {
-            intraday_alert_last_sent_at: nowIso,
-            intraday_alert_burst_count: burstCount,
-            weather_alert_last_sent_at: nowIso,
-            weather_alert_retry_count: burstCount
-          });
-          console.log(`[Scheduler] Intraday Rain alert retry #${burstCount} sent for User #${userId} on ${todayIso}.`);
-        }
+        await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, alertMsg);
+
+        const nowIso = now.toISOString();
+        const burstCount = (dailyLog.intraday_alert_burst_count || 0) + 1;
+        store.updateDailyLog(userId, dailyLog.id, {
+          intraday_alert_last_sent_at: nowIso,
+          intraday_alert_burst_count: burstCount,
+          weather_alert_last_sent_at: nowIso,
+          weather_alert_retry_count: burstCount
+        });
+        console.log(`[Scheduler] Intraday Rain alert retry #${burstCount} sent for User #${userId} on ${todayIso}.`);
       }
       return;
     }

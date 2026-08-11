@@ -214,6 +214,7 @@ export async function initDatabase(): Promise<Database.Database> {
       intraday_alert_acknowledged INTEGER NOT NULL DEFAULT 0,
       intraday_alert_last_sent_at TEXT,
       intraday_alert_burst_count INTEGER NOT NULL DEFAULT 0,
+      last_rain_alert_hour INTEGER,
       calendar_sync_claimed_at TEXT,
       updated_at TEXT NOT NULL,
       UNIQUE(user_id, eval_date),
@@ -379,6 +380,9 @@ export async function initDatabase(): Promise<Database.Database> {
   }
   if (!currentDailyLogCols.some(c => c.name === 'intraday_alert_burst_count')) {
     dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN intraday_alert_burst_count INTEGER NOT NULL DEFAULT 0;");
+  }
+  if (!currentDailyLogCols.some(c => c.name === 'last_rain_alert_hour')) {
+    dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN last_rain_alert_hour INTEGER;");
   }
   // calendar_sync_claimed_at: lock optimista para evitar eventos duplicados en Google Calendar
   // si dos evaluaciones (Tier 1) llegan a solaparse en el tiempo (bug detectado en producción, ago 2026:
@@ -1556,6 +1560,7 @@ export class SQLiteStore {
       intraday_alert_acknowledged: Boolean(row.intraday_alert_acknowledged),
       intraday_alert_last_sent_at: row.intraday_alert_last_sent_at || null,
       intraday_alert_burst_count: Number(row.intraday_alert_burst_count || 0),
+      last_rain_alert_hour: row.last_rain_alert_hour != null ? Number(row.last_rain_alert_hour) : null,
       updated_at: String(row.updated_at)
     };
   }
@@ -1592,6 +1597,7 @@ export class SQLiteStore {
       intraday_alert_acknowledged: Boolean(row.intraday_alert_acknowledged),
       intraday_alert_last_sent_at: row.intraday_alert_last_sent_at || null,
       intraday_alert_burst_count: Number(row.intraday_alert_burst_count || 0),
+      last_rain_alert_hour: row.last_rain_alert_hour != null ? Number(row.last_rain_alert_hour) : null,
       updated_at: String(row.updated_at)
     };
   }
@@ -1628,6 +1634,7 @@ export class SQLiteStore {
       intraday_alert_acknowledged: Boolean(row.intraday_alert_acknowledged),
       intraday_alert_last_sent_at: row.intraday_alert_last_sent_at || null,
       intraday_alert_burst_count: Number(row.intraday_alert_burst_count || 0),
+      last_rain_alert_hour: row.last_rain_alert_hour != null ? Number(row.last_rain_alert_hour) : null,
       updated_at: String(row.updated_at)
     };
   }
@@ -1647,9 +1654,9 @@ export class SQLiteStore {
         telegram_notified, calendar_created, google_event_id, checkin_sent, checkin_resolved,
         weather_alert_sent, weather_alert_acknowledged, weather_alert_retry_count,
         weather_alert_last_sent_at, weather_alert_message, humidity_alert_sent,
-        intraday_alert_triggered, intraday_alert_acknowledged, intraday_alert_last_sent_at, intraday_alert_burst_count,
+        intraday_alert_triggered, intraday_alert_acknowledged, intraday_alert_last_sent_at, intraday_alert_burst_count, last_rain_alert_hour,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`
     ).run(
       userId,
       logData.eval_date,
@@ -1677,6 +1684,7 @@ export class SQLiteStore {
       logData.intraday_alert_acknowledged ? 1 : 0,
       logData.intraday_alert_last_sent_at || null,
       logData.intraday_alert_burst_count || 0,
+      logData.last_rain_alert_hour ?? null,
       nowIso
     );
 
@@ -1715,6 +1723,7 @@ export class SQLiteStore {
         intraday_alert_acknowledged = ?,
         intraday_alert_last_sent_at = ?,
         intraday_alert_burst_count = ?,
+        last_rain_alert_hour = ?,
         updated_at = ?
       WHERE id = ? AND user_id = ?;`
     ).run(
@@ -1742,6 +1751,7 @@ export class SQLiteStore {
       updated.intraday_alert_acknowledged ? 1 : 0,
       updated.intraday_alert_last_sent_at || null,
       updated.intraday_alert_burst_count || 0,
+      updated.last_rain_alert_hour ?? null,
       updated.updated_at,
       id,
       userId
@@ -1813,6 +1823,7 @@ export class SQLiteStore {
         intraday_alert_acknowledged = ?,
         intraday_alert_last_sent_at = ?,
         intraday_alert_burst_count = ?,
+        last_rain_alert_hour = ?,
         updated_at = ?
       WHERE id = ?;`
     ).run(
@@ -1838,6 +1849,7 @@ export class SQLiteStore {
       updated.intraday_alert_acknowledged ? 1 : 0,
       updated.intraday_alert_last_sent_at || null,
       updated.intraday_alert_burst_count || 0,
+      updated.last_rain_alert_hour ?? null,
       updated.updated_at,
       id
     );

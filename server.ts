@@ -43,14 +43,7 @@ if (process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
   });
 
   process.on('unhandledRejection', (reason) => {
-    console.error('[FATAL UNHANDLED REJECTION - TERMINATING PROCESS FOR CLEAN REBOOT]', reason);
-    try {
-      stopDaemon();
-      closeDatabase();
-    } catch (e) {
-      console.error('[SHUTDOWN ERROR]', e);
-    }
-    process.exit(1);
+    console.error('[UNHANDLED REJECTION]', reason);
   });
 }
 

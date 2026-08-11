@@ -279,10 +279,24 @@ export class TelegramBotService {
           console.warn(`[Telegram] Chat ID ${targetChatId} está deshabilitado/bloqueado (${errDetail}). Desvinculando automáticamente.`);
           try { store.unlinkTelegramByChatId(String(targetChatId).trim()); } catch (_) {}
         }
+        // Fallback automático: si falla la interpretación de Markdown, reintentar sin parse_mode (texto plano)
+        if (payload.parse_mode) {
+          console.warn(`[Telegram API Error] Method '${method}' failed with parse_mode='${payload.parse_mode}': ${errDetail}. Reintentando en texto plano sin parse_mode...`);
+          const plainPayload = { ...payload };
+          delete plainPayload.parse_mode;
+          return await this.sendRequest(method, plainPayload);
+        }
+
         console.error(`[Telegram API Error] Method '${method}' failed: ${errDetail}`);
         return false;
       }
     } catch (err) {
+      if (payload.parse_mode) {
+        console.warn(`[Telegram HTTP Fetch Error] Method '${method}' falló: ${err}. Reintentando en texto plano sin parse_mode...`);
+        const plainPayload = { ...payload };
+        delete plainPayload.parse_mode;
+        return await this.sendRequest(method, plainPayload);
+      }
       console.error(`[Telegram HTTP Fetch Error] Method '${method}' failed:`, err);
       return false;
     }
@@ -387,10 +401,11 @@ export class TelegramBotService {
   }
 
   async sendWeatherAlertBurst(dailyLogId: number, alertText: string): Promise<boolean> {
+    const cleanAlertText = (alertText || "").replace(/<!--[\s\S]*?-->/g, "").trim();
     const msg1 = "🚨 ⚠️ *¡ALERTA DE EMERGENCIA EN TALLER!*";
-    const msg2 = alertText.startsWith("🌧️") || alertText.startsWith("💨")
-      ? alertText
-      : `🌧️ *CAMBIO CLIMÁTICO IMPREVISTO:* ${alertText}`;
+    const msg2 = cleanAlertText.startsWith("🌧️") || cleanAlertText.startsWith("💨") || cleanAlertText.startsWith("🚨")
+      ? cleanAlertText
+      : `🌧️ *CAMBIO CLIMÁTICO IMPREVISTO:* ${cleanAlertText}`;
     const msg3 = "🛠️ *ACCIÓN REQUERIDA:* Cubre la madera expuesta, suspende aplicados de encolado/barniz y resguarda el taller.";
 
     const inlineKeyboard = [
@@ -418,7 +433,7 @@ export class TelegramBotService {
       reply_markup: { inline_keyboard: inlineKeyboard }
     });
 
-    return res1 && res2 && res3;
+    return res1 || res2 || res3;
   }
 
   async sendIntradayEmergencyAlertBurst(dailyLogId: number, alertText: string): Promise<boolean> {

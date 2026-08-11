@@ -229,6 +229,7 @@ export interface DailyLog {
   intraday_alert_acknowledged?: boolean;
   intraday_alert_last_sent_at?: string | null;
   intraday_alert_burst_count?: number;
+  last_rain_alert_hour?: number | null;
   updated_at: string;
 }
 
