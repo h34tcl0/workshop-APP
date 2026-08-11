@@ -197,10 +197,9 @@
                     }
                 }
 
-                const rx = 100;
-                const ry = 40;
-                const cx = 120;
-                const cy = 55;
+                const r = 115;
+                const cx = 160;
+                const cy = 145;
                 const totalHours = Math.max(1, end_limit - start_limit);
 
                 let countScheduled = 0;
@@ -243,10 +242,10 @@
                     let a1 = Math.PI - (i / totalHours) * Math.PI;
                     let a2 = Math.PI - ((i + 1) / totalHours) * Math.PI;
 
-                    let x1 = (cx + rx * Math.cos(a1)).toFixed(2);
-                    let y1 = (cy - ry * Math.sin(a1)).toFixed(2);
-                    let x2 = (cx + rx * Math.cos(a2)).toFixed(2);
-                    let y2 = (cy - ry * Math.sin(a2)).toFixed(2);
+                    let x1 = (cx + r * Math.cos(a1)).toFixed(2);
+                    let y1 = (cy - r * Math.sin(a1)).toFixed(2);
+                    let x2 = (cx + r * Math.cos(a2)).toFixed(2);
+                    let y2 = (cy - r * Math.sin(a2)).toFixed(2);
 
                     let color = 'var(--w-free)';
                     if (slotState === 'scheduled') color = 'var(--w-amber)';
@@ -256,34 +255,38 @@
                         h,
                         slotState,
                         color,
-                        d: `M ${x1} ${y1} A ${rx} ${ry} 0 0 1 ${x2} ${y2}`
+                        d: `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`
                     });
                 }
             %>
 
             <!-- ARCO METEOROLÓGICO Y VENTANA DE TRABAJO -->
             <div class="px-3 pt-1">
-                <svg class="arc block w-full max-w-[240px] sm:max-w-[260px] mx-auto overflow-visible" viewBox="0 0 240 68"
+                <svg class="arc block w-full max-w-[260px] sm:max-w-[280px] mx-auto overflow-visible" viewBox="0 0 320 170"
                      data-date="<%= date_iso %>"
                      data-shift-start="<%= start_limit %>"
                      data-shift-end="<%= end_limit %>">
                     <!-- Arc background track -->
-                    <path d="M 20 55 A 100 40 0 0 1 220 55" fill="none" stroke="var(--w-s2)" stroke-width="7" stroke-linecap="round"/>
+                    <path d="M 45 145 A 115 115 0 0 1 275 145" fill="none" stroke="var(--w-s2)" stroke-width="11" stroke-linecap="round"/>
 
                     <!-- Arc hourly 3-state segments -->
                     <% arcSlots.forEach(function(slot) { %>
-                        <path d="<%= slot.d %>" fill="none" stroke="<%= slot.color %>" stroke-width="5.5" stroke-linecap="butt" />
+                        <path d="<%= slot.d %>" fill="none" stroke="<%= slot.color %>" stroke-width="8" stroke-linecap="butt" />
                     <% }); %>
+
+                    <!-- Horas en los extremos del arco -->
+                    <text x="45" y="165" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-size="11" font-weight="700" fill="var(--w-t2)"><%= String(start_limit).padStart(2, '0') %>:00</text>
+                    <text x="275" y="165" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-size="11" font-weight="700" fill="var(--w-t2)"><%= String(end_limit).padStart(2, '0') %>:00</text>
 
                     <!-- Marker Dot para hora actual -->
                     <g class="sun-marker" style="display: none;">
-                        <circle class="sun-outer" cx="120" cy="15" r="10" fill="var(--w-amber)" opacity="0.3"/>
-                        <circle class="sun-inner" cx="120" cy="15" r="5" fill="var(--w-amber-hi)"/>
+                        <circle class="sun-outer" cx="160" cy="30" r="12" fill="var(--w-amber)" opacity="0.3"/>
+                        <circle class="sun-inner" cx="160" cy="30" r="6" fill="var(--w-amber-hi)"/>
                     </g>
                 </svg>
 
                 <!-- LEYENDA DEL ARCO (Sin emojis, usando círculos CSS) -->
-                <div class="flex items-center justify-center flex-wrap gap-x-3 gap-y-1 text-[10.5px] font-mono-jb text-[var(--w-t2)] mt-1 mb-2">
+                <div class="flex items-center justify-center flex-wrap gap-x-3 gap-y-1 text-[10.5px] font-mono-jb text-[var(--w-t2)] mt-1.5 mb-2.5">
                     <span class="inline-flex items-center gap-1.5">
                         <span class="w-2 h-2 rounded-full bg-[var(--w-amber)] shrink-0"></span>
                         <span>Agendado (<%= countScheduled %>h)</span>
@@ -296,13 +299,6 @@
                         <span class="w-2 h-2 rounded-full bg-[var(--w-blocked-hour)] shrink-0"></span>
                         <span>Bloqueado clima (<%= countBlocked %>h)</span>
                     </span>
-                </div>
-
-                <div class="win text-center mb-2.5">
-                    <div class="text-[9.5px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-0.5">VENTANA DE TRABAJO</div>
-                    <div class="font-mono-jb text-base sm:text-lg font-bold text-[var(--w-t1)]">
-                        <%= String(start_limit).padStart(2, '0') %>:00 — <%= String(end_limit).padStart(2, '0') %>:00
-                    </div>
                 </div>
             </div>
 

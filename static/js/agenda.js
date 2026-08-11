@@ -51,8 +51,8 @@ function updateArcSunMarkers() {
             const progress = (nowH - startH) / (endH - startH);
             const clampedProgress = Math.max(0, Math.min(1, progress));
             const angle = Math.PI - (clampedProgress * Math.PI);
-            const cx = (120 + 100 * Math.cos(angle)).toFixed(2);
-            const cy = (55 - 40 * Math.sin(angle)).toFixed(2);
+            const cx = (160 + 115 * Math.cos(angle)).toFixed(2);
+            const cy = (145 - 115 * Math.sin(angle)).toFixed(2);
 
             marker.style.display = 'block';
             const circles = marker.querySelectorAll('circle');
