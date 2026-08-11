@@ -184,39 +184,125 @@
                 <% } %>
             </div>
 
-            <!-- ARCO METEOROLÓGICO Y VENTANA DE TRABAJO -->
-            <svg class="arc block w-full max-w-[260px] sm:max-w-[280px] mx-auto mt-1" viewBox="0 0 320 170"
-                 data-date="<%= date_iso %>"
-                 data-window-start="<%= (is_viable && eval.window) ? eval.window.start_hour : '' %>"
-                 data-window-end="<%= (is_viable && eval.window) ? eval.window.end_hour : '' %>">
-                <defs>
-                    <linearGradient id="g-<%= date_iso %>" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0" stop-color="var(--w-temp)"/>
-                        <stop offset="0.5" stop-color="var(--w-amber-hi)"/>
-                        <stop offset="1" stop-color="var(--w-temp)"/>
-                    </linearGradient>
-                </defs>
-                <path d="M20 160 A140 140 0 0 1 300 160" fill="none" 
-                    stroke="<%= is_viable ? 'url(#g-' + date_iso + ')' : 'var(--w-sky)' %>" 
-                    stroke-width="3" stroke-linecap="round" opacity="<%= is_viable ? '1' : '0.35' %>"/>
-                <g stroke="var(--w-t2)" opacity="0.3">
-                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(-75 160 160)"/>
-                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(-50 160 160)"/>
-                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(-25 160 160)"/>
-                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(25 160 160)"/>
-                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(50 160 160)"/>
-                    <line x1="160" y1="30" x2="160" y2="38" transform="rotate(75 160 160)"/>
-                </g>
-                <g class="sun-marker" style="display: none;">
-                    <circle class="sun-outer" cx="160" cy="20" r="16" fill="var(--w-amber)" opacity="0.25"/>
-                    <circle class="sun-inner" cx="160" cy="20" r="8" fill="var(--w-amber-hi)"/>
-                </g>
-            </svg>
+            <!-- PREPARACIÓN DE AUDITORÍA HORARIA PARA EL ARCO -->
+            <%
+                let hourly_items = eval.hourly_audit;
+                if ((!hourly_items || hourly_items.length === 0) && eval.hourly_forecast && typeof getHourlyClimateAudit === 'function') {
+                    let rawForecasts = eval.hourly_forecast;
+                    if (typeof rawForecasts === 'string') {
+                        try { rawForecasts = JSON.parse(rawForecasts); } catch (e) { rawForecasts = []; }
+                    }
+                    if (Array.isArray(rawForecasts) && rawForecasts.length > 0) {
+                        hourly_items = getHourlyClimateAudit(rawForecasts, eval.window, eval.scheduled_tasks || [], app_settings);
+                    }
+                }
 
-            <div class="win text-center -mt-9 mb-2.5">
-                <div class="text-[9.5px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-0.5">VENTANA DE TRABAJO REAL</div>
-                <div class="font-mono-jb text-lg sm:text-xl font-bold <%= is_viable ? 'text-[var(--w-amber-hi)]' : 'text-[var(--w-sky)]' %>">
-                    <%= is_viable ? (eval.window.start_time + ' — ' + eval.window.end_time) : '00:00 — 00:00' %>
+                const rx = 100;
+                const ry = 40;
+                const cx = 120;
+                const cy = 55;
+                const totalHours = Math.max(1, end_limit - start_limit);
+
+                let countScheduled = 0;
+                let countFree = 0;
+                let countBlocked = 0;
+
+                let arcSlots = [];
+                for (let i = 0; i < totalHours; i++) {
+                    let h = start_limit + i;
+
+                    let item = null;
+                    if (hourly_items && hourly_items.length > 0) {
+                        item = hourly_items.find(x => (x.forecast ? x.forecast.hour : x.hour) === h);
+                    }
+                    let f = item ? (item.forecast || item) : null;
+
+                    let isRain = f ? (f.precipitation_mm >= app_settings.min_rain_precipitation_mm) : false;
+                    let isHumid = f ? (f.relative_humidity > app_settings.max_humidity_percent) : false;
+                    let isClimateBlocked = isRain || isHumid;
+
+                    let isScheduled = false;
+                    if (item && (item.is_active_work || item.is_scheduled)) {
+                        isScheduled = true;
+                    } else if (is_viable && eval.window && h >= eval.window.start_hour && h < eval.window.end_hour) {
+                        isScheduled = true;
+                    }
+
+                    let slotState = 'free';
+                    if (isScheduled) {
+                        slotState = 'scheduled';
+                        countScheduled++;
+                    } else if (isClimateBlocked) {
+                        slotState = 'blocked';
+                        countBlocked++;
+                    } else {
+                        slotState = 'free';
+                        countFree++;
+                    }
+
+                    let a1 = Math.PI - (i / totalHours) * Math.PI;
+                    let a2 = Math.PI - ((i + 1) / totalHours) * Math.PI;
+
+                    let x1 = (cx + rx * Math.cos(a1)).toFixed(2);
+                    let y1 = (cy - ry * Math.sin(a1)).toFixed(2);
+                    let x2 = (cx + rx * Math.cos(a2)).toFixed(2);
+                    let y2 = (cy - ry * Math.sin(a2)).toFixed(2);
+
+                    let color = 'var(--w-free)';
+                    if (slotState === 'scheduled') color = 'var(--w-amber)';
+                    else if (slotState === 'blocked') color = 'var(--w-blocked-hour)';
+
+                    arcSlots.push({
+                        h,
+                        slotState,
+                        color,
+                        d: `M ${x1} ${y1} A ${rx} ${ry} 0 0 1 ${x2} ${y2}`
+                    });
+                }
+            %>
+
+            <!-- ARCO METEOROLÓGICO Y VENTANA DE TRABAJO -->
+            <div class="px-3 pt-1">
+                <svg class="arc block w-full max-w-[240px] sm:max-w-[260px] mx-auto overflow-visible" viewBox="0 0 240 68"
+                     data-date="<%= date_iso %>"
+                     data-shift-start="<%= start_limit %>"
+                     data-shift-end="<%= end_limit %>">
+                    <!-- Arc background track -->
+                    <path d="M 20 55 A 100 40 0 0 1 220 55" fill="none" stroke="var(--w-s2)" stroke-width="7" stroke-linecap="round"/>
+
+                    <!-- Arc hourly 3-state segments -->
+                    <% arcSlots.forEach(function(slot) { %>
+                        <path d="<%= slot.d %>" fill="none" stroke="<%= slot.color %>" stroke-width="5.5" stroke-linecap="butt" />
+                    <% }); %>
+
+                    <!-- Marker Dot para hora actual -->
+                    <g class="sun-marker" style="display: none;">
+                        <circle class="sun-outer" cx="120" cy="15" r="10" fill="var(--w-amber)" opacity="0.3"/>
+                        <circle class="sun-inner" cx="120" cy="15" r="5" fill="var(--w-amber-hi)"/>
+                    </g>
+                </svg>
+
+                <!-- LEYENDA DEL ARCO (Sin emojis, usando círculos CSS) -->
+                <div class="flex items-center justify-center flex-wrap gap-x-3 gap-y-1 text-[10.5px] font-mono-jb text-[var(--w-t2)] mt-1 mb-2">
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-[var(--w-amber)] shrink-0"></span>
+                        <span>Agendado (<%= countScheduled %>h)</span>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-[var(--w-free)] shrink-0"></span>
+                        <span>Libre (<%= countFree %>h)</span>
+                    </span>
+                    <span class="inline-flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-[var(--w-blocked-hour)] shrink-0"></span>
+                        <span>Bloqueado clima (<%= countBlocked %>h)</span>
+                    </span>
+                </div>
+
+                <div class="win text-center mb-2.5">
+                    <div class="text-[9.5px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-0.5">VENTANA DE TRABAJO</div>
+                    <div class="font-mono-jb text-base sm:text-lg font-bold text-[var(--w-t1)]">
+                        <%= String(start_limit).padStart(2, '0') %>:00 — <%= String(end_limit).padStart(2, '0') %>:00
+                    </div>
                 </div>
             </div>
 
@@ -289,19 +375,6 @@
             <% } %>
 
             <!-- PANEL DESPLEGABLE DE CLIMA 24H (Se activa al hacer clic en el ícono de clima o anillo) -->
-            <%
-                let hourly_items = eval.hourly_audit;
-                if ((!hourly_items || hourly_items.length === 0) && eval.hourly_forecast && typeof getHourlyClimateAudit === 'function') {
-                    let rawForecasts = eval.hourly_forecast;
-                    if (typeof rawForecasts === 'string') {
-                        try { rawForecasts = JSON.parse(rawForecasts); } catch (e) { rawForecasts = []; }
-                    }
-                    if (Array.isArray(rawForecasts) && rawForecasts.length > 0) {
-                        hourly_items = getHourlyClimateAudit(rawForecasts, eval.window, eval.scheduled_tasks || [], app_settings);
-                    }
-                }
-            %>
-
             <% if (hourly_items && hourly_items.length > 0) { %>
                 <% const hourly_panel_id = 'hourly-panel-' + date_iso; %>
                 <div id="<%= hourly_panel_id %>" class="hidden border-t border-[var(--w-bd)] bg-[var(--w-s2)]/90 p-3 sm:p-4 text-xs shadow-inner rounded-b-2xl">

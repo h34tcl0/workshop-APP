@@ -37,22 +37,22 @@ function updateArcSunMarkers() {
 
     arcs.forEach(svg => {
         const dateIso = svg.dataset.date;
-        const startH = parseFloat(svg.dataset.windowStart);
-        const endH = parseFloat(svg.dataset.windowEnd);
+        const startH = parseFloat(svg.dataset.shiftStart || svg.dataset.windowStart);
+        const endH = parseFloat(svg.dataset.shiftEnd || svg.dataset.windowEnd);
         const marker = svg.querySelector('.sun-marker');
 
         if (!marker) return;
 
         const isToday = (dateIso === todayIso);
-        const hasWindow = !isNaN(startH) && !isNaN(endH) && endH > startH;
-        const inWindow = hasWindow && nowH >= startH && nowH <= endH;
+        const hasShift = !isNaN(startH) && !isNaN(endH) && endH > startH;
+        const inShift = hasShift && nowH >= startH && nowH <= endH;
 
-        if (isToday && inWindow) {
+        if (isToday && inShift) {
             const progress = (nowH - startH) / (endH - startH);
             const clampedProgress = Math.max(0, Math.min(1, progress));
             const angle = Math.PI - (clampedProgress * Math.PI);
-            const cx = (160 + 140 * Math.cos(angle)).toFixed(2);
-            const cy = (160 - 140 * Math.sin(angle)).toFixed(2);
+            const cx = (120 + 100 * Math.cos(angle)).toFixed(2);
+            const cy = (55 - 40 * Math.sin(angle)).toFixed(2);
 
             marker.style.display = 'block';
             const circles = marker.querySelectorAll('circle');
