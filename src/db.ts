@@ -8,7 +8,6 @@ import {
   Task,
   TaskCategory,
   TaskStatus,
-  FavoriteTask,
   DayOverride,
   ForcedTask,
   DailyLog,
@@ -110,16 +109,6 @@ export async function initDatabase(): Promise<Database.Database> {
       progress_percentage INTEGER NOT NULL DEFAULT 0,
       order_num INTEGER NOT NULL DEFAULT 1,
       completed_at TEXT,
-      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS favorites (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL,
-      title TEXT NOT NULL,
-      category TEXT NOT NULL,
-      estimated_hours REAL NOT NULL DEFAULT 1.0,
-      curing_hours REAL NOT NULL DEFAULT 0.0,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
@@ -286,7 +275,7 @@ export async function initDatabase(): Promise<Database.Database> {
 
   // Migration logic for existing tables missing user_id
   const tablesToMigrate = [
-    'projects', 'tasks', 'favorites', 'forced_tasks', 'project_templates', 'project_template_items', 'materials', 'calculator_offsets'
+    'projects', 'tasks', 'forced_tasks', 'project_templates', 'project_template_items', 'materials', 'calculator_offsets'
   ];
 
   for (const table of tablesToMigrate) {
@@ -1348,10 +1337,6 @@ export class SQLiteStore {
     return rows.map(r => this.rowToTask(r));
   }
 
-  getCompletedRecently(userId: number): Task[] {
-    return this.getRecentCompletedHistory(userId);
-  }
-
   // --- TASK HISTORY / AUTOCOMPLETE ---
   getTaskHistory(userId: number): Array<{ title: string; category: TaskCategory; estimated_hours: number; curing_hours: number }> {
     const rows = this.db.prepare(`
@@ -1369,41 +1354,6 @@ export class SQLiteStore {
       estimated_hours: Number(row.estimated_hours),
       curing_hours: Number(row.curing_hours)
     }));
-  }
-
-  // --- FAVORITES (DEPRECATED / COMPAT) ---
-  getFavoriteTasks(userId: number): FavoriteTask[] {
-    const rows = this.db.prepare("SELECT * FROM favorites WHERE user_id = ? ORDER BY id ASC").all(userId) as any[];
-    return rows.map(row => ({
-      id: Number(row.id),
-      title: String(row.title),
-      category: row.category as TaskCategory,
-      estimated_hours: Number(row.estimated_hours),
-      curing_hours: Number(row.curing_hours)
-    }));
-  }
-
-  addFavoriteTask(userId: number, data: Partial<FavoriteTask>): FavoriteTask {
-    const title = data.title || "Favorito";
-    const cat = data.category || TaskCategory.CARPENTRY;
-    const est = data.estimated_hours || 1.0;
-    const cur = data.curing_hours || 0.0;
-
-    const info = this.db.prepare(
-      "INSERT INTO favorites (user_id, title, category, estimated_hours, curing_hours) VALUES (?, ?, ?, ?, ?);"
-    ).run(userId, title, cat, est, cur);
-
-    const favs = this.getFavoriteTasks(userId);
-    return favs.find(f => f.id === Number(info.lastInsertRowid)) || favs[favs.length - 1];
-  }
-
-  deleteFavoriteTask(userId: number, id: number): boolean {
-    const res = this.db.prepare("DELETE FROM favorites WHERE id = ? AND user_id = ?").run(id, userId);
-    return res.changes > 0;
-  }
-
-  deleteFavorite(userId: number, id: number): boolean {
-    return this.deleteFavoriteTask(userId, id);
   }
 
   // --- DAY OVERRIDES ---
@@ -2280,10 +2230,6 @@ export class SQLiteStore {
     }
 
     return imported;
-  }
-
-  getPendingMaterialsForActiveProjects(userId: number): { project_name: string; materials: Material[] }[] {
-    return this.getPendingMaterialsGroupedByProject(userId);
   }
 
   getPendingMaterialsGroupedByProject(userId: number): { project_name: string; materials: Material[] }[] {

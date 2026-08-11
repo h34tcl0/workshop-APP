@@ -375,11 +375,6 @@ export async function runMorningEvaluation(
       if (isNewLog) {
         logData.checkin_sent = false;
         logData.checkin_resolved = false;
-        logData.weather_alert_sent = false;
-        logData.weather_alert_acknowledged = false;
-        logData.weather_alert_retry_count = 0;
-        logData.weather_alert_last_sent_at = null;
-        logData.weather_alert_message = null;
         logData.telegram_notified = false;
         logData.calendar_created = false;
         logData.google_event_id = null;
@@ -563,12 +558,8 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
 
     const locPrefix = `📍 *Taller (${appSettings.latitude.toFixed(2)}, ${appSettings.longitude.toFixed(2)}):* `;
 
-    // Extraer hora de lluvia previamente alertada de la columna dedicada (o fallback de mensaje legado)
-    let previousRainHour: number | null = dailyLog.last_rain_alert_hour ?? null;
-    if (previousRainHour == null && dailyLog.weather_alert_message && dailyLog.weather_alert_message.includes("Lluvia_Hour:")) {
-      const match = dailyLog.weather_alert_message.match(/Lluvia_Hour:(\d+)/);
-      if (match) previousRainHour = parseInt(match[1], 10);
-    }
+    // Extraer hora de lluvia previamente alertada de la columna dedicada
+    const previousRainHour: number | null = dailyLog.last_rain_alert_hour ?? null;
 
     const rainHour = rainForecast ? rainForecast.hour : null;
     const isRainAdvanced = rainHour != null && previousRainHour != null && rainHour < previousRainHour;
@@ -593,10 +584,6 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
         intraday_alert_acknowledged: false, // Forzar nueva confirmación si es nueva o si la lluvia se adelantó
         intraday_alert_last_sent_at: nowIso,
         intraday_alert_burst_count: 1,
-        weather_alert_sent: true,
-        weather_alert_message: detailsText,
-        weather_alert_last_sent_at: nowIso,
-        weather_alert_retry_count: 1,
         last_rain_alert_hour: rainHour
       });
       console.log(`[Scheduler] Intraday Rain Emergency Alert triggered for User #${userId} on ${todayIso}: ${detailsText}`);
@@ -605,22 +592,25 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
 
     // B) Si hay alerta de lluvia activa pero NO ha sido confirmada -> Ráfaga de reintento cada 5 min
     if (dailyLog.intraday_alert_triggered && !dailyLog.intraday_alert_acknowledged) {
-      const lastSentIso = dailyLog.intraday_alert_last_sent_at || dailyLog.weather_alert_last_sent_at;
+      const lastSentIso = dailyLog.intraday_alert_last_sent_at;
       const lastSentMs = lastSentIso ? new Date(lastSentIso).getTime() : 0;
       const elapsedMs = now.getTime() - lastSentMs;
       const FIVE_MIN_MS = 5 * 60 * 1000;
 
       if (elapsedMs >= FIVE_MIN_MS) {
-        const alertMsg = dailyLog.weather_alert_message || "Cambio climático imprevisto detectado en taller.";
+        let alertMsg = "Cambio climático imprevisto detectado en taller.";
+        if (rainForecast && rainHour != null) {
+          const criticalTimeStr = `${String(rainHour).padStart(2, "0")}:00`;
+          const precipMm = rainForecast.precipitation_mm || 0;
+          alertMsg = `🌧️ *¡ALERTA DE LLUVIA EN TALLER!*\n${locPrefix}Se pronostica lluvia a las ${criticalTimeStr} hrs (Precipitación: ${precipMm.toFixed(1)} mm).`;
+        }
         await telegramSvc.sendIntradayEmergencyAlertBurst(dailyLog.id, alertMsg);
 
         const nowIso = now.toISOString();
         const burstCount = (dailyLog.intraday_alert_burst_count || 0) + 1;
         store.updateDailyLog(userId, dailyLog.id, {
           intraday_alert_last_sent_at: nowIso,
-          intraday_alert_burst_count: burstCount,
-          weather_alert_last_sent_at: nowIso,
-          weather_alert_retry_count: burstCount
+          intraday_alert_burst_count: burstCount
         });
         console.log(`[Scheduler] Intraday Rain alert retry #${burstCount} sent for User #${userId} on ${todayIso}.`);
       }

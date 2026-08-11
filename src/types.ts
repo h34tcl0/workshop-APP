@@ -73,14 +73,6 @@ export interface Task {
   is_active?: boolean;
 }
 
-export interface FavoriteTask {
-  id: number;
-  title: string;
-  category: TaskCategory;
-  estimated_hours: number;
-  curing_hours: number;
-}
-
 export interface DayOverride {
   id: number;
   override_date: string; // YYYY-MM-DD

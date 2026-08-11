@@ -349,7 +349,7 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
       });
     }
 
-    const completedHistory = store.getCompletedRecently(userId);
+    const completedHistory = store.getRecentCompletedHistory(userId);
     const taskHistory = store.getTaskHistory(userId);
     const projectTemplates = store.getProjectTemplates(userId);
     const localTimeInfo = getWorkshopLocalTime(new Date(), appSettings.timezone);
@@ -382,26 +382,6 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     console.error('Error rendering dashboard:', err);
     res.status(500).send('Internal Server Error');
   }
-});
-
-// POST /projects/active - Switch active project
-app.post('/projects/active', (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.id;
-  const { project_id } = req.body;
-  if (project_id) {
-    const targetProjId = parseInt(project_id, 10);
-    if (isNaN(targetProjId) || !store.getProjectById(userId, targetProjId)) {
-      if (req.xhr || req.headers.accept?.includes('application/json')) {
-        return res.status(404).json({ error: 'Proyecto no encontrado' });
-      }
-      return res.status(404).send('Proyecto no encontrado');
-    }
-    store.setActiveProject(userId, targetProjId);
-  }
-  if (req.xhr || req.headers.accept?.includes('application/json')) {
-    return res.json({ success: true });
-  }
-  res.redirect(303, '/');
 });
 
 // POST /projects/add - Create a new project
@@ -733,11 +713,6 @@ app.post('/tasks/import', (req: AuthenticatedRequest, res) => {
 
 // Task history / suggestions endpoint
 app.get('/tasks/history', (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.id;
-  const history = store.getTaskHistory(userId);
-  res.json(history);
-});
-app.get('/tasks/suggestions', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
   const history = store.getTaskHistory(userId);
   res.json(history);
@@ -1381,9 +1356,6 @@ const handleEvaluationRequest = async (req: AuthenticatedRequest, res: any) => {
 };
 
 app.post('/evaluation/force_run', handleEvaluationRequest);
-app.post('/evaluation/run', handleEvaluationRequest);
-app.post('/evaluar', handleEvaluationRequest);
-app.post('/api/evaluate', handleEvaluationRequest);
 
 app.post('/evaluation/force_checkin', async (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
@@ -1645,49 +1617,6 @@ app.post('/settings/telegram/unlink', (req: AuthenticatedRequest, res) => {
   } catch (err: any) {
     console.error('Error desvinculando Telegram:', err);
     res.status(500).json({ error: 'Error interno al desvincular Telegram' });
-  }
-});
-
-// Google Calendar Sync route
-app.post('/calendar/create', async (req: AuthenticatedRequest, res) => {
-  const userId = req.user!.id;
-  const { eval_date, start_time, end_time } = req.body;
-  const settings = store.getAppSettings(userId);
-
-  if (!settings.google_calendar_enabled || !settings.google_calendar_id || !settings.google_calendar_id.trim()) {
-    return res.status(400).json({
-      status: 'error',
-      message: 'Google Calendar not connected for this user account'
-    });
-  }
-
-  const userTz = (settings as any)?.timezone || process.env.TIMEZONE || 'America/Santiago';
-  const dateIso = eval_date || getLocalDateIso(new Date(), userTz);
-  const dailyLog = store.getDailyLogByDate(userId, dateIso);
-  let taskIds: number[] = [];
-  if (dailyLog && dailyLog.scheduled_task_ids) {
-    try { taskIds = JSON.parse(dailyLog.scheduled_task_ids); } catch (_) {}
-  }
-  const tasks = taskIds.map(tid => store.getTask(userId, tid)).filter((t): t is Task => t != null);
-
-  const calResult = await calendarService.createWorkshopEvent(
-    userId,
-    dateIso,
-    start_time || '09:00',
-    end_time || '18:00',
-    tasks.map(t => ({ title: t.title, estimated_hours: t.estimated_hours }))
-  );
-
-  if (calResult.success) {
-    if (dailyLog) {
-      store.updateDailyLog(userId, dailyLog.id, {
-        calendar_created: true,
-        google_event_id: calResult.eventId || null
-      });
-    }
-    return res.json({ status: 'success', message: 'Evento de Google Calendar creado con éxito.', eventId: calResult.eventId });
-  } else {
-    return res.status(500).json({ status: 'error', message: calResult.error || 'Google Calendar not connected for this user account' });
   }
 });
 

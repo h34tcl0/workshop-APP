@@ -242,13 +242,10 @@ function quickAddTaskToProject(projectId) {
 
 // ── Proyectos (colapsable) ──
 function toggleProjects() {
-    const panel = document.getElementById('projects-panel') || document.getElementById('templates-panel');
-    const chevron = document.getElementById('projects-chevron') || document.getElementById('templates-chevron');
+    const panel = document.getElementById('projects-panel');
+    const chevron = document.getElementById('projects-chevron');
     if (panel) panel.classList.toggle('hidden');
     if (chevron) chevron.classList.toggle('rotate-180');
-}
-function toggleTemplates() {
-    toggleProjects();
 }
 
 // ── Creación Rápida de Proyectos en Formulario de Tarea ──
@@ -823,7 +820,6 @@ Object.assign(window, {
     toggleTaskInlineEdit,
     quickAddTaskToProject,
     toggleProjects,
-    toggleTemplates,
     handleProjectSelectChange,
     cancelInlineProject,
     createInlineProject,

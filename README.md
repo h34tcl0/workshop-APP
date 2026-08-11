@@ -430,7 +430,6 @@ A continuación se detallan todos los endpoints expuestos en `server.ts`, verifi
 
 ### 📁 Proyectos
 - `GET /`: Renderiza el Dashboard principal de la aplicación (incluye las vistas de Planificación, Taller e Inventario).
-- `POST /projects/active`: Define el proyecto activo para la sesión del usuario.
 - `POST /projects/add`: Crea un nuevo proyecto en el taller.
 - `POST /projects/:id/toggle`: Alterna el estado de activación de un proyecto (`is_active`).
 - `POST /projects/:id/update`: Actualiza el nombre y la descripción de un proyecto.
@@ -447,7 +446,6 @@ A continuación se detallan todos los endpoints expuestos en `server.ts`, verifi
 - `POST /tasks/reorder`: Reordena secuencialmente las tareas mediante un arreglo JSON con la lista de IDs.
 - `POST /tasks/import`: Importación masiva de tareas en formato JSON.
 - `GET /tasks/history`: Retorna el historial de títulos de tareas previas para autocompletado en el frontend.
-- `GET /tasks/suggestions`: Proporciona sugerencias de tareas comunes agrupadas por categoría/proyecto.
 
 ### 📑 Plantillas de Proyecto
 - `POST /project-templates/save`: Guarda las tareas del proyecto activo como una plantilla reutilizable.
@@ -484,11 +482,10 @@ A continuación se detallan todos los endpoints expuestos en `server.ts`, verifi
 - `POST /day-override/forced-task/:forced_id/delete`: Elimina una tarea asignada manualmente a una fecha.
 
 ### ☀️ Evaluación Climática, Check-in y Calendario
-- `POST /evaluation/run`, `POST /evaluation/force_run`, `POST /evaluar`, `POST /api/evaluate`: Endpoints alias que ejecutan el controlador `handleEvaluationRequest` para evaluar el horizonte multi-día.
+- `POST /evaluation/force_run`: Ejecuta el controlador `handleEvaluationRequest` para reevaluar el horizonte multi-día.
 - `POST /evaluation/force_checkin`: Fuerza la emisión del prompt de check-in nocturno por Telegram (exclusivo para pruebas/desarrollo).
 - `POST /api/checkin/end_shift`: Endpoint disparado por el botón "Término de la Jornada". Verifica disponibilidad de Telegram o indica a la UI que despliegue el modal web de fallback.
 - `POST /api/checkin/resolve`: Procesa la resolución de tareas del check-in (completar, postergar) y re-evalúa silenciosamente el horizonte.
-- `POST /calendar/create`: Dispara la sincronización espejo hacia Google Calendar API v3.
 
 ### ⚙️ Configuración del Sistema y Telegram
 - `GET /api/timezone`: Retorna la zona horaria IANA calculada según las coordenadas del taller (`tz-lookup`).

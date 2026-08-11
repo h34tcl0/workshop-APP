@@ -677,8 +677,7 @@ export class TelegramBotService {
 
         if (dailyLog && dailyLog.user_id === userId) {
           store.updateDailyLog(userId, dailyLog.id, {
-            intraday_alert_acknowledged: true,
-            weather_alert_acknowledged: true
+            intraday_alert_acknowledged: true
           });
         }
 

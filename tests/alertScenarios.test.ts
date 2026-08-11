@@ -139,12 +139,13 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
     const forecasts = buildMockForecasts(17, null);
     vi.spyOn(weatherSvc, "getHourlyForecast").mockResolvedValue(forecasts);
 
+    const burstSpy = vi.spyOn(TelegramBotService.prototype, "sendIntradayEmergencyAlertBurst");
     await processWeatherAlertForUser(userId, mockNow);
 
     log = store.getDailyLogByDate(userId, todayIso)!;
     expect(log.intraday_alert_triggered).toBe(true);
     expect(log.intraday_alert_acknowledged).toBe(false); // RE-ACTIVÓ LA CONFIRMACIÓN
-    expect(log.weather_alert_message).toContain("¡ALERTA URGENTE DE LLUVIA ADELANTADA!");
+    expect(burstSpy).toHaveBeenCalledWith(log.id, expect.stringContaining("¡ALERTA URGENTE DE LLUVIA ADELANTADA!"));
     expect(log.last_rain_alert_hour).toBe(17);
     expect(log.intraday_alert_burst_count).toBe(1);
   });
