@@ -228,18 +228,9 @@
 
                 <form id="eval-form" action="/evaluation/force_run" method="post"
                     class="flex items-center gap-1 bg-surface2 border border-hairline rounded-xl p-1 sm:px-2 sm:py-1.5 shrink-0 max-w-full">
-                    <span class="text-[11px] text-ink3 font-medium hidden lg:inline whitespace-nowrap">Escenario</span>
-                    <select name="scenario" id="scenario"
-                        class="bg-surface text-ink border border-hairline rounded-lg px-1 sm:px-2 py-1 text-[11px] sm:text-xs focus:outline-none cursor-pointer max-w-[80px] xs:max-w-[100px] sm:max-w-none truncate">
-                        <option value="" <%= current_scenario === 'real' || !current_scenario ? 'selected' : '' %>>Clima real</option>
-                        <option value="sunny" <%= current_scenario === 'sunny' ? 'selected' : '' %>>Soleado</option>
-                        <option value="rainy" <%= current_scenario === 'rainy' ? 'selected' : '' %>>Lluvia</option>
-                        <option value="humid" <%= current_scenario === 'humid' ? 'selected' : '' %>>Humedad</option>
-                        <option value="variable" <%= current_scenario === 'variable' ? 'selected' : '' %>>Variable</option>
-                        <option value="intermittent_rain" <%= current_scenario === 'intermittent_rain' ? 'selected' : '' %>>Lluvia interm.</option>
-                    </select>
                     <button type="submit" id="eval-btn"
-                        class="bg-brass hover:bg-brassdim text-canvas text-[11px] sm:text-xs font-semibold px-2 py-1 rounded-lg transition-colors whitespace-nowrap">
+                        class="bg-brass hover:bg-brassdim text-canvas text-[11px] sm:text-xs font-semibold px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
+                        title="Ejecutar re-evaluación del clima y agenda">
                         Evaluar
                     </button>
                 </form>
@@ -677,7 +668,6 @@
             if (evalForm) {
                 evalForm.addEventListener('submit', function (e) {
                     e.preventDefault();
-                    const scenarioVal = document.getElementById('scenario')?.value || '';
                     
                     if (evalBtn) {
                         evalBtn.disabled = true;
@@ -695,7 +685,7 @@
                             'Content-Type': 'application/json',
                             'Accept': 'application/json'
                         },
-                        body: JSON.stringify({ scenario: scenarioVal })
+                        body: JSON.stringify({})
                     })
                     .then(res => res.json())
                     .then(data => {

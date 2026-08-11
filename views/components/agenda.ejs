@@ -118,7 +118,7 @@
                 </button>
 
                 <!-- Date in Fraunces Serif -->
-                <span class="font-serif-fraunces text-2xl sm:text-3xl font-semibold text-[var(--w-t1)] tracking-tight truncate min-w-0">
+                <span class="font-serif-fraunces text-lg sm:text-xl md:text-2xl font-semibold text-[var(--w-t1)] tracking-tight whitespace-nowrap shrink-0">
                     <%= date_str %>
                 </span>
 
@@ -157,7 +157,7 @@
                         </span>
                     <% } else if (is_amber) { %>
                         <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-warn)]/15 text-[var(--w-warn)] border border-[var(--w-warn)]/30 whitespace-nowrap" title="<%= badge_tooltip %>">
-                            Clima bueno, sin plan
+                            Disponible
                         </span>
                     <% } else if (is_manual_block) { %>
                         <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-s2)] text-[var(--w-t2)] border border-[var(--w-bd)] whitespace-nowrap" title="<%= badge_tooltip %>">
