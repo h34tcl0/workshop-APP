@@ -34,7 +34,7 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
       operational_start_hour: 8,
       operational_end_hour: 19,
       max_humidity_percent: 80.0,
-      min_rain_precipitation_mm: 0.2,
+      min_rain_precipitation_mm: 0.1,
       latitude: -32.99,
       longitude: -71.27,
       telegram_chat_id: "12345678"
@@ -128,7 +128,8 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
     store.updateDailyLog(userId, store.getDailyLogByDate(userId, todayIso)!.id, {
       intraday_alert_triggered: true,
       intraday_alert_acknowledged: true, // Operario dio confirmación previa
-      weather_alert_message: "Alerta previa de lluvia a las 18:00 hrs\n<!-- Lluvia_Hour:18 -->"
+      last_rain_alert_hour: 18,
+      weather_alert_message: "Alerta previa de lluvia a las 18:00 hrs"
     });
 
     let log = store.getDailyLogByDate(userId, todayIso)!;
@@ -144,7 +145,7 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
     expect(log.intraday_alert_triggered).toBe(true);
     expect(log.intraday_alert_acknowledged).toBe(false); // RE-ACTIVÓ LA CONFIRMACIÓN
     expect(log.weather_alert_message).toContain("¡ALERTA URGENTE DE LLUVIA ADELANTADA!");
-    expect(log.weather_alert_message).toContain("Lluvia_Hour:17");
+    expect(log.last_rain_alert_hour).toBe(17);
     expect(log.intraday_alert_burst_count).toBe(1);
   });
 });

@@ -19,7 +19,7 @@ import { getSpanishDate, formatHour, formatHourCrossDay } from "./dateUtils.js";
 
 const MIN_RAIN_PROBABILITY_PERCENT = 30;
 
-export function isRainyForecast(wf: HourlyForecast, minRainMm = 0.2): boolean {
+export function isRainyForecast(wf: HourlyForecast, minRainMm = 0.1): boolean {
   return wf.precipitation_mm >= minRainMm;
 }
 
@@ -104,7 +104,7 @@ export function extractWorkdayWeatherSummary(
   forecasts: HourlyForecast[],
   startHour: number,
   endHour: number,
-  minRainMm = 0.2
+  minRainMm = 0.1
 ): WeatherSummary {
   let workForecasts = forecasts.filter(f => f.hour >= startHour && f.hour < endHour);
   if (workForecasts.length === 0) workForecasts = forecasts;

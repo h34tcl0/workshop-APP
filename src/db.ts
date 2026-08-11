@@ -135,7 +135,7 @@ export async function initDatabase(): Promise<Database.Database> {
       teardown_hours REAL NOT NULL DEFAULT 1.0,
       min_work_hours REAL NOT NULL DEFAULT 1.0,
       min_work_hours_unless_final REAL NOT NULL DEFAULT 4.0,
-      min_rain_precipitation_mm REAL NOT NULL DEFAULT 0.2,
+      min_rain_precipitation_mm REAL NOT NULL DEFAULT 0.1,
       checkin_hour INTEGER NOT NULL DEFAULT 19,
       morning_eval_lead_hours INTEGER NOT NULL DEFAULT 1,
       exclude_saturdays INTEGER NOT NULL DEFAULT 1,
@@ -317,7 +317,7 @@ export async function initDatabase(): Promise<Database.Database> {
         teardown_hours REAL NOT NULL DEFAULT 1.0,
         min_work_hours REAL NOT NULL DEFAULT 1.0,
         min_work_hours_unless_final REAL NOT NULL DEFAULT 4.0,
-        min_rain_precipitation_mm REAL NOT NULL DEFAULT 0.2,
+        min_rain_precipitation_mm REAL NOT NULL DEFAULT 0.1,
         checkin_hour INTEGER NOT NULL DEFAULT 19,
         morning_eval_lead_hours INTEGER NOT NULL DEFAULT 1,
         exclude_saturdays INTEGER NOT NULL DEFAULT 1,
@@ -361,6 +361,9 @@ export async function initDatabase(): Promise<Database.Database> {
   if (!currentAppSettingsCols.some(c => c.name === 'timezone')) {
     dbInstance.exec("ALTER TABLE app_settings ADD COLUMN timezone TEXT;");
   }
+
+  // Update existing app_settings with old default 0.2 to new default 0.1
+  dbInstance.exec("UPDATE app_settings SET min_rain_precipitation_mm = 0.1 WHERE min_rain_precipitation_mm = 0.2;");
 
   const currentDailyLogCols = dbInstance.prepare("PRAGMA table_info(daily_logs)").all() as any[];
   if (!currentDailyLogCols.some(c => c.name === 'google_event_id')) {
@@ -611,7 +614,7 @@ Standard API access is restricted until password is updated.
         min_work_hours_unless_final, min_rain_precipitation_mm, checkin_hour,
         morning_eval_lead_hours, exclude_saturdays, exclude_sundays, exclude_holidays,
         require_curing_before_cutoff
-      ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.2, 19, 1, 1, 1, 1, 1);
+      ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.1, 19, 1, 1, 1, 1, 1);
     `).run(adminUserId);
   }
 
@@ -742,7 +745,7 @@ export class SQLiteStore {
         min_work_hours_unless_final, min_rain_precipitation_mm, checkin_hour,
         morning_eval_lead_hours, exclude_saturdays, exclude_sundays, exclude_holidays,
         require_curing_before_cutoff, telegram_chat_id, google_calendar_id, google_calendar_enabled
-      ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.2, 19, 1, 1, 1, 1, 1, NULL, ?, ?)
+      ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.1, 19, 1, 1, 1, 1, 1, NULL, ?, ?)
       ON CONFLICT(user_id) DO NOTHING;
     `).run(userId, defaultCalId, defaultCalEnabled);
 

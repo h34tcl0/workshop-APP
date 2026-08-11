@@ -424,7 +424,7 @@
                                     rowBg = 'bg-[var(--w-sky)]/10 border-[var(--w-sky)]/30 text-[var(--w-t1)]';
                                 }
                             %>
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs transition-colors min-w-0 <%= rowBg %>">
+                            <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border text-xs transition-colors min-w-0 <%= rowBg %>">
                                 <div class="flex items-center gap-2 shrink-0">
                                     <span class="font-mono-jb font-bold text-[var(--w-t1)]"><%= hLabel %></span>
                                     <% if (item.phase_label) { %>
@@ -440,7 +440,7 @@
                                     <% } %>
                                 </div>
 
-                                <div class="flex items-center justify-between sm:justify-end gap-2.5 font-mono-jb text-[11px] sm:text-xs min-w-0 flex-1">
+                                <div class="flex items-center justify-end gap-2.5 font-mono-jb text-[11px] sm:text-xs min-w-0 shrink-0">
                                     <span class="text-[var(--w-t2)] shrink-0"><%= (f.temperature_c != null) ? f.temperature_c.toFixed(1) : 0 %>°C</span>
                                     <span class="shrink-0 <%= isHumid ? 'text-[var(--w-warn)] font-bold' : 'text-[var(--w-t2)]' %>">
                                         💧 <%= f.relative_humidity %>%
@@ -449,22 +449,6 @@
                                         🌧️ <%= f.precipitation_mm %>mm (<%= f.precipitation_probability %>%)
                                     </span>
                                 </div>
-
-                                <% if (item.risk_reasons && item.risk_reasons.length > 0) { %>
-                                    <div class="flex flex-wrap items-center gap-1 text-[10px] font-sans font-medium shrink-0">
-                                        <% item.risk_reasons.forEach(function(r) { %>
-                                            <% if (r.includes('Probabilidad')) { %>
-                                                <span class="px-1.5 py-0.5 rounded bg-[var(--w-warn)]/20 text-[var(--w-warn)] border border-[var(--w-warn)]/30 shrink-0" title="<%= r %>">
-                                                    ⚡ <%= r %>
-                                                </span>
-                                            <% } else { %>
-                                                <span class="px-1.5 py-0.5 rounded bg-[var(--w-rust)]/20 text-[var(--w-rust)] border border-[var(--w-rust)]/30 shrink-0" title="<%= r %>">
-                                                    ⚠️ <%= r %>
-                                                </span>
-                                            <% } %>
-                                        <% }); %>
-                                    </div>
-                                <% } %>
                             </div>
                         <% }); %>
                     </div>

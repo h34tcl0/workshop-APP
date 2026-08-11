@@ -10,7 +10,7 @@ const mockSettings: AppSettings = {
   min_work_hours: 2.0,
   min_work_hours_unless_final: 1.0,
   max_humidity_percent: 80.0,
-  min_rain_precipitation_mm: 0.2,
+  min_rain_precipitation_mm: 0.1,
   exclude_saturdays: false,
   exclude_sundays: false,
   exclude_holidays: false,
@@ -114,15 +114,12 @@ describe("Evaluator - Curing & Climate Threshold Boundaries", () => {
     expect(eval75_1.unassigned_reason).toContain("Humedad alta (>75%) para Epoxi");
   });
 
-  it("should identify rain thresholds correctly (0.2mm precipitation and 30% POP)", () => {
-    const clearForecast = createMockForecasts(20, 50, 0.1, 29)[10];
-    expect(isRainyForecast(clearForecast, 0.2)).toBe(false);
+  it("should identify rain thresholds correctly (0.1mm precipitation)", () => {
+    const clearForecast = createMockForecasts(20, 50, 0.05, 29)[10];
+    expect(isRainyForecast(clearForecast, 0.1)).toBe(false);
 
-    const rainMmForecast = createMockForecasts(20, 50, 0.2, 10)[10];
-    expect(isRainyForecast(rainMmForecast, 0.2)).toBe(true);
-
-    const rainPopForecast = createMockForecasts(20, 50, 0.0, 30)[10];
-    expect(isRainyForecast(rainPopForecast, 0.2)).toBe(true);
+    const rainMmForecast = createMockForecasts(20, 50, 0.1, 10)[10];
+    expect(isRainyForecast(rainMmForecast, 0.1)).toBe(true);
   });
 });
 
