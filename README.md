@@ -446,6 +446,7 @@ A continuación se detallan todos los endpoints expuestos en `server.ts`, verifi
 - `POST /tasks/reorder`: Reordena secuencialmente las tareas mediante un arreglo JSON con la lista de IDs.
 - `POST /tasks/import`: Importación masiva de tareas en formato JSON.
 - `GET /tasks/history`: Retorna el historial de títulos de tareas previas para autocompletado en el frontend.
+- `GET /tasks/suggestions`: Proporciona sugerencias de tareas comunes (alias de /tasks/history).
 
 ### 📑 Plantillas de Proyecto
 - `POST /project-templates/save`: Guarda las tareas del proyecto activo como una plantilla reutilizable.

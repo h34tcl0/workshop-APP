@@ -44,6 +44,8 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
     store.saveDailyLog(userId, {
       eval_date: todayIso,
       status: DayStatus.DAY_VIABLE,
+      window_start: "08:00",
+      window_end: "19:00",
       humidity_alert_sent: false,
       intraday_alert_triggered: false,
       intraday_alert_acknowledged: false,

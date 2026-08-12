@@ -525,7 +525,23 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
   }
 
   const dailyLog = store.getDailyLogByDate(userId, todayIso);
-  if (!dailyLog) {
+  if (!dailyLog || dailyLog.status !== DayStatus.DAY_VIABLE) {
+    return;
+  }
+
+  // Determinar rango de horas a monitorear (priorizar ventana agendada de tareas)
+  let startHourLimit = appSettings.operational_start_hour;
+  let endHourLimit = appSettings.operational_end_hour;
+
+  if (dailyLog.window_start && dailyLog.window_end) {
+    const [wStartH, wStartM] = dailyLog.window_start.split(":").map(Number);
+    const [wEndH, wEndM] = dailyLog.window_end.split(":").map(Number);
+    startHourLimit = wStartH + (wStartM || 0) / 60.0;
+    endHourLimit = wEndH + (wEndM || 0) / 60.0;
+  }
+
+  // Si la hora local actual ya superó el horario de término de tareas de hoy, no enviar más alertas
+  if (currentLocalHour >= endHourLimit) {
     return;
   }
 
@@ -542,8 +558,8 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
 
   try {
     const forecasts = await getHourlyForecast(todayIso, appSettings.latitude, appSettings.longitude);
-    const startHourInt = Math.floor(currentLocalHour);
-    const endHourInt = Math.ceil(appSettings.operational_end_hour);
+    const startHourInt = Math.max(Math.floor(currentLocalHour), Math.floor(startHourLimit));
+    const endHourInt = Math.ceil(endHourLimit);
 
     const remainingWorkForecasts = forecasts.filter(f => f.hour >= startHourInt && f.hour <= endHourInt);
     

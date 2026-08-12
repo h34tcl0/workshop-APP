@@ -25,7 +25,9 @@ describe("Término de la Jornada - 6 Edge Cases & Automated Battery Tests", () =
     // Configurar Telegram
     store.updateAppSettings(user.id, {
       telegram_chat_id: "99887766",
-      timezone: "America/Santiago"
+      timezone: "America/Santiago",
+      operational_start_hour: 9,
+      operational_end_hour: 22
     });
 
     const project = store.addProject(user.id, "Proyecto Normal", "Desc");
@@ -83,7 +85,7 @@ describe("Término de la Jornada - 6 Edge Cases & Automated Battery Tests", () =
     const token = signToken({ userId: user.id, email: user.email });
 
     // Sin chat_id de Telegram
-    store.updateAppSettings(user.id, { telegram_chat_id: "", timezone: "America/Santiago" });
+    store.updateAppSettings(user.id, { telegram_chat_id: "", timezone: "America/Santiago", operational_start_hour: 9, operational_end_hour: 22 });
 
     const project = store.addProject(user.id, "Proyecto Fallback", "Desc");
     const task1 = store.addTask(user.id, {
@@ -120,7 +122,6 @@ describe("Término de la Jornada - 6 Edge Cases & Automated Battery Tests", () =
 
     const dailyLogId = resEndShift.body.dailyLogId;
     const logBeforeResolve = store.getDailyLogById(user.id, dailyLogId);
-    console.log("[TEST 2 BEFORE RESOLVE] daily_log:", logBeforeResolve);
     expect(logBeforeResolve?.checkin_resolved).toBe(false);
 
     // Usuario selecciona completar task1

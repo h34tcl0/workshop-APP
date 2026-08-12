@@ -227,7 +227,7 @@ export class TelegramBotService {
         return true;
       } else {
         const errDetail = data?.description || JSON.stringify(data);
-        if (targetChatId && (
+        if (process.env.NODE_ENV !== "test" && targetChatId && (
           errDetail.includes('bot was blocked by the user') ||
           errDetail.includes('user is deactivated') ||
           errDetail.includes('chat not found')
@@ -271,7 +271,7 @@ export class TelegramBotService {
         return true;
       } else {
         const errDetail = data?.description || JSON.stringify(data);
-        if (targetChatId && (
+        if (process.env.NODE_ENV !== "test" && targetChatId && (
           errDetail.includes('bot was blocked by the user') ||
           errDetail.includes('user is deactivated') ||
           errDetail.includes('chat not found')

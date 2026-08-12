@@ -68,6 +68,9 @@ export class OpenMeteoWeatherService {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${this.lat}&longitude=${this.lon}&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,cloud_cover&timezone=auto&forecast_days=${numDays}`;
 
     try {
+      if (process.env.NODE_ENV === "test" && !process.env.ALLOW_REAL_WEATHER_IN_TESTS) {
+        throw new Error("Test environment: using deterministic mock weather");
+      }
       const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
       if (!response.ok) {
         throw new Error(`OpenMeteo returned status ${response.status}`);

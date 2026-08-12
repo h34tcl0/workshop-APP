@@ -22,6 +22,8 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
 
     store.updateAppSettings(user.id, {
       timezone: "America/Santiago",
+      operational_start_hour: 9,
+      operational_end_hour: 22,
       forecast_days: 7,
       work_days: [0, 1, 2, 3, 4, 5, 6],
       exclude_saturdays: false,
@@ -110,6 +112,8 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
 
     store.updateAppSettings(user.id, {
       timezone: "America/Santiago",
+      operational_start_hour: 9,
+      operational_end_hour: 22,
       forecast_days: 7,
       work_days: [0, 1, 2, 3, 4, 5, 6],
       exclude_saturdays: false,

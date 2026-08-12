@@ -717,6 +717,11 @@ app.get('/tasks/history', (req: AuthenticatedRequest, res) => {
   const history = store.getTaskHistory(userId);
   res.json(history);
 });
+app.get('/tasks/suggestions', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const history = store.getTaskHistory(userId);
+  res.json(history);
+});
 
 // Project Template routes
 app.post('/project-templates/save', (req: AuthenticatedRequest, res) => {
