@@ -122,8 +122,8 @@ export async function initDatabase(): Promise<Database.Database> {
       longitude REAL NOT NULL DEFAULT -71.27,
       setup_hours REAL NOT NULL DEFAULT 1.0,
       teardown_hours REAL NOT NULL DEFAULT 1.0,
-      min_work_hours REAL NOT NULL DEFAULT 1.0,
-      min_work_hours_unless_final REAL NOT NULL DEFAULT 4.0,
+      min_work_hours REAL NOT NULL DEFAULT 3.0,
+      min_work_hours_unless_final REAL NOT NULL DEFAULT 1.0,
       min_rain_precipitation_mm REAL NOT NULL DEFAULT 0.1,
       checkin_hour INTEGER NOT NULL DEFAULT 19,
       morning_eval_lead_hours INTEGER NOT NULL DEFAULT 1,
@@ -304,8 +304,8 @@ export async function initDatabase(): Promise<Database.Database> {
         longitude REAL NOT NULL DEFAULT -71.27,
         setup_hours REAL NOT NULL DEFAULT 1.0,
         teardown_hours REAL NOT NULL DEFAULT 1.0,
-        min_work_hours REAL NOT NULL DEFAULT 1.0,
-        min_work_hours_unless_final REAL NOT NULL DEFAULT 4.0,
+        min_work_hours REAL NOT NULL DEFAULT 3.0,
+        min_work_hours_unless_final REAL NOT NULL DEFAULT 1.0,
         min_rain_precipitation_mm REAL NOT NULL DEFAULT 0.1,
         checkin_hour INTEGER NOT NULL DEFAULT 19,
         morning_eval_lead_hours INTEGER NOT NULL DEFAULT 1,
@@ -734,7 +734,7 @@ export class SQLiteStore {
         min_work_hours_unless_final, min_rain_precipitation_mm, checkin_hour,
         morning_eval_lead_hours, exclude_saturdays, exclude_sundays, exclude_holidays,
         require_curing_before_cutoff, telegram_chat_id, google_calendar_id, google_calendar_enabled
-      ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 1.0, 4.0, 0.1, 19, 1, 1, 1, 1, 1, NULL, ?, ?)
+      ) VALUES (?, 9, 18, 80.0, -32.99, -71.27, 1.0, 1.0, 3.0, 1.0, 0.1, 19, 1, 1, 1, 1, 1, NULL, ?, ?)
       ON CONFLICT(user_id) DO NOTHING;
     `).run(userId, defaultCalId, defaultCalEnabled);
 

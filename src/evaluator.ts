@@ -379,6 +379,28 @@ export function getHourlyClimateAudit(
   return result;
 }
 
+export function isFinalTaskPackage(candidateTasks: Task[], allPendingInBacklog: Task[]): boolean {
+  if (!candidateTasks || candidateTasks.length === 0) return false;
+  if (!allPendingInBacklog || allPendingInBacklog.length === 0) return false;
+
+  // 1. Candidate tasks encompass ALL remaining uncompleted tasks in the backlog
+  if (candidateTasks.length === allPendingInBacklog.length) {
+    return true;
+  }
+
+  // 2. Candidate tasks encompass ALL remaining uncompleted tasks for at least one project
+  const candidateProjectIds = new Set(candidateTasks.map(t => t.project_id));
+  for (const pid of candidateProjectIds) {
+    const candidateProjectTasks = candidateTasks.filter(t => t.project_id === pid);
+    const allPendingProjectTasks = allPendingInBacklog.filter(t => t.project_id === pid);
+    if (candidateProjectTasks.length === allPendingProjectTasks.length && candidateProjectTasks.length > 0) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function evaluateDayFeasibility(
   evalDateInput: Date | string,
   backlogTasks: Task[],
@@ -409,7 +431,15 @@ export function evaluateDayFeasibility(
     cfg.max_humidity_percent
   );
   const climateSegments = compressClimateSegments(climateMap);
-  const freeWindows = extractFreeWindows(climateMap, cfg.min_work_hours);
+
+  const pendingTasks = backlogTasks.filter(t => t.status !== TaskStatus.COMPLETED).sort((a, b) => a.order - b.order);
+
+  const isFinalBacklog = isFinalTaskPackage(pendingTasks, pendingTasks);
+  const effectiveMinWorkHours = isFinalBacklog && cfg.min_work_hours_unless_final != null && cfg.min_work_hours_unless_final > 0
+    ? cfg.min_work_hours_unless_final
+    : cfg.min_work_hours;
+
+  const freeWindows = extractFreeWindows(climateMap, effectiveMinWorkHours);
   const climateOnlyStatus = freeWindows.length > 0 ? "clear" : "blocked";
 
   const commonFields = {
@@ -439,8 +469,6 @@ export function evaluateDayFeasibility(
     };
   }
 
-  const pendingTasks = backlogTasks.filter(t => t.status !== TaskStatus.COMPLETED).sort((a, b) => a.order - b.order);
-
   if (pendingTasks.length === 0) {
     const reasonMsg = "Sin agendamiento: No hay tareas pendientes compatibles en el backlog.";
     return {
@@ -452,8 +480,8 @@ export function evaluateDayFeasibility(
   }
 
   const totalActivePending = pendingTasks.reduce((acc, t) => acc + t.estimated_hours, 0);
-  if (totalActivePending < cfg.min_work_hours) {
-    const reasonMsg = `Sin agendamiento: La ventana de trabajo libre (${totalActivePending.toFixed(1)}h) es menor al tiempo mínimo requerido por las tareas en backlog (${cfg.min_work_hours.toFixed(1)}h).`;
+  if (totalActivePending < effectiveMinWorkHours) {
+    const reasonMsg = `Sin agendamiento: La carga de trabajo pendiente en backlog (${totalActivePending.toFixed(1)}h) es menor al tiempo mínimo de ${effectiveMinWorkHours.toFixed(1)}h ${isFinalBacklog ? "configurado para tarea final" : "general de jornada configurado"}.`;
     return {
       ...commonFields,
       status: DayStatus.DAY_BLOCKED,
@@ -468,12 +496,12 @@ export function evaluateDayFeasibility(
   let hadWeatherViableButTooShort = false;
   let firstWeatherConflictDetail: string | null = null;
 
-  const minSpan = Math.floor(cfg.setup_hours + cfg.min_work_hours);
+  const minSpan = Math.max(1, Math.floor(cfg.setup_hours + effectiveMinWorkHours));
 
   for (let startHour = startLimit; startHour <= endLimit - minSpan; startHour++) {
     for (let endHour = startHour + minSpan; endHour <= endLimit; endHour++) {
       const availableNetWork = endHour - startHour - cfg.setup_hours;
-      if (availableNetWork < cfg.min_work_hours) continue;
+      if (availableNetWork < effectiveMinWorkHours) continue;
 
       const scheduledPackage: Task[] = [];
       let accumulatedActiveHours = 0.0;
@@ -552,7 +580,12 @@ export function evaluateDayFeasibility(
         }
       }
 
-      if (accumulatedActiveHours < cfg.min_work_hours || scheduledPackage.length === 0) continue;
+      const packageIsFinal = isFinalTaskPackage(scheduledPackage, pendingTasks);
+      const packageMinHours = packageIsFinal && cfg.min_work_hours_unless_final != null && cfg.min_work_hours_unless_final > 0
+        ? cfg.min_work_hours_unless_final
+        : cfg.min_work_hours;
+
+      if (accumulatedActiveHours < packageMinHours || scheduledPackage.length === 0) continue;
 
       if (accumulatedActiveHours > maxWorkScheduled) {
         maxWorkScheduled = accumulatedActiveHours;
@@ -669,20 +702,20 @@ export function evaluateDayFeasibility(
     const maxFreeH = Math.max(...freeWindows.map(w => w.duration_hours));
     const minTaskHours = Math.min(...pendingTasks.map(t => t.estimated_hours));
     const minNeededWithPrep = minTaskHours + cfg.setup_hours;
-    const requiredThreshold = Math.max(minNeededWithPrep, cfg.min_work_hours);
+    const requiredThreshold = Math.max(minNeededWithPrep, effectiveMinWorkHours);
 
     if (maxFreeH < requiredThreshold) {
-      auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre (${maxFreeH.toFixed(1)}h) es menor al tiempo mínimo requerido por las tareas en backlog (${requiredThreshold.toFixed(1)}h).`;
+      auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre de clima (${maxFreeH.toFixed(1)}h) es menor al tiempo mínimo de ${requiredThreshold.toFixed(1)}h requerido por las tareas en backlog.`;
     } else {
       const hasCuringTasks = pendingTasks.some(t => t.requires_curing || t.curing_hours > 0 || t.category === TaskCategory.PVA_GLUE || t.category === TaskCategory.VARNISH_PAINT || t.category === TaskCategory.EPOXY);
       if (hasCuringTasks) {
         auditUnassignedReason = `Sin agendamiento: Bloqueado por tiempo de curado activo de la jornada anterior o requerido para las tareas.`;
       } else {
-        auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre (${maxFreeH.toFixed(1)}h) es menor al tiempo mínimo requerido por las tareas en backlog (${requiredThreshold.toFixed(1)}h).`;
+        auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre de clima (${maxFreeH.toFixed(1)}h) es menor al tiempo mínimo de ${requiredThreshold.toFixed(1)}h requerido por las tareas en backlog.`;
       }
     }
   } else if (hadWeatherViableButTooShort) {
-    auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre es menor al tiempo mínimo de ${cfg.min_work_hours_unless_final.toFixed(1)}h de trabajo neto requerido por las tareas en backlog.`;
+    auditUnassignedReason = `Sin agendamiento: La ventana de trabajo libre de clima es menor al tiempo mínimo de ${effectiveMinWorkHours.toFixed(1)}h de trabajo neto requerido por las tareas en backlog.`;
   } else if (weatherSummary.total_rain_mm > 0) {
     auditUnassignedReason = `Sin agendamiento: Riesgo de lluvia detectado en la jornada (${weatherSummary.total_rain_mm} mm de precipitación acumulada).`;
   } else {

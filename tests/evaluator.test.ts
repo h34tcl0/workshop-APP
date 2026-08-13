@@ -358,4 +358,31 @@ describe("Evaluator - Day Overrides Precedence", () => {
     expect(result.window?.start_time).toBe("15:00");
     expect(result.window?.end_time).toBe("21:00");
   });
+
+  it("schedules a single final task of 2h when min_work_hours=3 and min_work_hours_unless_final=1", () => {
+    const customSettings: AppSettings = {
+      ...mockSettings,
+      operational_start_hour: 13,
+      operational_end_hour: 21,
+      setup_hours: 0.0,
+      teardown_hours: 0.0,
+      min_work_hours: 3.0,
+      min_work_hours_unless_final: 1.0
+    };
+
+    const finalTask = createMockTask({
+      id: 15,
+      title: "Montaje final de herrajes, cajones zapateros y puertas",
+      estimated_hours: 2.0,
+      status: TaskStatus.PENDING
+    });
+
+    const forecasts = createMockForecasts(20, 50, 0, 0);
+
+    const result = evaluateDayFeasibility("2026-08-13", [finalTask], forecasts, customSettings);
+
+    expect(result.status).toBe(DayStatus.DAY_VIABLE);
+    expect(result.scheduled_tasks.length).toBe(1);
+    expect(result.scheduled_tasks[0].id).toBe(15);
+  });
 });
