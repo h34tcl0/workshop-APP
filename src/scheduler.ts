@@ -184,13 +184,22 @@ export async function processWorkStartNotificationsForUser(
   }
 
   const [sH, sM] = dailyLog.window_start.split(":").map(Number);
+  const [eH, eM] = dailyLog.window_end.split(":").map(Number);
   const windowStartH = sH + sM / 60.0;
+  const windowEndH = eH + eM / 60.0;
   const nowH = localTime.totalHours;
 
   if (!force && nowH < windowStartH) {
     return {
       sent: false,
       reason: `ℹ️ Notificación programada para el inicio del bloque de trabajo (${dailyLog.window_start} hrs)`
+    };
+  }
+
+  if (!force && nowH >= windowEndH) {
+    return {
+      sent: false,
+      reason: `ℹ️ La jornada de hoy (${dailyLog.window_start} - ${dailyLog.window_end}) ya finalizó`
     };
   }
 
@@ -274,9 +283,10 @@ export async function runMorningEvaluation(
   }
 
   try {
+    const now = new Date();
     const appSettings = store.getAppSettings(userId);
     const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
-    const todayIso = targetDateIso || getLocalDateIso(new Date(), userTz);
+    const todayIso = targetDateIso || getLocalDateIso(now, userTz);
     console.log(`[Scheduler] Running Multi-Day Evaluation for User #${userId} starting ${todayIso} (TZ: ${userTz})...`);
 
     const pendingTasks = store.getPendingTasks(userId);
@@ -393,7 +403,7 @@ export async function runMorningEvaluation(
     // Check Telegram Work Start notification for today (unless evaluation is marked silent)
     const tgResult = options?.silent
       ? { sent: false, reason: "Evaluación silenciosa (sin notificación de Telegram)" }
-      : await processWorkStartNotificationsForUser(userId);
+      : await processWorkStartNotificationsForUser(userId, now);
 
     console.log(`[Scheduler] Multi-Day Evaluation completed for User #${userId} starting ${todayIso}: ${todayEval.status} - ${todayEval.reason}`);
     return {
