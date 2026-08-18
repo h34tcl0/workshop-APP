@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { store, initDatabase } from "../src/db.js";
 import * as weatherSvc from "../src/weatherService.js";
 import { TelegramBotService } from "../src/telegramBot.js";
-import { processWeatherAlertForUser } from "../src/scheduler.js";
+import { processWeatherAlertForUser, processWorkStartNotificationsForUser, runMorningEvaluation } from "../src/scheduler.js";
 import { DayStatus, HourlyForecast } from "../src/types.js";
 
 function buildMockForecasts(rainHour: number | null, humidHour: number | null): HourlyForecast[] {
@@ -150,5 +150,101 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
     expect(burstSpy).toHaveBeenCalledWith(log.id, expect.stringContaining("¡ALERTA URGENTE DE LLUVIA ADELANTADA!"));
     expect(log.last_rain_alert_hour).toBe(17);
     expect(log.intraday_alert_burst_count).toBe(1);
+  });
+
+  describe("Tier 2 Work Start Notifications - Expiration & Timing Rules", () => {
+    it("Scenario: does NOT send Telegram notification if current time is after window_end (e.g. window 14:00-19:30, evaluated at 21:26)", async () => {
+      // Setup day log with viable window 14:00 - 19:30
+      const task = store.addTask(userId, {
+        project_id: 1,
+        title: "Montaje final de herrajes",
+        estimated_hours: 2.0,
+        order: 1
+      });
+
+      store.saveDailyLog(userId, {
+        eval_date: todayIso,
+        status: DayStatus.DAY_VIABLE,
+        window_start: "14:00",
+        window_end: "19:30",
+        scheduled_task_ids: JSON.stringify([task.id]),
+        telegram_notified: false
+      });
+
+      const telegramSpy = vi.spyOn(TelegramBotService.prototype, "sendWorkStartNotification").mockResolvedValue(true);
+      telegramSpy.mockClear();
+
+      // Current time is 21:26 (nighttime, after window_end)
+      const lateNight = new Date("2026-08-10T21:26:00-04:00");
+      const result = await processWorkStartNotificationsForUser(userId, lateNight);
+
+      expect(result.sent).toBe(false);
+      expect(result.reason).toContain("ya finalizó");
+      expect(telegramSpy).not.toHaveBeenCalled();
+
+      // Verify dailyLog was NOT marked as notified
+      const log = store.getDailyLogByDate(userId, todayIso)!;
+      expect(log.telegram_notified).toBe(false);
+    });
+
+    it("Scenario: does NOT send Telegram notification if current time is before window_start (e.g. window 14:00-19:30, evaluated at 10:00)", async () => {
+      const task = store.addTask(userId, {
+        project_id: 1,
+        title: "Montaje final de herrajes",
+        estimated_hours: 2.0,
+        order: 1
+      });
+
+      store.saveDailyLog(userId, {
+        eval_date: todayIso,
+        status: DayStatus.DAY_VIABLE,
+        window_start: "14:00",
+        window_end: "19:30",
+        scheduled_task_ids: JSON.stringify([task.id]),
+        telegram_notified: false
+      });
+
+      const telegramSpy = vi.spyOn(TelegramBotService.prototype, "sendWorkStartNotification").mockResolvedValue(true);
+      telegramSpy.mockClear();
+
+      // Current time is 10:00 (morning, before window_start)
+      const earlyMorning = new Date("2026-08-10T10:00:00-04:00");
+      const result = await processWorkStartNotificationsForUser(userId, earlyMorning);
+
+      expect(result.sent).toBe(false);
+      expect(result.reason).toContain("Notificación programada para el inicio");
+      expect(telegramSpy).not.toHaveBeenCalled();
+    });
+
+    it("Scenario: sends Telegram notification when current time is at or within window_start and window_end (e.g. 14:05)", async () => {
+      const task = store.addTask(userId, {
+        project_id: 1,
+        title: "Montaje final de herrajes",
+        estimated_hours: 2.0,
+        order: 1
+      });
+
+      store.saveDailyLog(userId, {
+        eval_date: todayIso,
+        status: DayStatus.DAY_VIABLE,
+        window_start: "14:00",
+        window_end: "19:30",
+        scheduled_task_ids: JSON.stringify([task.id]),
+        telegram_notified: false
+      });
+
+      const telegramSpy = vi.spyOn(TelegramBotService.prototype, "sendWorkStartNotification").mockResolvedValue(true);
+      telegramSpy.mockClear();
+
+      // Current time is 14:05 (start of work window)
+      const workStart = new Date("2026-08-10T14:05:00-04:00");
+      const result = await processWorkStartNotificationsForUser(userId, workStart);
+
+      expect(result.sent).toBe(true);
+      expect(telegramSpy).toHaveBeenCalledTimes(1);
+
+      const log = store.getDailyLogByDate(userId, todayIso)!;
+      expect(log.telegram_notified).toBe(true);
+    });
   });
 });

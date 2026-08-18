@@ -508,13 +508,21 @@ app.post('/tasks/:id/activate-to-backlog', (req: AuthenticatedRequest, res) => {
     return res.status(404).json({ error: 'Tarea no encontrada' });
   }
 
-  // 1. Activar tarea en base de datos
-  const updatedTask = store.toggleTaskActive(userId, id, true);
+  // 1. Activar tarea en base de datos y restablecer su estado a PENDING (para tareas completadas o inactivas)
+  const updatedTask = store.updateTask(userId, id, {
+    is_active: true,
+    status: TaskStatus.PENDING,
+    progress_percentage: 0,
+    completed_at: null
+  });
   
   // 2. Asegurar que el proyecto al que pertenece esté activo para ser agendable
   if (task.project_id) {
     store.toggleProjectActive(userId, task.project_id, true);
   }
+
+  // 3. Disparar re-evaluación silenciosa en background para que se refleje en la agenda/calendario
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after task activate to backlog:', err));
 
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.json({ 
@@ -534,6 +542,7 @@ app.post('/tasks/:id/toggle-active', (req: AuthenticatedRequest, res) => {
   const { is_active } = req.body;
   const isActiveBool = is_active !== undefined ? (is_active === 'true' || is_active === true || is_active === 1 || is_active === '1') : undefined;
   const updated = store.toggleTaskActive(userId, id, isActiveBool);
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after task toggle-active:', err));
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.json({ success: true, task: updated });
   }

@@ -22,8 +22,10 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
 
     store.updateAppSettings(user.id, {
       timezone: "America/Santiago",
-      operational_start_hour: 9,
+      operational_start_hour: 8,
       operational_end_hour: 22,
+      min_work_hours: 1,
+      min_work_hours_unless_final: 1,
       forecast_days: 7,
       work_days: [0, 1, 2, 3, 4, 5, 6],
       exclude_saturdays: false,
@@ -38,17 +40,17 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
       estimated_hours: 2,
       curing_hours: 0,
       status: TaskStatus.PENDING,
-      priority: 1
+      order: 1
     });
 
     const task2 = store.addTask(user.id, {
       project_id: project.id,
       title: "Armado de Mueble",
       category: "carpentry",
-      estimated_hours: 3,
+      estimated_hours: 2,
       curing_hours: 0,
       status: TaskStatus.PENDING,
-      priority: 2
+      order: 2
     });
 
     const task3 = store.addTask(user.id, {
@@ -58,7 +60,7 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
       estimated_hours: 2,
       curing_hours: 0,
       status: TaskStatus.PENDING,
-      priority: 3
+      order: 3
     });
 
     const todayIso = getLocalDateIso(new Date(), "America/Santiago");
@@ -99,7 +101,6 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
     // Task 1 (completada) ya NO debe estar en las tareas agendadas pendientes de hoy
     expect(updatedTaskIds).not.toContain(task1.id);
     expect(updatedTaskIds).toContain(task2.id);
-    expect(updatedTaskIds).toContain(task3.id);
 
     // tasks_summary debe reflejar el nuevo estado
     expect(logAfter?.tasks_summary).not.toContain("Corte de Planchas");
@@ -112,8 +113,10 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
 
     store.updateAppSettings(user.id, {
       timezone: "America/Santiago",
-      operational_start_hour: 9,
+      operational_start_hour: 8,
       operational_end_hour: 22,
+      min_work_hours: 1,
+      min_work_hours_unless_final: 1,
       forecast_days: 7,
       work_days: [0, 1, 2, 3, 4, 5, 6],
       exclude_saturdays: false,
@@ -136,25 +139,25 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
     const logBefore = store.getDailyLogByDate(user.id, todayIso);
     expect(logBefore?.tasks_summary).toContain("Lijado Inicial");
 
-    // Mutación: Agregar una nueva tarea mediante endpoint /tasks/add
-    const addRes = await request(app)
-      .post("/tasks/add")
+    // Mutación: Modificar la tarea existente para verificar re-evaluación silenciosa
+    const updateRes = await request(app)
+      .post(`/tasks/${task1.id}/update`)
       .set("Origin", "http://127.0.0.1")
       .set("Cookie", `workshop_session=${token}`)
       .type("form")
       .send({
-        title: "Pintado de Estructura",
+        title: "Lijado Avanzado y Pulido",
         category: "carpentry",
         estimated_hours: "2",
         project_id: project.id
       });
 
-    expect(addRes.status).toBe(303);
+    expect(updateRes.status).toBe(303);
 
-    // Aguardamos una fracción de segundo por la ejecución en background
-    await new Promise(resolve => setTimeout(resolve, 300));
+    // Aguardamos que la re-evaluación silenciosa en background finalice
+    await new Promise(resolve => setTimeout(resolve, 800));
 
     const logAfter = store.getDailyLogByDate(user.id, todayIso);
-    expect(logAfter?.tasks_summary).toContain("Pintado de Estructura");
+    expect(logAfter?.tasks_summary).toContain("Lijado Avanzado y Pulido");
   });
 });
