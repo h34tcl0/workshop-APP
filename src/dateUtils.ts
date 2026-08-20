@@ -38,7 +38,20 @@ export function getSpanishDate(dateObj: Date): string {
 }
 
 export function formatDateShortEs(dateStrOrObj: string | Date): string {
-  const dateObj = typeof dateStrOrObj === "string" ? new Date(dateStrOrObj + "T00:00:00") : dateStrOrObj;
+  if (typeof dateStrOrObj === "string") {
+    const parts = dateStrOrObj.split("-");
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      const dateObj = new Date(Date.UTC(year, month, day, 12, 0, 0));
+      const dayIndex = dateObj.getUTCDay();
+      const dd = String(day).padStart(2, "0");
+      const mm = String(month + 1).padStart(2, "0");
+      return `${DAYS_ES[dayIndex]} ${dd}/${mm}`;
+    }
+  }
+  const dateObj = typeof dateStrOrObj === "string" ? new Date(dateStrOrObj) : dateStrOrObj;
   return getSpanishDate(dateObj);
 }
 

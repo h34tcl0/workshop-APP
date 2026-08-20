@@ -15,7 +15,7 @@ import {
   DayOverride,
   ForcedTaskWithDetails
 } from "./types.js";
-import { getSpanishDate, formatHour, formatHourCrossDay } from "./dateUtils.js";
+import { getSpanishDate, formatHour, formatHourCrossDay, formatDateShortEs, getLocalDateIso } from "./dateUtils.js";
 
 const MIN_RAIN_PROBABILITY_PERCENT = 30;
 
@@ -409,9 +409,9 @@ export function evaluateDayFeasibility(
   holidayDates?: Set<string>
 ): DayEvaluation {
   const cfg = settings;
-  const evalDateObj = typeof evalDateInput === "string" ? new Date(evalDateInput + "T00:00:00") : evalDateInput;
-  const evalDateIso = evalDateObj.toISOString().split("T")[0];
-  const dateStr = getSpanishDate(evalDateObj);
+  const evalDateIso = typeof evalDateInput === "string" ? evalDateInput : getLocalDateIso(evalDateInput, settings.timezone);
+  const evalDateObj = new Date(`${evalDateIso}T12:00:00Z`);
+  const dateStr = formatDateShortEs(evalDateIso);
 
   const hourlyWeather = new Map<number, HourlyForecast>();
   for (const f of forecasts) {
@@ -739,9 +739,9 @@ export function evaluateDayWithOverrides(
   dayOverride?: DayOverride,
   forcedTasksDetails: ForcedTaskWithDetails[] = []
 ): DayEvaluation {
-  const evalDateObj = typeof evalDateInput === "string" ? new Date(evalDateInput + "T00:00:00") : evalDateInput;
-  const evalDateIso = evalDateObj.toISOString().split("T")[0];
-  const dateStr = getSpanishDate(evalDateObj);
+  const evalDateIso = typeof evalDateInput === "string" ? evalDateInput : getLocalDateIso(evalDateInput, settings.timezone);
+  const evalDateObj = new Date(`${evalDateIso}T12:00:00Z`);
+  const dateStr = formatDateShortEs(evalDateIso);
 
   if (dayOverride && dayOverride.force_status === "BLOCKED") {
     const startLimit = dayOverride.custom_start_hour ?? settings.operational_start_hour;

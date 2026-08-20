@@ -279,13 +279,14 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || 'America/Santiago';
     const today = new Date();
     const todayStr = getLocalDateIso(today, userTz);
+    const startDateObj = new Date(`${todayStr}T12:00:00Z`);
 
     // Holidays
     let holidayDates = new Set<string>();
     if (appSettings.exclude_holidays) {
-      const endDate = new Date(today);
-      endDate.setDate(endDate.getDate() + 6);
-      holidayDates = getHolidayDatesForRange(todayStr, endDate.toISOString().split('T')[0]);
+      const endDateObj = new Date(startDateObj);
+      endDateObj.setDate(endDateObj.getDate() + 6);
+      holidayDates = getHolidayDatesForRange(todayStr, endDateObj.toISOString().split('T')[0]);
     }
 
     // Weather forecast
@@ -297,7 +298,7 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     const forecastEvaluations = [];
 
     for (let d = 0; d < 7; d++) {
-      const evalDateObj = new Date(today);
+      const evalDateObj = new Date(startDateObj);
       evalDateObj.setDate(evalDateObj.getDate() + d);
       const evalDate = evalDateObj.toISOString().split('T')[0];
 
