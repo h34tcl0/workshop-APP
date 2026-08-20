@@ -6,7 +6,7 @@ import { importPayloadSchema, reorderPayloadSchema } from './src/schemas.js';
 import { evaluateDayWithOverrides, getHourlyClimateAudit } from './src/evaluator.js';
 import { getHourlyForecast, getWeeklyForecast, MockWeatherService } from './src/weatherService.js';
 import { getHolidayDatesForRange } from './src/holidaysService.js';
-import { formatDateShortEs, getLocalDateIso, getWorkshopLocalTime, getTimezoneByCoords } from './src/dateUtils.js';
+import { formatDateShortEs, getLocalDateIso, getLocalHoursAndMinutes, getWorkshopLocalTime, getTimezoneByCoords } from './src/dateUtils.js';
 import { TaskCategory, TaskStatus, Task } from './src/types.js';
 import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick, acquireEvaluationLock, releaseEvaluationLock, isEvaluationInProgress, triggerSilentReevaluation } from './src/scheduler.js';
 import { TelegramBotService } from './src/telegramBot.js';
@@ -322,6 +322,28 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
         hourly = await getHourlyForecast(evalDate, appSettings.latitude, appSettings.longitude);
       }
 
+      let isDayClosed = false;
+      let closedReason = "";
+
+      if (evalDate === todayStr) {
+        const todayLog = store.getDailyLogByDate(userId, todayStr);
+        const localHm = getLocalHoursAndMinutes(today, userTz);
+        const currentDecHour = localHm.totalHours;
+        const endLimit = (dayOverride && dayOverride.custom_end_hour != null) ? dayOverride.custom_end_hour : appSettings.operational_end_hour;
+        const minWork = appSettings.min_work_hours || 2.0;
+
+        if (todayLog && Boolean(todayLog.checkin_resolved)) {
+          isDayClosed = true;
+          closedReason = "Jornada concluida (cerrada manualmente por el usuario).";
+        } else if (currentDecHour >= endLimit) {
+          isDayClosed = true;
+          closedReason = `Jornada concluida (horario operativo finalizado a las ${endLimit}:00).`;
+        } else if (currentDecHour + minWork > endLimit) {
+          isDayClosed = true;
+          closedReason = `Jornada no asignable: tiempo restante insuficiente para la ventana mínima (${minWork.toFixed(1)}h antes de las ${endLimit}:00).`;
+        }
+      }
+
       const evalRes = evaluateDayWithOverrides(
         evalDate,
         simulatedPendingTasks,
@@ -329,7 +351,11 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
         appSettings,
         holidayDates,
         dayOverride,
-        forcedTasksWithHours
+        forcedTasksWithHours,
+        {
+          isTodayClosed: isDayClosed,
+          closedReason: closedReason
+        }
       );
 
       if (evalRes.status === 'DAY_VIABLE' && evalRes.scheduled_tasks && evalRes.scheduled_tasks.length > 0) {

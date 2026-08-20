@@ -406,7 +406,11 @@ export function evaluateDayFeasibility(
   backlogTasks: Task[],
   forecasts: HourlyForecast[],
   settings: AppSettings,
-  holidayDates?: Set<string>
+  holidayDates?: Set<string>,
+  options?: {
+    isTodayClosed?: boolean;
+    closedReason?: string;
+  }
 ): DayEvaluation {
   const cfg = settings;
   const evalDateIso = typeof evalDateInput === "string" ? evalDateInput : getLocalDateIso(evalDateInput, settings.timezone);
@@ -452,6 +456,16 @@ export function evaluateDayFeasibility(
     hourly_forecast: forecasts,
     hourly_audit: getHourlyClimateAudit(forecasts, null, [], cfg)
   };
+
+  if (options?.isTodayClosed) {
+    const reasonMsg = options.closedReason || "Jornada concluida (cerrada por el usuario o fuera del horario operativo).";
+    return {
+      ...commonFields,
+      status: DayStatus.DAY_BLOCKED,
+      reason: reasonMsg,
+      unassigned_reason: reasonMsg
+    };
+  }
 
   const weekday = evalDateObj.getDay(); // 0=Sunday, 6=Saturday
   const blockedLabels: string[] = [];
@@ -737,11 +751,48 @@ export function evaluateDayWithOverrides(
   settings: AppSettings,
   holidayDates?: Set<string>,
   dayOverride?: DayOverride,
-  forcedTasksDetails: ForcedTaskWithDetails[] = []
+  forcedTasksDetails: ForcedTaskWithDetails[] = [],
+  options?: {
+    isTodayClosed?: boolean;
+    closedReason?: string;
+  }
 ): DayEvaluation {
   const evalDateIso = typeof evalDateInput === "string" ? evalDateInput : getLocalDateIso(evalDateInput, settings.timezone);
   const evalDateObj = new Date(`${evalDateIso}T12:00:00Z`);
   const dateStr = formatDateShortEs(evalDateIso);
+
+  if (options?.isTodayClosed) {
+    const startLimit = (dayOverride && dayOverride.custom_start_hour != null) ? dayOverride.custom_start_hour : settings.operational_start_hour;
+    const endLimit = (dayOverride && dayOverride.custom_end_hour != null) ? dayOverride.custom_end_hour : settings.operational_end_hour;
+
+    const climateMap = computeHourlyClimateMap(
+      forecasts,
+      startLimit,
+      endLimit,
+      settings.min_rain_precipitation_mm,
+      settings.max_humidity_percent
+    );
+    const climateSegments = compressClimateSegments(climateMap);
+    const freeWindows = extractFreeWindows(climateMap, settings.min_work_hours);
+    const reasonMsg = options.closedReason || "Jornada concluida (cerrada por el usuario o fuera del horario operativo).";
+
+    return {
+      eval_date: evalDateIso,
+      date_str: dateStr,
+      status: DayStatus.DAY_BLOCKED,
+      reason: reasonMsg,
+      unassigned_reason: reasonMsg,
+      weather_summary: extractWorkdayWeatherSummary(forecasts, startLimit, endLimit, settings.min_rain_precipitation_mm),
+      climate_segments: climateSegments,
+      free_windows: freeWindows,
+      climate_only_status: freeWindows.length > 0 ? "clear" : "blocked",
+      is_manually_blocked: false,
+      forced_tasks: forcedTasksDetails,
+      day_override: dayOverride,
+      hourly_forecast: forecasts,
+      hourly_audit: getHourlyClimateAudit(forecasts, null, [], settings)
+    };
+  }
 
   if (dayOverride && dayOverride.force_status === "BLOCKED") {
     const startLimit = dayOverride.custom_start_hour ?? settings.operational_start_hour;
@@ -788,7 +839,7 @@ export function evaluateDayWithOverrides(
     if (dayOverride.custom_end_hour != null) effectiveCfg.operational_end_hour = dayOverride.custom_end_hour;
   }
 
-  const result = evaluateDayFeasibility(evalDateObj, backlogTasks, forecasts, effectiveCfg, holidayDates);
+  const result = evaluateDayFeasibility(evalDateObj, backlogTasks, forecasts, effectiveCfg, holidayDates, options);
 
   if (dayOverride && dayOverride.removed_task_ids && result.scheduled_tasks) {
     try {

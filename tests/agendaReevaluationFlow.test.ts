@@ -22,8 +22,8 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
 
     store.updateAppSettings(user.id, {
       timezone: "America/Santiago",
-      operational_start_hour: 8,
-      operational_end_hour: 22,
+      operational_start_hour: 0,
+      operational_end_hour: 24,
       min_work_hours: 1,
       min_work_hours_unless_final: 1,
       forecast_days: 7,
@@ -65,8 +65,9 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
 
     const todayIso = getLocalDateIso(new Date(), "America/Santiago");
 
-    // 1. Evaluación matutina inicial
-    const initialEval = await runMorningEvaluation(user.id, todayIso, "sunny");
+    // 1. Evaluación matutina inicial (simulando 10:00 AM)
+    const morningDate = new Date(`${todayIso}T14:00:00Z`); // 10:00 AM en Santiago (UTC-4)
+    const initialEval = await runMorningEvaluation(user.id, todayIso, "sunny", { nowDate: morningDate });
     expect(initialEval.status).toBe("DAY_VIABLE");
 
     const logBefore = store.getDailyLogByDate(user.id, todayIso);
@@ -89,7 +90,7 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
 
-    // 3. Verificar estado en DB tras la re-evaluación silenciosa
+    // 3. Verificar estado en DB tras la resolución de check-in (jornada cerrada)
     const task1After = store.getTask(user.id, task1.id);
     expect(task1After?.status).toBe(TaskStatus.COMPLETED);
 
@@ -97,14 +98,19 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
     expect(logAfter).not.toBeNull();
     expect(logAfter?.checkin_resolved).toBe(true);
 
-    const updatedTaskIds: number[] = JSON.parse(logAfter!.scheduled_task_ids || "[]");
-    // Task 1 (completada) ya NO debe estar en las tareas agendadas pendientes de hoy
-    expect(updatedTaskIds).not.toContain(task1.id);
-    expect(updatedTaskIds).toContain(task2.id);
+    // Al estar resuelto/cerrado el checkin de hoy, hoy queda DAY_BLOCKED (concluida)
+    expect(logAfter?.status).toBe("DAY_BLOCKED");
+    expect(logAfter?.block_reason).toContain("Jornada concluida");
 
-    // tasks_summary debe reflejar el nuevo estado
-    expect(logAfter?.tasks_summary).not.toContain("Corte de Planchas");
-    expect(logAfter?.tasks_summary).toContain("Armado de Mueble");
+    // Y las tareas restantes (Task 2 y Task 3) se agendan para MAÑANA
+    const tomorrowDate = new Date(`${todayIso}T12:00:00Z`);
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrowIso = tomorrowDate.toISOString().split("T")[0];
+
+    const tomorrowLog = store.getDailyLogByDate(user.id, tomorrowIso);
+    expect(tomorrowLog?.status).toBe("DAY_VIABLE");
+    expect(tomorrowLog?.tasks_summary).toContain("Armado de Mueble");
+    expect(tomorrowLog?.tasks_summary).toContain("Barnizado Final");
   });
 
   it("re-evalúa silenciosamente al agregar o modificar tareas de proyecto", async () => {
@@ -113,8 +119,8 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
 
     store.updateAppSettings(user.id, {
       timezone: "America/Santiago",
-      operational_start_hour: 8,
-      operational_end_hour: 22,
+      operational_start_hour: 0,
+      operational_end_hour: 25,
       min_work_hours: 1,
       min_work_hours_unless_final: 1,
       forecast_days: 7,
@@ -159,5 +165,100 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
 
     const logAfter = store.getDailyLogByDate(user.id, todayIso);
     expect(logAfter?.tasks_summary).toContain("Lijado Avanzado y Pulido");
+  });
+
+  it("excluye el día actual si checkin_resolved=true o la hora actual está fuera del horario operativo, asignando las tareas a mañana", async () => {
+    const user = getOrCreateUser("closed_day_test@workshop.os");
+    const token = signToken({ userId: user.id, email: user.email });
+
+    store.updateAppSettings(user.id, {
+      timezone: "America/Santiago",
+      operational_start_hour: 8,
+      operational_end_hour: 21,
+      min_work_hours: 2,
+      min_work_hours_unless_final: 1,
+      forecast_days: 7,
+      work_days: [0, 1, 2, 3, 4, 5, 6],
+      exclude_saturdays: false,
+      exclude_sundays: false
+    });
+
+    const project = store.addProject(user.id, "Proyecto Tarde Noche", "Desc");
+    const task15 = store.addTask(user.id, {
+      project_id: project.id,
+      title: "Montaje final de herrajes",
+      category: "carpentry",
+      estimated_hours: 2,
+      curing_hours: 0,
+      status: TaskStatus.PENDING,
+      order: 1
+    });
+
+    const todayIso = getLocalDateIso(new Date(), "America/Santiago");
+    const startDateObj = new Date(`${todayIso}T12:00:00Z`);
+    const tomorrowDate = new Date(startDateObj);
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrowIso = tomorrowDate.toISOString().split("T")[0];
+
+    // Simular que el usuario ya cerró la jornada de hoy (checkin_resolved = true)
+    store.saveDailyLog(user.id, {
+      eval_date: todayIso,
+      status: "DAY_BLOCKED",
+      block_reason: "Jornada cerrada",
+      checkin_sent: true,
+      checkin_resolved: true
+    });
+
+    // Ejecutar evaluación matutina / manual con escenario soleado
+    await runMorningEvaluation(user.id, todayIso, "sunny");
+
+    const todayLog = store.getDailyLogByDate(user.id, todayIso);
+    const tomorrowLog = store.getDailyLogByDate(user.id, tomorrowIso);
+
+    // Hoy debe estar concluido y sin tareas asignadas
+    expect(todayLog?.status).toBe("DAY_BLOCKED");
+    expect(todayLog?.block_reason).toContain("Jornada concluida");
+    expect(todayLog?.tasks_summary).toBeNull();
+
+    // Mañana debe recibir la tarea #15
+    expect(tomorrowLog?.status).toBe("DAY_VIABLE");
+    expect(tomorrowLog?.tasks_summary).toContain("Montaje final de herrajes");
+  });
+
+  it("permite agendamiento normal para hoy a media mañana (sin check-in resuelto y con tiempo suficiente)", async () => {
+    const user = getOrCreateUser("morning_active_test@workshop.os");
+
+    store.updateAppSettings(user.id, {
+      timezone: "America/Santiago",
+      operational_start_hour: 0,
+      operational_end_hour: 24, // ventana completa 24h para simular disponibilidad
+      min_work_hours: 1,
+      min_work_hours_unless_final: 1,
+      forecast_days: 7,
+      work_days: [0, 1, 2, 3, 4, 5, 6],
+      exclude_saturdays: false,
+      exclude_sundays: false
+    });
+
+    const project = store.addProject(user.id, "Proyecto Matutino", "Desc");
+    const task = store.addTask(user.id, {
+      project_id: project.id,
+      title: "Lijado Matutino",
+      category: "carpentry",
+      estimated_hours: 2,
+      curing_hours: 0,
+      status: TaskStatus.PENDING,
+      order: 1
+    });
+
+    const todayIso = getLocalDateIso(new Date(), "America/Santiago");
+    const morningDate = new Date(`${todayIso}T14:00:00Z`); // 10:00 AM en Santiago (UTC-4)
+
+    // Ejecutar evaluación con tiempo operativo suficiente y sin checkin resuelto
+    await runMorningEvaluation(user.id, todayIso, "sunny", { nowDate: morningDate });
+
+    const todayLog = store.getDailyLogByDate(user.id, todayIso);
+    expect(todayLog?.status).toBe("DAY_VIABLE");
+    expect(todayLog?.tasks_summary).toContain("Lijado Matutino");
   });
 });

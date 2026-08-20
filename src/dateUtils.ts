@@ -89,7 +89,7 @@ export function getLocalHoursAndMinutes(d: Date = new Date(), timeZone?: string 
     timeZone: tz,
     hour: "numeric",
     minute: "numeric",
-    hour12: false
+    hourCycle: "h23"
   });
   const parts = formatter.formatToParts(d);
   let hours = 0;

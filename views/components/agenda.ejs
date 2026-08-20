@@ -9,7 +9,8 @@
             const seg = eval.bar_segments;
             const cond = (eval.weather_summary && eval.weather_summary.condition) ? eval.weather_summary.condition : 'sunny';
             const is_manual_block = Boolean(eval.is_manually_blocked);
-            const is_amber = (!is_viable) && (!is_manual_block) && (eval.climate_only_status === 'clear');
+            const is_closed = (!is_viable) && (eval.reason && eval.reason.includes('Jornada concluida'));
+            const is_amber = (!is_viable) && (!is_manual_block) && (!is_closed) && (eval.climate_only_status === 'clear');
             const is_blocked_or_suspended = (!is_viable) && (!is_amber);
             const date_iso = item.date_iso || eval.eval_date;
             const date_str = item.date_str || eval.date_str;
@@ -154,6 +155,10 @@
                     <% if (is_viable) { %>
                         <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-ok)]/15 text-[var(--w-ok)] border border-[var(--w-ok)]/30 whitespace-nowrap" title="<%= badge_tooltip %>">
                             Viable
+                        </span>
+                    <% } else if (is_closed) { %>
+                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-s2)] text-[var(--w-t2)] border border-[var(--w-bd)] whitespace-nowrap" title="<%= badge_tooltip %>">
+                            Concluida
                         </span>
                     <% } else if (is_amber) { %>
                         <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-warn)]/15 text-[var(--w-warn)] border border-[var(--w-warn)]/30 whitespace-nowrap" title="<%= badge_tooltip %>">

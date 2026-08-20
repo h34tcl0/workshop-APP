@@ -14,6 +14,11 @@ describe("Evaluation Concurrency & Locking Unit Tests", () => {
 
   beforeEach(async () => {
     await initDatabase();
+    store.updateAppSettings(userId, {
+      mock_weather_scenario: "sunny",
+      telegram_enabled: false,
+      google_calendar_enabled: false
+    });
     // Ensure lock is clean
     releaseEvaluationLock(userId);
     setLockTimeoutForTest(null);

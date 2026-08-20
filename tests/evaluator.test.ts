@@ -385,4 +385,48 @@ describe("Evaluator - Day Overrides Precedence", () => {
     expect(result.scheduled_tasks.length).toBe(1);
     expect(result.scheduled_tasks[0].id).toBe(15);
   });
+
+  it("marks day as DAY_BLOCKED when isTodayClosed option is passed (e.g. check-in resolved or time past operational window)", () => {
+    const task = createMockTask({ id: 1, estimated_hours: 2.0 });
+    const forecasts = createMockForecasts(20, 50, 0, 0);
+
+    const result = evaluateDayFeasibility(
+      "2026-08-19",
+      [task],
+      forecasts,
+      mockSettings,
+      undefined,
+      {
+        isTodayClosed: true,
+        closedReason: "Jornada concluida (cerrada manualmente por el usuario)."
+      }
+    );
+
+    expect(result.status).toBe(DayStatus.DAY_BLOCKED);
+    expect(result.reason).toContain("Jornada concluida");
+    expect(result.scheduled_tasks).toBeUndefined();
+  });
+
+  it("evaluates day with overrides marking it as closed when isTodayClosed is true", () => {
+    const task = createMockTask({ id: 1, estimated_hours: 2.0 });
+    const forecasts = createMockForecasts(20, 50, 0, 0);
+
+    const result = evaluateDayWithOverrides(
+      "2026-08-19",
+      [task],
+      forecasts,
+      mockSettings,
+      undefined,
+      undefined,
+      [],
+      {
+        isTodayClosed: true,
+        closedReason: "Jornada concluida (horario operativo finalizado a las 21:00)."
+      }
+    );
+
+    expect(result.status).toBe(DayStatus.DAY_BLOCKED);
+    expect(result.reason).toContain("horario operativo finalizado");
+    expect(result.scheduled_tasks).toBeUndefined();
+  });
 });

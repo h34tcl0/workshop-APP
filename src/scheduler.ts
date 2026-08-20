@@ -264,7 +264,7 @@ export async function runMorningEvaluation(
   userId: number,
   targetDateIso?: string,
   mockScenario?: string,
-  options?: { skipLock?: boolean; silent?: boolean }
+  options?: { skipLock?: boolean; silent?: boolean; nowDate?: Date }
 ): Promise<{
   evalResult: DayEvaluation;
   status: DayStatus;
@@ -283,7 +283,7 @@ export async function runMorningEvaluation(
   }
 
   try {
-    const now = new Date();
+    const now = options?.nowDate || new Date();
     const appSettings = store.getAppSettings(userId);
     const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
     const todayIso = targetDateIso || getLocalDateIso(now, userTz);
@@ -338,6 +338,36 @@ export async function runMorningEvaluation(
         id: fr.id
       })).filter((item): item is { task: Task; forced_start_hour: number; forced_id: number; id: number } => item.task != null);
 
+      let isDayClosed = false;
+      let closedReason = "";
+
+      if (dateIso === todayIso) {
+        const todayLog = store.getDailyLogByDate(userId, todayIso);
+
+        if (todayLog && Boolean(todayLog.checkin_resolved)) {
+          isDayClosed = true;
+          closedReason = "Jornada concluida (cerrada manualmente por el usuario).";
+        } else {
+          // Si el día no fue cerrado por check-in, verificar si la hora actual local ya sobrepasó la ventana operativa de hoy
+          const localHm = getLocalHoursAndMinutes(now, userTz);
+          // Sólo si estamos en el mismo día real y la hora actual supera el final operativo del día
+          const realWorldToday = getLocalDateIso(now, userTz);
+          if (dateIso === realWorldToday) {
+            const currentDecHour = localHm.totalHours;
+            const endLimit = (dayOverride && dayOverride.custom_end_hour != null) ? dayOverride.custom_end_hour : appSettings.operational_end_hour;
+            const minWork = appSettings.min_work_hours || 2.0;
+
+            if (currentDecHour >= endLimit) {
+              isDayClosed = true;
+              closedReason = `Jornada concluida (horario operativo finalizado a las ${endLimit}:00).`;
+            } else if (currentDecHour + minWork > endLimit) {
+              isDayClosed = true;
+              closedReason = `Jornada no asignable: tiempo restante insuficiente para la ventana mínima (${minWork.toFixed(1)}h antes de las ${endLimit}:00).`;
+            }
+          }
+        }
+      }
+
       const evalResult = evaluateDayWithOverrides(
         dateIso,
         simulatedPendingTasks,
@@ -345,7 +375,11 @@ export async function runMorningEvaluation(
         appSettings,
         dayHolidays,
         dayOverride,
-        forcedTasksWithHours
+        forcedTasksWithHours,
+        {
+          isTodayClosed: isDayClosed,
+          closedReason: closedReason
+        }
       );
 
       let windowStart: string | null = null;
