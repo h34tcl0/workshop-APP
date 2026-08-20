@@ -57,23 +57,47 @@ export class OpenMeteoWeatherService {
   lat: number;
   lon: number;
 
+  // In-memory cache shared across instances: key -> { timestamp: number, data: Map<string, HourlyForecast[]> }
+  private static cache = new Map<string, { timestamp: number; data: Map<string, HourlyForecast[]> }>();
+  private static readonly TTL_MS = 15 * 60 * 1000; // 15 minutos de caché activo
+  private static readonly STALE_MAX_MS = 6 * 60 * 60 * 1000; // Hasta 6 horas de datos previos en caso de falla de red
+
   constructor(lat = -32.99, lon = -71.27) {
     this.lat = typeof lat === "number" && !isNaN(lat) ? lat : -32.99;
     this.lon = typeof lon === "number" && !isNaN(lon) ? lon : -71.27;
   }
 
+  public static clearCache(): void {
+    OpenMeteoWeatherService.cache.clear();
+  }
+
+  private getCacheKey(days: number): string {
+    return `${this.lat.toFixed(4)}_${this.lon.toFixed(4)}_${days}`;
+  }
+
   async getWeeklyForecast(startDate: string, days = 7): Promise<Map<string, HourlyForecast[]>> {
-    const forecastMap = new Map<string, HourlyForecast[]>();
     const numDays = Math.max(days, 3);
+    const cacheKey = this.getCacheKey(numDays);
+    const now = Date.now();
+
+    // 1. Verificar si tenemos datos en caché vigentes (< 15 min)
+    const cached = OpenMeteoWeatherService.cache.get(cacheKey);
+    if (cached && (now - cached.timestamp) < OpenMeteoWeatherService.TTL_MS) {
+      console.log(`[OpenMeteoWeatherService] Using active cached forecast for lat:${this.lat}, lon:${this.lon} (age: ${Math.round((now - cached.timestamp) / 1000)}s)`);
+      return new Map(cached.data);
+    }
+
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${this.lat}&longitude=${this.lon}&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,cloud_cover&timezone=auto&forecast_days=${numDays}`;
 
     try {
       if (process.env.NODE_ENV === "test" && !process.env.ALLOW_REAL_WEATHER_IN_TESTS) {
         throw new Error("Test environment: using deterministic mock weather");
       }
-      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+
+      console.log(`[OpenMeteoWeatherService] Fetching real weather forecast from Open-Meteo API (lat:${this.lat}, lon:${this.lon}, days:${numDays})...`);
+      const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
       if (!response.ok) {
-        throw new Error(`OpenMeteo returned status ${response.status}`);
+        throw new Error(`OpenMeteo returned HTTP ${response.status} (${response.statusText})`);
       }
       const data = await response.json();
       const times: string[] = data.hourly?.time || [];
@@ -82,6 +106,8 @@ export class OpenMeteoWeatherService {
       const precipPops: number[] = data.hourly?.precipitation_probability || [];
       const precipMms: number[] = data.hourly?.precipitation || [];
       const clouds: number[] = data.hourly?.cloud_cover || [];
+
+      const forecastMap = new Map<string, HourlyForecast[]>();
 
       for (let i = 0; i < times.length; i++) {
         const fullTime = times[i]; // "2026-07-31T09:00"
@@ -101,25 +127,47 @@ export class OpenMeteoWeatherService {
           cloud_cover_percent: clouds[i] ?? 20
         });
       }
-    } catch (err) {
-      console.warn(`[OpenMeteoWeatherService] Error fetching weather for lat:${this.lat}, lon:${this.lon}, falling back to mock:`, err);
-      const mock = new MockWeatherService("sunny");
-      const d = new Date(startDate);
-      for (let i = 0; i < numDays; i++) {
-        const curDate = new Date(d);
-        curDate.setDate(curDate.getDate() + i);
-        const dateIso = curDate.toISOString().split("T")[0];
-        forecastMap.set(dateIso, mock.getHourlyForecast(dateIso));
-      }
-    }
 
-    return forecastMap;
+      // Guardar en caché activo
+      OpenMeteoWeatherService.cache.set(cacheKey, {
+        timestamp: now,
+        data: forecastMap
+      });
+
+      console.log(`[OpenMeteoWeatherService] Successfully fetched and cached real forecast for ${forecastMap.size} days.`);
+      return forecastMap;
+    } catch (err: any) {
+      // 2. Si falló la llamada a la API pero tenemos caché previo (hasta 6h), usar el caché previo real
+      if (cached && (now - cached.timestamp) < OpenMeteoWeatherService.STALE_MAX_MS) {
+        console.warn(`[OpenMeteoWeatherService] Warning: API request failed (${err.message}). Using previous real cached weather from ${new Date(cached.timestamp).toISOString()} to avoid simulation corruption.`);
+        return new Map(cached.data);
+      }
+
+      // 3. Si estamos en ambiente de tests, proveer mock determinista
+      if (process.env.NODE_ENV === "test") {
+        console.warn(`[OpenMeteoWeatherService] Test environment fallback for lat:${this.lat}, lon:${this.lon}`);
+        const mock = new MockWeatherService("sunny");
+        const fallbackMap = new Map<string, HourlyForecast[]>();
+        const d = new Date(startDate);
+        for (let i = 0; i < numDays; i++) {
+          const curDate = new Date(d);
+          curDate.setDate(curDate.getDate() + i);
+          const dateIso = curDate.toISOString().split("T")[0];
+          fallbackMap.set(dateIso, mock.getHourlyForecast(dateIso));
+        }
+        return fallbackMap;
+      }
+
+      // 4. En producción sin caché disponible: NO generar silenciosamente "sunny". Registrar error crítico y arrojarlo.
+      console.error(`[OpenMeteoWeatherService] CRITICAL: Failed to fetch weather from Open-Meteo (${err.message}) and no cached data is available.`);
+      throw new Error(`WEATHER_SERVICE_UNAVAILABLE: ${err.message}`);
+    }
   }
 }
 
 export async function getHourlyForecast(dateIso: string, lat?: number, lon?: number): Promise<HourlyForecast[]> {
   const service = new OpenMeteoWeatherService(lat, lon);
-  const map = await service.getWeeklyForecast(dateIso, 3);
+  const map = await service.getWeeklyForecast(dateIso, 7);
   if (map.has(dateIso) && map.get(dateIso)!.length > 0) {
     return map.get(dateIso)!;
   }
@@ -127,7 +175,7 @@ export async function getHourlyForecast(dateIso: string, lat?: number, lon?: num
   if (firstAvailableKey && map.get(firstAvailableKey)?.length) {
     return map.get(firstAvailableKey)!;
   }
-  return new MockWeatherService("sunny").getHourlyForecast(dateIso);
+  return [];
 }
 
 export async function getWeeklyForecast(startDateIso: string, days = 7, lat?: number, lon?: number): Promise<Record<string, HourlyForecast[]>> {

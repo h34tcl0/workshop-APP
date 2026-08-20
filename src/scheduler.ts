@@ -1,6 +1,6 @@
 import { store } from "./db.js";
 import { evaluateDayFeasibility, evaluateDayWithOverrides, computeHourlyClimateMap, compressClimateSegments, detectNewWeatherRisk } from "./evaluator.js";
-import { getHourlyForecast, MockWeatherService } from "./weatherService.js";
+import { getHourlyForecast, OpenMeteoWeatherService, MockWeatherService } from "./weatherService.js";
 import { getHolidayDatesForRange } from "./holidaysService.js";
 import { TelegramBotService } from "./telegramBot.js";
 import { calendarService } from "./calendarService.js";
@@ -297,24 +297,29 @@ export async function runMorningEvaluation(
     let simulatedPendingTasks = [...pendingTasks];
     const startDateObj = new Date(`${todayIso}T12:00:00Z`);
 
+    // Carga en lote del pronóstico meteorológico para todo el horizonte (1 sola petición o caché activa)
+    let weeklyForecastMap = new Map<string, HourlyForecast[]>();
+    if (mockScenario) {
+      console.log(`[Scheduler] Using Mock Weather Scenario '${mockScenario}' for User #${userId}`);
+      const mockSvc = new MockWeatherService(mockScenario);
+      for (let i = 0; i < forecastDaysCount; i++) {
+        const curDate = new Date(startDateObj);
+        curDate.setDate(curDate.getDate() + i);
+        const dateIso = curDate.toISOString().split("T")[0];
+        weeklyForecastMap.set(dateIso, mockSvc.getHourlyForecast(dateIso));
+      }
+    } else {
+      const weatherSvc = new OpenMeteoWeatherService(appSettings.latitude, appSettings.longitude);
+      weeklyForecastMap = await weatherSvc.getWeeklyForecast(todayIso, forecastDaysCount);
+      console.log(`[Scheduler] Weather loaded for User #${userId}: ${weeklyForecastMap.size} days via OpenMeteo/Cache (${appSettings.latitude}, ${appSettings.longitude})`);
+    }
+
     for (let i = 0; i < forecastDaysCount; i++) {
       const curDate = new Date(startDateObj);
       curDate.setDate(curDate.getDate() + i);
       const dateIso = curDate.toISOString().split("T")[0];
 
-      let dayForecasts: HourlyForecast[] = [];
-      if (mockScenario) {
-        const mockSvc = new MockWeatherService(mockScenario);
-        dayForecasts = mockSvc.getHourlyForecast(dateIso);
-      } else {
-        try {
-          dayForecasts = await getHourlyForecast(dateIso, appSettings.latitude, appSettings.longitude);
-        } catch (err) {
-          console.warn(`[Scheduler] Error fetching weather forecast for ${dateIso}, using mock:`, err);
-          const mockSvc = new MockWeatherService("sunny");
-          dayForecasts = mockSvc.getHourlyForecast(dateIso);
-        }
-      }
+      const dayForecasts: HourlyForecast[] = weeklyForecastMap.get(dateIso) || [];
 
       let dayHolidays = new Set<string>();
       if (appSettings.exclude_holidays) {
