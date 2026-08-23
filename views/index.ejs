@@ -257,6 +257,9 @@
 
     <!-- MAIN GRID -->
     <main class="max-w-[1440px] mx-auto px-2.5 sm:px-6 py-4 sm:py-8 w-full max-w-full overflow-x-hidden">
+        <!-- WIDGET COUNTDOWN DE SECADO EN CURSO (Visible tanto en desktop como en mobile) -->
+        <%- include('components/curing_countdown_widget') %>
+
         <!-- MODO INVENTARIO - MATERIALES Y HERRAMIENTAS (VISTA EXCLUSIVA) -->
         <div id="materials-view-wrapper" class="hidden w-full max-w-5xl mx-auto mb-8">
             <%- include('components/materials') %>
@@ -303,11 +306,21 @@
                                     <h4 class="font-bold text-sm text-ink truncate"><%= t.title %></h4>
                                     <p class="text-xs text-ink3 mt-0.5"><%= t.estimated_hours %>h activas • <%= t.curing_hours %>h curado</p>
                                 </div>
-                                <form action="/tasks/<%= t.id %>/complete" method="post" onsubmit="completeTaskInline(event, '<%= t.id %>')">
-                                    <button type="submit" class="bg-moss/20 hover:bg-moss text-moss hover:text-canvas border border-moss/40 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors min-h-[44px] flex items-center gap-1.5 shrink-0">
-                                        <svg class="w-4 h-4"><use href="#i-check"/></svg> Completar
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <% if (t.curing_hours > 0 || t.requires_curing || t.category === 'pva_glue' || t.category === 'varnish_paint' || t.category === 'epoxy') { %>
+                                    <button type="button" 
+                                            onclick="triggerStartCuring('<%= t.id %>', '<%= t.title.replace(/'/g, "\\'") %>', <%= t.curing_hours > 0 ? t.curing_hours : (t.category === 'epoxy' ? 6 : 2) %>)"
+                                            class="bg-brass/15 hover:bg-brass text-brass hover:text-canvas border border-brass/40 font-bold px-3.5 py-2 rounded-xl text-xs transition-colors min-h-[44px] flex items-center gap-1.5"
+                                            title="Iniciar Secado de Pieza">
+                                        <span>⏳ Iniciar Secado</span>
                                     </button>
-                                </form>
+                                    <% } %>
+                                    <form action="/tasks/<%= t.id %>/complete" method="post" onsubmit="completeTaskInline(event, '<%= t.id %>')">
+                                        <button type="submit" class="bg-moss/20 hover:bg-moss text-moss hover:text-canvas border border-moss/40 font-bold px-4 py-2.5 rounded-xl text-xs transition-colors min-h-[44px] flex items-center gap-1.5 shrink-0">
+                                            <svg class="w-4 h-4"><use href="#i-check"/></svg> Completar
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                         <% }); %>
                     <% } %>

@@ -5,9 +5,11 @@ import { signToken } from "../src/auth.js";
 import { app } from "../server.js";
 import { TaskStatus } from "../src/types.js";
 import { runMorningEvaluation, getLocalDateIso } from "../src/scheduler.js";
+import { OpenMeteoWeatherService } from "../src/weatherService.js";
 
 describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () => {
   beforeEach(async () => {
+    OpenMeteoWeatherService.clearCache();
     await initDatabase();
   });
 

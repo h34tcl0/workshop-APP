@@ -1,4 +1,5 @@
 import { HourlyForecast } from "./types.js";
+import { LocalDate } from "./LocalDate.js";
 
 export class MockWeatherService {
   scenario: string;
@@ -80,7 +81,19 @@ export class OpenMeteoWeatherService {
     const cacheKey = this.getCacheKey(numDays);
     const now = Date.now();
 
-    // 1. Verificar si tenemos datos en caché vigentes (< 15 min)
+    // 1. En ambiente de pruebas (test/vitest), usar mock determinista "sunny" directamente
+    if ((process.env.NODE_ENV === "test" || process.env.VITEST) && !process.env.ALLOW_REAL_WEATHER_IN_TESTS) {
+      const mock = new MockWeatherService("sunny");
+      const fallbackMap = new Map<string, HourlyForecast[]>();
+      const startLocal = LocalDate.fromIso(startDate);
+      for (let i = 0; i < numDays; i++) {
+        const dateIso = startLocal.addDays(i).toIso();
+        fallbackMap.set(dateIso, mock.getHourlyForecast(dateIso));
+      }
+      return fallbackMap;
+    }
+
+    // 2. Verificar si tenemos datos en caché vigentes (< 15 min)
     const cached = OpenMeteoWeatherService.cache.get(cacheKey);
     if (cached && (now - cached.timestamp) < OpenMeteoWeatherService.TTL_MS) {
       console.log(`[OpenMeteoWeatherService] Using active cached forecast for lat:${this.lat}, lon:${this.lon} (age: ${Math.round((now - cached.timestamp) / 1000)}s)`);
@@ -90,10 +103,6 @@ export class OpenMeteoWeatherService {
     const url = `https://api.open-meteo.com/v1/forecast?latitude=${this.lat}&longitude=${this.lon}&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,cloud_cover&timezone=auto&forecast_days=${numDays}`;
 
     try {
-      if (process.env.NODE_ENV === "test" && !process.env.ALLOW_REAL_WEATHER_IN_TESTS) {
-        throw new Error("Test environment: using deterministic mock weather");
-      }
-
       console.log(`[OpenMeteoWeatherService] Fetching real weather forecast from Open-Meteo API (lat:${this.lat}, lon:${this.lon}, days:${numDays})...`);
       const response = await fetch(url, { signal: AbortSignal.timeout(6000) });
       if (!response.ok) {
@@ -148,11 +157,9 @@ export class OpenMeteoWeatherService {
         console.warn(`[OpenMeteoWeatherService] Test environment fallback for lat:${this.lat}, lon:${this.lon}`);
         const mock = new MockWeatherService("sunny");
         const fallbackMap = new Map<string, HourlyForecast[]>();
-        const d = new Date(startDate);
+        const startLocal = LocalDate.fromIso(startDate);
         for (let i = 0; i < numDays; i++) {
-          const curDate = new Date(d);
-          curDate.setDate(curDate.getDate() + i);
-          const dateIso = curDate.toISOString().split("T")[0];
+          const dateIso = startLocal.addDays(i).toIso();
           fallbackMap.set(dateIso, mock.getHourlyForecast(dateIso));
         }
         return fallbackMap;

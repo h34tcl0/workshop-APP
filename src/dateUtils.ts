@@ -1,4 +1,7 @@
 import tzlookup from "tz-lookup";
+import { LocalDate } from "./LocalDate.js";
+
+export { LocalDate };
 
 const DAYS_ES = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 

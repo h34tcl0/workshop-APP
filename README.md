@@ -206,6 +206,13 @@ Jornada Operativa (09:00 - 18:00)             Extensión de Curado Pasivo Noctur
 2. **Si un día tiene `force_status === "VIABLE"` o horas personalizadas (`custom_start_hour`/`custom_end_hour`)**:
    Incluso si es domingo, sábado o feriado irrenunciable, el motor **anula el bloqueo por calendario**, establece la ventana con los horarios personalizados solicitados (ej. 15:00 a 21:00) y evalúa el clima y la asignación de tareas dentro de esa ventana específica.
 
+### Regla de Negocio Central: Jornada Concluida y Exclusión del Día Actual
+> ⚠️ **REGLA INVARIABLE**: El horizonte de evaluación excluye el día de **HOY** como candidato a nueva asignación cuando:
+> 1. **Check-in Resuelto**: `checkin_resolved === true` para hoy (la jornada fue cerrada manualmente por el usuario a través del check-in nocturno o el botón "Término de la Jornada").
+> 2. **Horario Operativo Agotado**: La hora actual ya no permite completar ni siquiera la ventana mínima de trabajo (`currentHour + min_work_hours > operational_end_hour` o el tiempo restante antes del cierre es insuficiente).
+>
+> En ambos casos, el día de hoy se marca con estado bloqueado (`DAY_BLOCKED` con motivo de jornada concluida) y el horizonte activo de asignación de tareas arranca obligatoriamente a partir de **MAÑANA**.
+
 ### Fases de una Jornada Evaluada y Umbrales Ambientales
 Cada día evaluado pasa por 4 fases secuenciales:
 1. **PREP (Setup)**: Preparación del taller (duración `setup_hours`, ej. 1.0h).
@@ -215,10 +222,28 @@ Cada día evaluado pasa por 4 fases secuenciales:
    - **Curado Activo**: Ocurre durante la jornada mientras se aplican recubrimientos o adhesivos.
    - **Curado Pasivo**: Ocurre **después** de terminar el trabajo activo o el cierre. Se extiende durante las horas de secado necesarias (`curing_hours`, ej. 2h a 6h), pudiendo adentrarse en la noche (hasta las 23:00 hrs).
 
-**Umbrales Climáticos Aplicables**:
+**Umbrales Climáticos y Reglas de Asignación**:
 - **Lluvia**: Precipitación `>= min_rain_precipitation_mm` (0.2mm) o probabilidad `>= 30%` en **cualquiera** de las horas de trabajo activo o curado pasivo provoca el bloqueo preventivo del día.
 - **Humedad Relativa**: Humedad `>= max_humidity_percent` (ej. 80%) durante trabajo activo o curado invalida la ventana.
 - **Epoxi**: Exige estricto cumplimiento de `temperatura >= 15.0 °C` y `humedad <= 75.0%` en todas las horas activas y sus 6 horas de curado.
+- **Umbral de Tarea Final (`min_work_hours_unless_final`)**: Si la jornada disponible no alcanza la duración mínima estándar (`min_work_hours`, ej. 4h) pero la tarea evaluada es la **última pendiente del backlog** del proyecto, el motor aplica de forma estricta el umbral reducido (`min_work_hours_unless_final`, ej. 1h o 2h), permitiendo completar el proyecto sin retrasos artificiales.
+
+### Resiliencia Climática, Caché en Memoria y Anclaje de Fechas
+1. **Caché de Pronóstico Meteorológico (TTL 15-30 min)**:
+   - Las respuestas de Open-Meteo se indexan por coordenadas geográficas (`lat,lon,days`) con un TTL de 15 a 30 minutos.
+   - Esta caché se reutiliza eficientemente entre la evaluación matutina (Tier 1), las alertas intradía (Tier 4) y las mutaciones del usuario (adición/edición de tareas o check-in), evitando saturar la API externa o incurrir en rate limits.
+2. **Eliminación de Mocks Climáticos en Producción**:
+   - Ante errores de red o caídas de Open-Meteo, el sistema **nunca** recurre a pronósticos inventados (como el mock "sunny" en producción).
+   - En su lugar, el evaluador utiliza el último pronóstico válido en caché o preserva intacto el último `morning_climate_snapshot` registrado en `daily_logs`.
+3. **Value Object Inmutable `LocalDate` (Arquitectura V2)**:
+   - Todo cálculo de fechas de calendario se centraliza en el Value Object inmutable `LocalDate` (`src/LocalDate.ts`).
+   - Proporciona aritmética de días pura (`addDays(n)`), comparaciones cronológicas (`isBefore`, `isAfter`, `equals`, `diffInDays`), formateo en español (`formatShortEs`, `formatLongEs`) e interoperabilidad con SQLite (`toSql()`, `toIso()`).
+   - Genera representaciones Date ancladas de forma determinista al mediodía UTC (`toUtcNoonDate()`, `T12:00:00Z`), erradicando por completo desfases horarios donde el servidor cruza la medianoche UTC antes que la hora local del taller (evitando que la UI y el motor queden desfasados por un día en husos horarios occidentales como `America/Santiago`).
+4. **Máquina de Estados Finita (FSM) de Tareas y Días (Arquitectura V2)**:
+   - Centraliza todas las mutaciones de ciclo de vida en `TaskService` (`src/services/taskService.ts`) y `DayService` (`src/services/dayService.ts`).
+   - Valida transiciones legales rechazando estados inválidos (`InvalidStateTransitionError`).
+   - Soporta reactivación directa a `pending` tanto de tareas completadas como pausadas/inactivas.
+   - Documenta los motivos reales de conclusión de jornada: cierre manual (`checkin_resolved`) vs. cierre automático por horario operativo agotado.
 
 ### Auditoría Horaria Climática (`hourly_forecast`)
 El evaluador genera un objeto de auditoría hora por hora (`getHourlyClimateAudit`) que se guarda serializado en `daily_logs.hourly_forecast`.
@@ -408,6 +433,22 @@ A continuación se resumen los incidentes operacionales más relevantes experime
    - *Causa Raíz*: El evaluador verificaba la regla `exclude_sundays` antes de consultar la tabla `day_overrides`, descartando el domingo antes de leer la intención del usuario.
    - *Lección*: Las sobreescrituras en `day_overrides` poseen precedencia absoluta y se evalúan antes que las exclusiones por defecto.
 
+5. **Bug de "Al Backlog" con Confirmación Falsa de Éxito**:
+   - *Causa Raíz*: El endpoint `/tasks/:id/activate-to-backlog` solo modificaba `is_active = 1` sin restablecer `status = 'pending'` ni limpiar `completed_at`, dejando la tarea invisible para el motor de evaluación pese a responder con código de éxito.
+   - *Lección*: Toda reactivación de tarea debe resetear su ciclo de vida completo (`status`, `progress_percentage`, `completed_at`) y disparar la re-evaluación silenciosa inmediata del horizonte.
+
+6. **Fallback Silencioso a Clima Mock Reescribiendo la Agenda**:
+   - *Causa Raíz*: Ante errores transitorios de red o rate limit de Open-Meteo, el scheduler recurría a un mock "sunny", sobrescribiendo diagnósticos reales y agendando tareas en días con lluvia efectiva.
+   - *Lección*: En producción no se utilizan mocks como fallback de red; se prioriza la caché activa en memoria o se preserva el último snapshot climático sin sobrescribir la agenda con datos falsos.
+
+7. **Desfase de Fecha UTC entre UI y Motor de Evaluación**:
+   - *Causa Raíz*: Instanciar fechas con `new Date(yyyy-mm-dd)` asumía medianoche UTC (`00:00:00Z`), lo que en zonas horarias negativas (ej. `America/Santiago` UTC-3/UTC-4) retrocedía la fecha local al día anterior tras cruzar la medianoche UTC.
+   - *Lección*: Todas las fechas del horizonte se anclan explícitamente al mediodía UTC (`T12:00:00Z`) a partir de la fecha local calculada con la zona horaria del taller.
+
+8. **Regla de "Jornada Concluida" Faltante en Re-evaluaciones**:
+   - *Causa Raíz*: Tras completar el check-in nocturno o al realizar mutaciones a altas horas de la noche, el motor seguía evaluando el día de hoy e intentaba asignar tareas en ventanas horarias ya vencidas.
+   - *Lección*: Si `checkin_resolved = true` o la hora actual no permite completar la ventana mínima operativa, el día de hoy se marca como bloqueado/concluido y el horizonte de asignación arranca obligatoriamente a partir de mañana.
+
 ---
 
 ## 📡 12. Especificación de Endpoints REST (API Reference)
@@ -436,7 +477,7 @@ A continuación se detallan todos los endpoints expuestos en `server.ts`, verifi
 
 ### 📋 Backlog de Tareas y Sugerencias
 - `POST /tasks/add`: Agrega una nueva tarea al backlog del proyecto activo.
-- `POST /tasks/:id/activate-to-backlog`: Pasa una tarea desde plantilla/disponible a activa en el backlog.
+- `POST /tasks/:id/activate-to-backlog`: Restaura una tarea al backlog activo reseteando su ciclo de vida completo (`is_active = 1`, `status = 'pending'`, `completed_at = null`, `progress_percentage = 0`) y dispara una re-evaluación silenciosa del horizonte de agendamiento.
 - `POST /tasks/:id/toggle-active`: Activa o pausa una tarea en el flujo de agendamiento.
 - `POST /tasks/:id/update`: Modifica título, categoría, horas de trabajo activo y horas de curado pasivo.
 - `POST /tasks/:id/update_status`: Actualiza el estado de la tarea (`pending`, `in_progress`, `completed`).

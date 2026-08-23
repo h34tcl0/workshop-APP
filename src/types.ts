@@ -71,6 +71,20 @@ export interface Task {
   completed_at?: Date | string | null;
   requires_curing?: boolean;
   is_active?: boolean;
+  curing_is_blocking?: boolean;
+}
+
+export interface CuringSession {
+  id: number;
+  user_id: number;
+  task_id: number;
+  project_name?: string | null;
+  piece_label: string;
+  started_at: string; // ISO String
+  duration_hours: number;
+  finishes_at: string; // ISO String
+  status: 'curing' | 'completed' | 'interrupted';
+  created_at?: string;
 }
 
 export interface DayOverride {

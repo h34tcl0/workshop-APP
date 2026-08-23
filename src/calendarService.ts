@@ -265,6 +265,15 @@ export class GoogleCalendarService {
     return {
       summary,
       description,
+      extendedProperties: {
+        private: {
+          app: "workshop-os",
+          category: "macro_work_block"
+        },
+        shared: {
+          workshop_os_event: "true"
+        }
+      },
       start: {
         dateTime: `${evalDate}T${startFormatted}`,
         timeZone: timezone
@@ -409,6 +418,175 @@ export class GoogleCalendarService {
       console.warn(`[GoogleCalendarService] Could not delete event ${eventId} from Google Calendar: ${errorMsg}`);
       return { success: false, error: errorMsg };
     }
+  }
+
+  /**
+   * Lista todos los eventos futuros creados por Workshop OS en el calendario del usuario.
+   */
+  async listFutureWorkshopEvents(
+    userId: number,
+    fromIsoDate: string
+  ): Promise<{ success: boolean; events?: Array<{ id: string; summary: string; start: string; description: string }>; error?: string }> {
+    const settings = store.getAppSettings(userId);
+
+    if (!settings.google_calendar_enabled || !settings.google_calendar_id || !settings.google_calendar_id.trim()) {
+      return { success: false, error: "Google Calendar not connected or disabled" };
+    }
+
+    if (!this.calendar) {
+      return { success: false, error: "Google Calendar credentials not initialized" };
+    }
+
+    const targetCalendarId = settings.google_calendar_id.trim();
+
+    try {
+      const timezone = (settings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+      const timeMin = new Date(`${fromIsoDate}T00:00:00`).toISOString();
+
+      const res = (await executeWithRetry(
+        `listFutureWorkshopEvents for User #${userId}`,
+        () => this.calendar.events.list({
+          calendarId: targetCalendarId,
+          timeMin: timeMin,
+          singleEvents: true,
+          orderBy: "startTime",
+          maxResults: 100
+        })
+      )) as any;
+
+      const items = res.data?.items || [];
+      const workshopEvents = items
+        .filter((item: any) => {
+          // 1. Verificación por metadatos extendidos (si existen)
+          const extShared = item.extendedProperties?.shared?.workshop_os_event;
+          const extPrivate = item.extendedProperties?.private?.app;
+          if (extShared === "true" || extPrivate === "workshop-os") {
+            return true;
+          }
+
+          // 2. Verificación estricta por descripción y resumen inequívocos de Workshop OS
+          const summary = item.summary || "";
+          const desc = item.description || "";
+          const hasWorkshopSignature =
+            desc.includes("WORKSHOP OS - Bloque Macro de Trabajo") ||
+            (desc.includes("Tareas Agendadas:") && summary.startsWith("🔨 Taller Carpintería"));
+
+          return hasWorkshopSignature;
+        })
+        .map((item: any) => ({
+          id: item.id,
+          summary: item.summary || "",
+          start: item.start?.dateTime || item.start?.date || "",
+          description: item.description || ""
+        }));
+
+      return { success: true, events: workshopEvents };
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.error_description || err?.response?.data?.error?.message || err?.message || String(err);
+      console.warn(`[GoogleCalendarService] Error listing calendar events for User #${userId}:`, errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  }
+
+  /**
+   * Previsualización de eventos huérfanos: Consulta los eventos de Workshop OS en Google Calendar
+   * y devuelve la lista de eventos que serían eliminados, sin borrarlos todavía.
+   */
+  async previewOrphanCalendarEvents(
+    userId: number,
+    fromIsoDate: string
+  ): Promise<{
+    success: boolean;
+    orphanEvents: Array<{ id: string; summary: string; start: string; description: string }>;
+    totalEventsChecked: number;
+    error?: string;
+  }> {
+    const listRes = await this.listFutureWorkshopEvents(userId, fromIsoDate);
+    if (!listRes.success || !listRes.events) {
+      return { success: false, orphanEvents: [], totalEventsChecked: 0, error: listRes.error };
+    }
+
+    // Obtener los daily_logs del usuario que tienen google_event_id y son viables
+    const futureLogs = store.getFutureDailyLogsWithEvent(userId, fromIsoDate);
+    const validEventIds = new Set<string>();
+
+    for (const log of futureLogs) {
+      let hasTasks = false;
+      try {
+        const taskIds = JSON.parse(log.scheduled_task_ids || "[]");
+        hasTasks = taskIds.length > 0;
+      } catch (_) {}
+
+      if (log.status === "DAY_VIABLE" && hasTasks && log.google_event_id) {
+        validEventIds.add(log.google_event_id.trim());
+      }
+    }
+
+    const orphanEvents = listRes.events.filter(event => !validEventIds.has(event.id.trim()));
+
+    return {
+      success: true,
+      orphanEvents,
+      totalEventsChecked: listRes.events.length
+    };
+  }
+
+  /**
+   * Limpieza de eventos huérfanos: Consulta los eventos de Workshop OS en Google Calendar
+   * y elimina aquellos cuyo eventId no corresponda a ningún daily_log viable activo en la base de datos
+   * (o solo los eventIds confirmados por el usuario si se proporcionan).
+   */
+  async cleanupOrphanCalendarEvents(
+    userId: number,
+    fromIsoDate: string,
+    targetEventIds?: string[]
+  ): Promise<{ success: boolean; deletedCount: number; deletedEventIds: string[]; error?: string }> {
+    const listRes = await this.listFutureWorkshopEvents(userId, fromIsoDate);
+    if (!listRes.success || !listRes.events) {
+      return { success: false, deletedCount: 0, deletedEventIds: [], error: listRes.error };
+    }
+
+    // Obtener los daily_logs del usuario que tienen google_event_id y son viables
+    const futureLogs = store.getFutureDailyLogsWithEvent(userId, fromIsoDate);
+    const validEventIds = new Set<string>();
+
+    for (const log of futureLogs) {
+      // Un evento es válido solo si el día es viable y tiene tareas agendadas
+      let hasTasks = false;
+      try {
+        const taskIds = JSON.parse(log.scheduled_task_ids || "[]");
+        hasTasks = taskIds.length > 0;
+      } catch (_) {}
+
+      if (log.status === "DAY_VIABLE" && hasTasks && log.google_event_id) {
+        validEventIds.add(log.google_event_id.trim());
+      }
+    }
+
+    const allowedTargetIds = targetEventIds ? new Set(targetEventIds.map(id => id.trim())) : null;
+    const deletedEventIds: string[] = [];
+
+    for (const event of listRes.events) {
+      const eventIdTrimmed = event.id.trim();
+      // Solo borrar si no es válido y (si se especificaron targetEventIds) está en la lista confirmada
+      if (!validEventIds.has(eventIdTrimmed)) {
+        if (allowedTargetIds && !allowedTargetIds.has(eventIdTrimmed)) {
+          continue;
+        }
+
+        console.log(`[GoogleCalendarService] Deleting orphan event ${event.id} ('${event.summary}' at ${event.start}) for User #${userId}...`);
+        const delRes = await this.deleteWorkshopEvent(userId, event.id);
+        if (delRes.success) {
+          deletedEventIds.push(event.id);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      deletedCount: deletedEventIds.length,
+      deletedEventIds
+    };
   }
 }
 

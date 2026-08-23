@@ -271,6 +271,76 @@
                             <span class="text-xs text-ink2 font-medium flex-1">Sincronizar eventos en Google Calendar automáticamente</span>
                         </label>
                     </div>
+
+                    <% if (app_settings && app_settings.google_calendar_enabled && app_settings.google_calendar_id) { %>
+                    <div class="flex flex-col sm:flex-row gap-2 pt-1">
+                        <button type="button" onclick="runCalendarReconciliation(this)" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 min-h-[38px]">
+                            <span>🔄 Reconciliar Eventos</span>
+                        </button>
+                        <button type="button" onclick="previewCalendarCleanupOrphans(this)" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 min-h-[38px]">
+                            <span>🧹 Limpiar Huérfanos</span>
+                        </button>
+                    </div>
+                    <div id="calendar-action-feedback" class="hidden text-xs px-3 py-2 rounded-lg bg-surface2 border border-hairline text-ink2"></div>
+                    
+                    <!-- Contenedor de previsualización con confirmación explícita -->
+                    <div id="calendar-orphan-preview-container" class="hidden flex flex-col gap-2 p-3 bg-surface2 border border-brass/40 rounded-lg text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-ink flex items-center gap-1">⚠️ Previsualización de Eliminación</span>
+                            <button type="button" onclick="cancelCalendarCleanupPreview()" class="text-ink3 hover:text-ink text-xs">✕ Cerrar</button>
+                        </div>
+                        <p class="text-ink2 text-[11px]" id="calendar-orphan-preview-msg"></p>
+                        <div id="calendar-orphan-list" class="max-h-36 overflow-y-auto space-y-1.5 py-1"></div>
+                        <div class="flex gap-2 pt-1">
+                            <button type="button" onclick="cancelCalendarCleanupPreview()" class="flex-1 bg-surface border border-hairline text-ink2 hover:text-ink text-xs font-medium py-1.5 px-2.5 rounded transition-colors">
+                                Cancelar
+                            </button>
+                            <button type="button" id="btn-confirm-delete-orphans" onclick="executeConfirmedCalendarCleanup(this)" class="flex-1 bg-crimson hover:bg-crimson/90 text-white text-xs font-semibold py-1.5 px-2.5 rounded transition-colors">
+                                Confirmar y Borrar
+                            </button>
+                        </div>
+                    </div>
+                    <% } %>
+                </div>
+            </div>
+
+            <!-- Seguridad de la Cuenta & Mantenimiento -->
+            <div class="pt-1 border-t border-hairline mt-3 pt-3">
+                <p class="text-[11px] font-semibold text-ink3 uppercase tracking-wide mb-2">Seguridad y Base de Datos</p>
+                <div class="space-y-3">
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <button type="button" id="btn-toggle-change-password" onclick="toggleChangePasswordSection()" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 min-h-[38px]">
+                            <span>🔑 Cambiar Contraseña</span>
+                        </button>
+                        <button type="button" id="btn-trigger-manual-backup" onclick="triggerManualBackup(this)" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 min-h-[38px]">
+                            <span>💾 Crear Backup (WAL)</span>
+                        </button>
+                    </div>
+
+                    <!-- Feedback de Backup Manual -->
+                    <div id="backup-action-feedback" class="hidden text-xs px-3 py-2 rounded-lg bg-surface2 border border-hairline text-ink2"></div>
+
+                    <!-- Panel colapsable de Cambio de Contraseña -->
+                    <div id="change-password-panel" class="hidden p-3 bg-surface2 border border-hairline rounded-lg space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-bold text-ink flex items-center gap-1.5">🔑 Actualizar Contraseña</span>
+                            <button type="button" onclick="toggleChangePasswordSection(false)" class="text-ink3 hover:text-ink text-xs">✕ Cancelar</button>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3 mb-1">Nueva Contraseña</label>
+                            <input type="password" id="input-new-password" placeholder="Mínimo 6 caracteres" class="w-full bg-surface border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass min-h-[38px]">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3 mb-1">Confirmar Nueva Contraseña</label>
+                            <input type="password" id="input-new-password-confirm" placeholder="Repite la nueva contraseña" class="w-full bg-surface border border-hairline text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass min-h-[38px]">
+                        </div>
+                        <div id="change-password-feedback" class="hidden text-xs px-2.5 py-1.5 rounded bg-surface border border-hairline"></div>
+                        <div class="flex justify-end pt-1">
+                            <button type="button" id="btn-submit-change-password" onclick="submitChangePassword(this)" class="bg-brass hover:bg-brassdim text-canvas font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors min-h-[36px]">
+                                Actualizar Contraseña
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 

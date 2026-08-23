@@ -18,7 +18,8 @@ import {
   Material,
   CalculatorOffset,
   Tool,
-  ToolStatus
+  ToolStatus,
+  CuringSession
 } from "./types.js";
 import { hashPassword, verifyPassword } from "./auth.js";
 import { getTimezoneByCoords } from "./dateUtils.js";
@@ -70,15 +71,21 @@ export async function initDatabase(): Promise<Database.Database> {
     // Column already exists
   }
 
-  // Ensure default user exists for migrations
+  // Create initial admin user ONLY if ADMIN_EMAIL and ADMIN_PASSWORD are explicitly defined in environment
   const userCountRow = dbInstance.prepare("SELECT COUNT(*) as count FROM users").get() as any;
   if (!userCountRow || userCountRow.count === 0) {
-    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@workshop.os').trim();
-    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin123!';
-    const adminHash = hashPassword(adminPassword);
-    dbInstance.prepare(
-      "INSERT INTO users (email, password_hash, must_change_password, created_at) VALUES (?, ?, ?, datetime('now'))"
-    ).run(adminEmail.toLowerCase(), adminHash, 1);
+    const envAdminEmail = process.env.ADMIN_EMAIL ? process.env.ADMIN_EMAIL.trim() : '';
+    const envAdminPassword = process.env.ADMIN_PASSWORD ? process.env.ADMIN_PASSWORD.trim() : '';
+
+    if (envAdminEmail && envAdminPassword) {
+      console.log(`[AUTH] Provisioning configured admin user (${envAdminEmail}) from environment variables.`);
+      const adminHash = hashPassword(envAdminPassword);
+      dbInstance.prepare(
+        "INSERT INTO users (email, password_hash, must_change_password, created_at) VALUES (?, ?, ?, datetime('now'))"
+      ).run(envAdminEmail.toLowerCase(), adminHash, 0);
+    } else {
+      console.log('[AUTH] No ADMIN_EMAIL and ADMIN_PASSWORD specified in environment. Database initialized with no users. First user must register via /register.');
+    }
   }
 
   const defaultUser = dbInstance.prepare("SELECT id FROM users ORDER BY id ASC LIMIT 1").get() as any;
@@ -109,8 +116,25 @@ export async function initDatabase(): Promise<Database.Database> {
       progress_percentage INTEGER NOT NULL DEFAULT 0,
       order_num INTEGER NOT NULL DEFAULT 1,
       completed_at TEXT,
+      curing_is_blocking INTEGER NOT NULL DEFAULT 1,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS curing_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      task_id INTEGER NOT NULL,
+      project_name TEXT,
+      piece_label TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      duration_hours REAL NOT NULL,
+      finishes_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'curing',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_curing_sessions_user_status ON curing_sessions(user_id, status);
 
     CREATE TABLE IF NOT EXISTS app_settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -478,6 +502,9 @@ export async function initDatabase(): Promise<Database.Database> {
   }
   if (!currentTasksCols.some(c => c.name === 'is_active')) {
     dbInstance.exec("ALTER TABLE tasks ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;");
+  }
+  if (!currentTasksCols.some(c => c.name === 'curing_is_blocking')) {
+    dbInstance.exec("ALTER TABLE tasks ADD COLUMN curing_is_blocking INTEGER NOT NULL DEFAULT 1;");
   }
 
   const currentMaterialsCols = dbInstance.prepare("PRAGMA table_info(materials)").all() as any[];
@@ -1057,7 +1084,8 @@ export class SQLiteStore {
       progress_percentage: Number(row.progress_percentage || 0),
       order: Number(row.order_num),
       completed_at: row.completed_at || null,
-      is_active: row.is_active !== undefined && row.is_active !== null ? Boolean(row.is_active) : true
+      is_active: row.is_active !== undefined && row.is_active !== null ? Boolean(row.is_active) : true,
+      curing_is_blocking: row.curing_is_blocking !== undefined && row.curing_is_blocking !== null ? Boolean(row.curing_is_blocking) : true
     };
   }
 
@@ -1139,6 +1167,7 @@ export class SQLiteStore {
     estimated_hours?: number;
     curing_hours?: number;
     order?: number;
+    curing_is_blocking?: boolean;
   }): Task {
     const activeProject = this.getActiveProject(userId);
     const pId = taskData.project_id || activeProject.id;
@@ -1152,6 +1181,7 @@ export class SQLiteStore {
 
     const cur = taskData.curing_hours !== undefined ? taskData.curing_hours : defaultCuring;
     const reqCurInt = computeRequiresCuring(cat, cur) ? 1 : 0;
+    const curingIsBlockingInt = taskData.curing_is_blocking !== undefined ? (taskData.curing_is_blocking ? 1 : 0) : 1;
 
     let ord = taskData.order;
     if (ord === undefined) {
@@ -1160,9 +1190,9 @@ export class SQLiteStore {
     }
 
     const info = this.db.prepare(
-      `INSERT INTO tasks (user_id, project_id, title, description, category, estimated_hours, curing_hours, requires_curing, status, progress_percentage, order_num)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?);`
-    ).run(userId, pId, taskData.title, taskData.description || "", cat, est, cur, reqCurInt, ord);
+      `INSERT INTO tasks (user_id, project_id, title, description, category, estimated_hours, curing_hours, requires_curing, status, progress_percentage, order_num, curing_is_blocking)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?);`
+    ).run(userId, pId, taskData.title, taskData.description || "", cat, est, cur, reqCurInt, ord, curingIsBlockingInt);
 
     const createdId = Number(info.lastInsertRowid);
     return this.getTask(userId, createdId)!;
@@ -1208,6 +1238,10 @@ export class SQLiteStore {
         ? (data.is_active ? 1 : 0)
         : (existing.is_active !== false ? 1 : 0);
 
+      const curingIsBlockingInt = data.curing_is_blocking !== undefined
+        ? (data.curing_is_blocking ? 1 : 0)
+        : (existing.curing_is_blocking !== false ? 1 : 0);
+
       this.db.prepare(
         `UPDATE tasks SET
           title = ?,
@@ -1221,7 +1255,8 @@ export class SQLiteStore {
           order_num = ?,
           completed_at = ?,
           project_id = ?,
-          is_active = ?
+          is_active = ?,
+          curing_is_blocking = ?
         WHERE id = ? AND user_id = ?;`
       ).run(
         title,
@@ -1236,6 +1271,7 @@ export class SQLiteStore {
         completedAt,
         projectId,
         isActiveInt,
+        curingIsBlockingInt,
         id,
         userId
       );
@@ -1553,6 +1589,82 @@ export class SQLiteStore {
       last_rain_alert_hour: row.last_rain_alert_hour != null ? Number(row.last_rain_alert_hour) : null,
       updated_at: String(row.updated_at)
     };
+  }
+
+  getDailyLogsForRange(userId: number, startDate: string, endDate: string): DailyLog[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM daily_logs WHERE user_id = ? AND eval_date >= ? AND eval_date <= ? ORDER BY eval_date ASC"
+    ).all(userId, startDate, endDate) as any[];
+
+    return rows.map(row => ({
+      id: Number(row.id),
+      user_id: Number(row.user_id),
+      eval_date: String(row.eval_date),
+      status: row.status as DayStatus,
+      block_reason: row.block_reason || null,
+      window_start: row.window_start || null,
+      window_end: row.window_end || null,
+      net_work_hours: row.net_work_hours != null ? Number(row.net_work_hours) : null,
+      tasks_summary: row.tasks_summary || null,
+      scheduled_task_ids: row.scheduled_task_ids || null,
+      morning_climate_snapshot: row.morning_climate_snapshot || null,
+      hourly_forecast: row.hourly_forecast || null,
+      telegram_notified: Boolean(row.telegram_notified),
+      calendar_created: Boolean(row.calendar_created),
+      google_event_id: row.google_event_id ? String(row.google_event_id) : null,
+      checkin_sent: Boolean(row.checkin_sent),
+      checkin_resolved: Boolean(row.checkin_resolved),
+      weather_alert_sent: Boolean(row.weather_alert_sent),
+      weather_alert_acknowledged: Boolean(row.weather_alert_acknowledged),
+      weather_alert_retry_count: Number(row.weather_alert_retry_count || 0),
+      weather_alert_last_sent_at: row.weather_alert_last_sent_at || null,
+      weather_alert_message: row.weather_alert_message || null,
+      humidity_alert_sent: Boolean(row.humidity_alert_sent),
+      intraday_alert_triggered: Boolean(row.intraday_alert_triggered),
+      intraday_alert_acknowledged: Boolean(row.intraday_alert_acknowledged),
+      intraday_alert_last_sent_at: row.intraday_alert_last_sent_at || null,
+      intraday_alert_burst_count: Number(row.intraday_alert_burst_count || 0),
+      last_rain_alert_hour: row.last_rain_alert_hour != null ? Number(row.last_rain_alert_hour) : null,
+      updated_at: String(row.updated_at)
+    }));
+  }
+
+  getFutureDailyLogsWithEvent(userId: number, fromDate: string): DailyLog[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM daily_logs WHERE user_id = ? AND eval_date >= ? AND google_event_id IS NOT NULL AND TRIM(google_event_id) != '' ORDER BY eval_date ASC"
+    ).all(userId, fromDate) as any[];
+
+    return rows.map(row => ({
+      id: Number(row.id),
+      user_id: Number(row.user_id),
+      eval_date: String(row.eval_date),
+      status: row.status as DayStatus,
+      block_reason: row.block_reason || null,
+      window_start: row.window_start || null,
+      window_end: row.window_end || null,
+      net_work_hours: row.net_work_hours != null ? Number(row.net_work_hours) : null,
+      tasks_summary: row.tasks_summary || null,
+      scheduled_task_ids: row.scheduled_task_ids || null,
+      morning_climate_snapshot: row.morning_climate_snapshot || null,
+      hourly_forecast: row.hourly_forecast || null,
+      telegram_notified: Boolean(row.telegram_notified),
+      calendar_created: Boolean(row.calendar_created),
+      google_event_id: row.google_event_id ? String(row.google_event_id) : null,
+      checkin_sent: Boolean(row.checkin_sent),
+      checkin_resolved: Boolean(row.checkin_resolved),
+      weather_alert_sent: Boolean(row.weather_alert_sent),
+      weather_alert_acknowledged: Boolean(row.weather_alert_acknowledged),
+      weather_alert_retry_count: Number(row.weather_alert_retry_count || 0),
+      weather_alert_last_sent_at: row.weather_alert_last_sent_at || null,
+      weather_alert_message: row.weather_alert_message || null,
+      humidity_alert_sent: Boolean(row.humidity_alert_sent),
+      intraday_alert_triggered: Boolean(row.intraday_alert_triggered),
+      intraday_alert_acknowledged: Boolean(row.intraday_alert_acknowledged),
+      intraday_alert_last_sent_at: row.intraday_alert_last_sent_at || null,
+      intraday_alert_burst_count: Number(row.intraday_alert_burst_count || 0),
+      last_rain_alert_hour: row.last_rain_alert_hour != null ? Number(row.last_rain_alert_hour) : null,
+      updated_at: String(row.updated_at)
+    }));
   }
 
   getDailyLogByIdGlobal(id: number): (DailyLog & { user_id: number }) | null {
@@ -2358,6 +2470,82 @@ export class SQLiteStore {
   deleteCalculatorOffset(userId: number, id: number): boolean {
     const res = this.db.prepare("DELETE FROM calculator_offsets WHERE id = ? AND user_id = ?").run(id, userId);
     return res.changes > 0;
+  }
+
+  // --- CURING SESSIONS ---
+  private rowToCuringSession(row: any): CuringSession {
+    return {
+      id: Number(row.id),
+      user_id: Number(row.user_id),
+      task_id: Number(row.task_id),
+      project_name: row.project_name ? String(row.project_name) : null,
+      piece_label: String(row.piece_label),
+      started_at: String(row.started_at),
+      duration_hours: Number(row.duration_hours),
+      finishes_at: String(row.finishes_at),
+      status: row.status as 'curing' | 'completed' | 'interrupted',
+      created_at: row.created_at ? String(row.created_at) : undefined
+    };
+  }
+
+  getActiveCuringSessions(userId: number): CuringSession[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM curing_sessions WHERE user_id = ? AND status = 'curing' ORDER BY finishes_at ASC"
+    ).all(userId);
+    return rows.map(r => this.rowToCuringSession(r));
+  }
+
+  getCuringSessionsByTask(userId: number, taskId: number): CuringSession[] {
+    const rows = this.db.prepare(
+      "SELECT * FROM curing_sessions WHERE user_id = ? AND task_id = ? ORDER BY id DESC"
+    ).all(userId, taskId);
+    return rows.map(r => this.rowToCuringSession(r));
+  }
+
+  startCuringSession(userId: number, data: {
+    task_id: number;
+    project_name?: string | null;
+    piece_label: string;
+    duration_hours: number;
+    started_at?: string; // If omitted, defaults to NOW()
+  }): CuringSession {
+    const started = data.started_at ? new Date(data.started_at) : new Date();
+    const durationHours = Number(data.duration_hours) > 0 ? Number(data.duration_hours) : 1.0;
+    const finishes = new Date(started.getTime() + durationHours * 3600 * 1000);
+
+    const startedIso = started.toISOString();
+    const finishesIso = finishes.toISOString();
+
+    const info = this.db.prepare(`
+      INSERT INTO curing_sessions (user_id, task_id, project_name, piece_label, started_at, duration_hours, finishes_at, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'curing', datetime('now'))
+    `).run(
+      userId,
+      data.task_id,
+      data.project_name || null,
+      data.piece_label.trim(),
+      startedIso,
+      durationHours,
+      finishesIso
+    );
+
+    const createdId = Number(info.lastInsertRowid);
+    const row = this.db.prepare("SELECT * FROM curing_sessions WHERE id = ?").get(createdId);
+    return this.rowToCuringSession(row);
+  }
+
+  completeCuringSession(userId: number, id: number): CuringSession | null {
+    this.db.prepare("UPDATE curing_sessions SET status = 'completed' WHERE id = ? AND user_id = ?").run(id, userId);
+    const row = this.db.prepare("SELECT * FROM curing_sessions WHERE id = ? AND user_id = ?").get(id, userId);
+    if (!row) return null;
+    return this.rowToCuringSession(row);
+  }
+
+  interruptCuringSession(userId: number, id: number): CuringSession | null {
+    this.db.prepare("UPDATE curing_sessions SET status = 'interrupted' WHERE id = ? AND user_id = ?").run(id, userId);
+    const row = this.db.prepare("SELECT * FROM curing_sessions WHERE id = ? AND user_id = ?").get(id, userId);
+    if (!row) return null;
+    return this.rowToCuringSession(row);
   }
 
 }

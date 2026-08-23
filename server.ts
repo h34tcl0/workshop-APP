@@ -6,9 +6,11 @@ import { importPayloadSchema, reorderPayloadSchema } from './src/schemas.js';
 import { evaluateDayWithOverrides, getHourlyClimateAudit } from './src/evaluator.js';
 import { getHourlyForecast, getWeeklyForecast, MockWeatherService } from './src/weatherService.js';
 import { getHolidayDatesForRange } from './src/holidaysService.js';
-import { formatDateShortEs, getLocalDateIso, getLocalHoursAndMinutes, getWorkshopLocalTime, getTimezoneByCoords } from './src/dateUtils.js';
+import { formatDateShortEs, getLocalDateIso, getLocalHoursAndMinutes, getWorkshopLocalTime, getTimezoneByCoords, LocalDate } from './src/dateUtils.js';
 import { TaskCategory, TaskStatus, Task } from './src/types.js';
-import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick, acquireEvaluationLock, releaseEvaluationLock, isEvaluationInProgress, triggerSilentReevaluation } from './src/scheduler.js';
+import { TaskService } from './src/services/taskService.js';
+import { DayService } from './src/services/dayService.js';
+import { startDaemon, stopDaemon, runMorningEvaluation, runCheckinTick, acquireEvaluationLock, releaseEvaluationLock, isEvaluationInProgress, triggerSilentReevaluation, reconcileCalendarEvents } from './src/scheduler.js';
 import { TelegramBotService } from './src/telegramBot.js';
 import { calendarService } from './src/calendarService.js';
 import {
@@ -277,16 +279,14 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     let simulatedPendingTasks = [...tasks];
 
     const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || 'America/Santiago';
-    const today = new Date();
-    const todayStr = getLocalDateIso(today, userTz);
-    const startDateObj = new Date(`${todayStr}T12:00:00Z`);
+    const todayLocalDate = LocalDate.today(userTz);
+    const todayStr = todayLocalDate.toIso();
 
     // Holidays
     let holidayDates = new Set<string>();
     if (appSettings.exclude_holidays) {
-      const endDateObj = new Date(startDateObj);
-      endDateObj.setDate(endDateObj.getDate() + 6);
-      holidayDates = getHolidayDatesForRange(todayStr, endDateObj.toISOString().split('T')[0]);
+      const endDateStr = todayLocalDate.addDays(6).toIso();
+      holidayDates = getHolidayDatesForRange(todayStr, endDateStr);
     }
 
     // Weather forecast
@@ -298,9 +298,8 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     const forecastEvaluations = [];
 
     for (let d = 0; d < 7; d++) {
-      const evalDateObj = new Date(startDateObj);
-      evalDateObj.setDate(evalDateObj.getDate() + d);
-      const evalDate = evalDateObj.toISOString().split('T')[0];
+      const evalLocalDate = todayLocalDate.addDays(d);
+      const evalDate = evalLocalDate.toIso();
 
       const dayOverride = store.getDayOverride(userId, evalDate);
       const forcedRows = store.getForcedTasksForDate(userId, evalDate);
@@ -327,7 +326,7 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
 
       if (evalDate === todayStr) {
         const todayLog = store.getDailyLogByDate(userId, todayStr);
-        const localHm = getLocalHoursAndMinutes(today, userTz);
+        const localHm = getLocalHoursAndMinutes(new Date(), userTz);
         const currentDecHour = localHm.totalHours;
         const endLimit = (dayOverride && dayOverride.custom_end_hour != null) ? dayOverride.custom_end_hour : appSettings.operational_end_hour;
         const minWork = appSettings.min_work_hours || 2.0;
@@ -384,6 +383,7 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
     const tools = store.getTools(userId);
     const calculatorOffsets = store.getCalculatorOffsets(userId);
     const allProjects = store.getProjects(userId);
+    const activeCuringSessions = store.getActiveCuringSessions(userId);
 
     res.render('index', {
       project: activeProject,
@@ -403,6 +403,7 @@ app.get('/', async (req: AuthenticatedRequest, res) => {
       calculator_offsets: calculatorOffsets,
       all_projects: allProjects,
       all_tasks: allTasks,
+      active_curing_sessions: activeCuringSessions,
       getHourlyClimateAudit
     });
   } catch (err) {
@@ -493,11 +494,12 @@ function parseFlexibleFloat(val: any): number | undefined {
 app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
   try {
     const userId = req.user!.id;
-    const { title, description, category, estimated_hours, curing_hours, order, project_id } = req.body;
+    const { title, description, category, estimated_hours, curing_hours, order, project_id, curing_is_blocking } = req.body;
     const parsedEst = parseFlexibleFloat(estimated_hours) ?? 1.0;
     const parsedCur = parseFlexibleFloat(curing_hours) ?? 0.0;
     const parsedOrd = order ? parseInt(String(order), 10) : undefined;
     const targetProjId = project_id ? parseInt(String(project_id), 10) : undefined;
+    const curingIsBlockingBool = curing_is_blocking !== undefined ? (curing_is_blocking === 'true' || curing_is_blocking === true || curing_is_blocking === 1 || curing_is_blocking === '1') : true;
 
     if (targetProjId) {
       const proj = store.getProjectById(userId, targetProjId);
@@ -516,7 +518,8 @@ app.post('/tasks/add', (req: AuthenticatedRequest, res) => {
       category: category || TaskCategory.CARPENTRY,
       estimated_hours: parsedEst,
       curing_hours: parsedCur,
-      order: parsedOrd && !isNaN(parsedOrd) ? parsedOrd : undefined
+      order: parsedOrd && !isNaN(parsedOrd) ? parsedOrd : undefined,
+      curing_is_blocking: curingIsBlockingBool
     });
     triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after task add:', err));
     res.redirect(303, '/');
@@ -535,21 +538,13 @@ app.post('/tasks/:id/activate-to-backlog', (req: AuthenticatedRequest, res) => {
     return res.status(404).json({ error: 'Tarea no encontrada' });
   }
 
-  // 1. Activar tarea en base de datos y restablecer su estado a PENDING (para tareas completadas o inactivas)
-  const updatedTask = store.updateTask(userId, id, {
-    is_active: true,
-    status: TaskStatus.PENDING,
-    progress_percentage: 0,
-    completed_at: null
-  });
+  // 1. Activar tarea en base de datos y restablecer su estado a PENDING usando TaskService FSM
+  const updatedTask = TaskService.reactivateToBacklog(userId, id);
   
   // 2. Asegurar que el proyecto al que pertenece esté activo para ser agendable
   if (task.project_id) {
     store.toggleProjectActive(userId, task.project_id, true);
   }
-
-  // 3. Disparar re-evaluación silenciosa en background para que se refleje en la agenda/calendario
-  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after task activate to backlog:', err));
 
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.json({ 
@@ -568,8 +563,17 @@ app.post('/tasks/:id/toggle-active', (req: AuthenticatedRequest, res) => {
   const id = parseInt(req.params.id, 10);
   const { is_active } = req.body;
   const isActiveBool = is_active !== undefined ? (is_active === 'true' || is_active === true || is_active === 1 || is_active === '1') : undefined;
-  const updated = store.toggleTaskActive(userId, id, isActiveBool);
-  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after task toggle-active:', err));
+  
+  let updated;
+  if (isActiveBool === false) {
+    updated = TaskService.pauseTask(userId, id);
+  } else if (isActiveBool === true) {
+    updated = TaskService.resumeTask(userId, id);
+  } else {
+    const current = store.getTask(userId, id);
+    updated = current?.is_active === false ? TaskService.resumeTask(userId, id) : TaskService.pauseTask(userId, id);
+  }
+
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.json({ success: true, task: updated });
   }
@@ -588,10 +592,11 @@ app.post('/tasks/:id/update', (req: AuthenticatedRequest, res) => {
       return res.redirect(303, '/');
     }
 
-    const { title, estimated_hours, curing_hours, category, project_id, is_active } = req.body;
+    const { title, estimated_hours, curing_hours, category, project_id, is_active, curing_is_blocking } = req.body;
     const parsedEst = parseFlexibleFloat(estimated_hours);
     const parsedCur = parseFlexibleFloat(curing_hours);
     const isActiveBool = is_active !== undefined ? (is_active === 'true' || is_active === true || is_active === 1 || is_active === '1') : undefined;
+    const curingIsBlockingBool = curing_is_blocking !== undefined ? (curing_is_blocking === 'true' || curing_is_blocking === true || curing_is_blocking === 1 || curing_is_blocking === '1') : undefined;
     const targetProjId = project_id ? parseInt(String(project_id), 10) : undefined;
 
     if (targetProjId) {
@@ -610,7 +615,8 @@ app.post('/tasks/:id/update', (req: AuthenticatedRequest, res) => {
       curing_hours: parsedCur !== undefined ? parsedCur : (curing_hours === '' || curing_hours === '0' || curing_hours === 0 ? 0 : undefined),
       category: category || undefined,
       project_id: targetProjId,
-      is_active: isActiveBool
+      is_active: isActiveBool,
+      curing_is_blocking: curingIsBlockingBool
     });
 
     if (!updated) {
@@ -638,23 +644,39 @@ app.post('/tasks/:id/update', (req: AuthenticatedRequest, res) => {
 // POST /tasks/:id/update_status
 app.post('/tasks/:id/update_status', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   const { status, progress } = req.body;
-  const progressNum = parseInt(progress) || 0;
-  let newStatus = status;
-  if (progressNum === 100) {
-    newStatus = TaskStatus.COMPLETED;
+  const progressNum = parseInt(progress, 10);
+
+  try {
+    let updated: Task;
+    if (progress !== undefined && !isNaN(progressNum)) {
+      updated = TaskService.updateProgress(userId, id, progressNum);
+    } else if (status === TaskStatus.COMPLETED) {
+      updated = TaskService.completeTask(userId, id);
+    } else if (status === TaskStatus.IN_PROGRESS) {
+      updated = TaskService.startTask(userId, id);
+    } else if (status === TaskStatus.PENDING) {
+      updated = TaskService.reactivateToBacklog(userId, id);
+    } else {
+      const existing = store.getTask(userId, id);
+      if (!existing) {
+        return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });
+      }
+      updated = existing;
+    }
+
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, task: updated });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error(`[Server Error] Error en POST /tasks/${id}/update_status:`, err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(400).json({ error: err?.message || 'Error al actualizar el estado de la tarea' });
+    }
+    res.redirect(303, '/');
   }
-  const updated = store.updateTask(userId, id, {
-    status: newStatus,
-    progress_percentage: progressNum,
-    completed_at: newStatus === TaskStatus.COMPLETED ? new Date().toISOString() : undefined
-  });
-  if (!updated) {
-    return res.status(404).json({ error: 'Tarea no encontrada o no pertenece al usuario' });
-  }
-  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after task status update:', err));
-  res.redirect(303, '/');
 });
 
 // POST /tasks/:id/delete
@@ -757,6 +779,67 @@ app.get('/tasks/suggestions', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
   const history = store.getTaskHistory(userId);
   res.json(history);
+});
+
+// --- CURING SESSIONS API ---
+// GET /api/curing-sessions/active - Obtener sesiones de secado activas
+app.get('/api/curing-sessions/active', (req: AuthenticatedRequest, res) => {
+  const userId = req.user!.id;
+  const sessions = store.getActiveCuringSessions(userId);
+  res.json({ success: true, sessions });
+});
+
+// POST /api/curing-sessions/start - Iniciar secado de pieza (explícito)
+app.post('/api/curing-sessions/start', (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const { task_id, piece_label, duration_hours, started_at } = req.body;
+    const taskIdNum = parseInt(String(task_id), 10);
+    if (isNaN(taskIdNum)) {
+      return res.status(400).json({ error: 'task_id inválido' });
+    }
+
+    const durationNum = duration_hours ? parseFloat(String(duration_hours)) : undefined;
+    const session = TaskService.startCuring(userId, taskIdNum, {
+      piece_label: piece_label ? String(piece_label).trim() : undefined,
+      duration_hours: durationNum,
+      started_at: started_at ? String(started_at) : undefined
+    });
+
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, session });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('[Curing Error] Error starting curing session:', err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(400).json({ error: err.message || 'Error al iniciar secado' });
+    }
+    res.redirect(303, '/');
+  }
+});
+
+// POST /api/curing-sessions/:id/complete - Finalizar secado
+app.post('/api/curing-sessions/:id/complete', (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const sessionId = parseInt(req.params.id, 10);
+    if (isNaN(sessionId)) {
+      return res.status(400).json({ error: 'ID de sesión inválido' });
+    }
+
+    const session = TaskService.completeCuring(userId, sessionId);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, session });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('[Curing Error] Error completing curing session:', err);
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.status(400).json({ error: err.message || 'Error al completar secado' });
+    }
+    res.redirect(303, '/');
+  }
 });
 
 // Project Template routes
@@ -1558,32 +1641,21 @@ app.post('/api/checkin/resolve', async (req: AuthenticatedRequest, res) => {
       taskIds = allTasks.map(t => t.id);
     }
 
-    const nowIso = new Date().toISOString();
     for (const tid of taskIds) {
       const t = store.getTask(userId, tid);
       if (!t || t.user_id !== userId) continue;
 
       if (completedSet.has(tid)) {
-        store.updateTask(userId, t.id, {
-          status: TaskStatus.COMPLETED,
-          progress_percentage: 100,
-          completed_at: nowIso
-        });
+        TaskService.completeTask(userId, t.id, { triggerReeval: false });
       } else {
         if (t.status === TaskStatus.COMPLETED) {
-          store.updateTask(userId, t.id, {
-            status: TaskStatus.PENDING,
-            completed_at: null
-          });
+          TaskService.reactivateToBacklog(userId, t.id, { triggerReeval: false });
         }
       }
     }
 
     if (dailyLog) {
-      store.updateDailyLog(userId, dailyLog.id, {
-        checkin_sent: true,
-        checkin_resolved: true
-      });
+      DayService.concludeDay(userId, dailyLog.eval_date, "Jornada concluida (cerrada manualmente por el usuario)", { triggerReeval: false, checkinSent: true });
     }
 
     await triggerSilentReevaluation(userId, dailyLog?.eval_date);
@@ -1658,6 +1730,62 @@ app.post('/settings/telegram/unlink', (req: AuthenticatedRequest, res) => {
   } catch (err: any) {
     console.error('Error desvinculando Telegram:', err);
     res.status(500).json({ error: 'Error interno al desvincular Telegram' });
+  }
+});
+
+// Endpoint para reconciliación forzada de Google Calendar
+app.post('/api/calendar/reconcile', async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const result = await reconcileCalendarEvents(userId);
+    res.json({ success: result.synced, reason: result.reason, deletedOrphansCount: result.deletedOrphansCount || 0 });
+  } catch (err: any) {
+    console.error('[API Calendar Reconcile Error]', err);
+    res.status(500).json({ success: false, error: err?.message || 'Error al reconciliar Google Calendar' });
+  }
+});
+
+// Endpoint para previsualización de eventos huérfanos en Google Calendar (sin borrar)
+app.get('/api/calendar/preview-orphans', async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const appSettings = store.getAppSettings(userId);
+    const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+    const todayIso = getLocalDateIso(new Date(), userTz);
+
+    const result = await calendarService.previewOrphanCalendarEvents(userId, todayIso);
+    res.json({
+      success: result.success,
+      orphanEvents: result.orphanEvents,
+      totalEventsChecked: result.totalEventsChecked,
+      error: result.error
+    });
+  } catch (err: any) {
+    console.error('[API Calendar Preview Orphans Error]', err);
+    res.status(500).json({ success: false, error: err?.message || 'Error al previsualizar eventos huérfanos' });
+  }
+});
+
+// Endpoint para limpieza confirmada de eventos huérfanos en Google Calendar
+app.post('/api/calendar/cleanup-orphans', async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+    const appSettings = store.getAppSettings(userId);
+    const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+    const todayIso = getLocalDateIso(new Date(), userTz);
+
+    const targetEventIds = Array.isArray(req.body?.targetEventIds) ? req.body.targetEventIds : undefined;
+
+    const result = await calendarService.cleanupOrphanCalendarEvents(userId, todayIso, targetEventIds);
+    res.json({
+      success: result.success,
+      deletedCount: result.deletedCount,
+      deletedEventIds: result.deletedEventIds,
+      error: result.error
+    });
+  } catch (err: any) {
+    console.error('[API Calendar Cleanup Orphans Error]', err);
+    res.status(500).json({ success: false, error: err?.message || 'Error al limpiar eventos huérfanos' });
   }
 });
 

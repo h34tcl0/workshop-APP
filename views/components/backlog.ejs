@@ -63,6 +63,12 @@
                     <input type="number" step="0.5" id="manual-curing-hours" name="curing_hours" value="0.0" min="0.0" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
                 </div>
             </div>
+            <div class="flex items-center gap-2 pt-0.5">
+                <input type="checkbox" id="manual-curing-is-blocking" name="curing_is_blocking" value="true" checked class="w-4 h-4 text-brass rounded border-hairline focus:ring-brass bg-surface2">
+                <label for="manual-curing-is-blocking" class="text-xs text-ink2 select-none cursor-pointer">
+                    Curado vinculante / bloqueante (desmarca para curado en paralelo mientras trabajas en otra pieza)
+                </label>
+            </div>
             <button type="submit" class="w-full flex items-center justify-center gap-2 bg-brass hover:bg-brassdim text-canvas font-semibold py-3 rounded-lg text-sm transition-colors min-h-[44px]">
                 <svg class="w-4 h-4"><use href="#i-plus"/></svg> Agregar tarea
             </button>
@@ -136,6 +142,12 @@
                             <label class="block text-[10px] font-semibold text-ink3 mb-1 uppercase tracking-wide">Horas curado</label>
                             <input type="number" step="0.5" min="0.0" name="curing_hours" value="<%= task.curing_hours %>" required class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2 py-2.5 text-xs focus:outline-none focus:border-chalk min-h-[44px] sm:min-h-0">
                         </div>
+                    </div>
+                    <div class="flex items-center gap-2 pt-0.5">
+                        <input type="checkbox" id="edit-curing-is-blocking-<%= task.id %>" name="curing_is_blocking" value="true" <%= task.curing_is_blocking !== false ? 'checked' : '' %> class="w-3.5 h-3.5 text-brass rounded border-hairline focus:ring-brass bg-surface2">
+                        <label for="edit-curing-is-blocking-<%= task.id %>" class="text-[11px] text-ink2 select-none cursor-pointer">
+                            Curado vinculante / bloqueante (desmarca para curado en paralelo)
+                        </label>
                     </div>
                     <div class="flex items-center gap-2 pt-1">
                         <button type="button" onclick="toggleEditTask(<%= task.id %>)" class="flex-1 bg-surface2 hover:bg-hairline text-ink2 font-semibold py-2.5 rounded-lg text-xs transition-colors min-h-[44px] sm:min-h-0">Cancelar</button>

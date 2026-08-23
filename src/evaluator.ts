@@ -15,7 +15,7 @@ import {
   DayOverride,
   ForcedTaskWithDetails
 } from "./types.js";
-import { getSpanishDate, formatHour, formatHourCrossDay, formatDateShortEs, getLocalDateIso } from "./dateUtils.js";
+import { getSpanishDate, formatHour, formatHourCrossDay, formatDateShortEs, getLocalDateIso, LocalDate } from "./dateUtils.js";
 
 const MIN_RAIN_PROBABILITY_PERCENT = 30;
 
@@ -413,9 +413,11 @@ export function evaluateDayFeasibility(
   }
 ): DayEvaluation {
   const cfg = settings;
-  const evalDateIso = typeof evalDateInput === "string" ? evalDateInput : getLocalDateIso(evalDateInput, settings.timezone);
-  const evalDateObj = new Date(`${evalDateIso}T12:00:00Z`);
-  const dateStr = formatDateShortEs(evalDateIso);
+  const localDate = typeof evalDateInput === "string"
+    ? LocalDate.fromIso(evalDateInput)
+    : LocalDate.fromDate(evalDateInput, settings.timezone);
+  const evalDateIso = localDate.toIso();
+  const dateStr = localDate.formatShortEs();
 
   const hourlyWeather = new Map<number, HourlyForecast>();
   for (const f of forecasts) {
@@ -467,10 +469,10 @@ export function evaluateDayFeasibility(
     };
   }
 
-  const weekday = evalDateObj.getDay(); // 0=Sunday, 6=Saturday
+  const weekday = localDate.getDayOfWeek(); // 0=Sunday, 6=Saturday
   const blockedLabels: string[] = [];
   if (cfg.exclude_saturdays && weekday === 6) blockedLabels.push("sábado");
-  if (cfg.exclude_sundays && weekday === 0) blockedLabels.push("domingo");
+  if (cfg.exclude_sundays && localDate.isSunday()) blockedLabels.push("domingo");
   if (cfg.exclude_holidays && holidayDates && holidayDates.has(evalDateIso)) blockedLabels.push("feriado");
 
   if (blockedLabels.length > 0) {
@@ -519,46 +521,58 @@ export function evaluateDayFeasibility(
 
       const scheduledPackage: Task[] = [];
       let accumulatedActiveHours = 0.0;
-      let currentOffset = cfg.setup_hours;
+      let operatorCursor = cfg.setup_hours;
       let lastActiveEndOffset = cfg.setup_hours;
 
       for (const task of pendingTasks) {
         if (accumulatedActiveHours + task.estimated_hours <= availableNetWork + 0.01) {
-          const taskStart = startHour + currentOffset;
+          const taskStart = startHour + operatorCursor;
           const taskActiveEnd = taskStart + task.estimated_hours;
 
           if (taskActiveEnd > endHour - cfg.teardown_hours + 0.01) {
             continue;
           }
 
-          let nextOffset = currentOffset + task.estimated_hours;
           const requiresCuring = task.requires_curing || task.curing_hours > 0 || task.category === TaskCategory.PVA_GLUE || task.category === TaskCategory.VARNISH_PAINT || task.category === TaskCategory.EPOXY;
           const cureDur = requiresCuring ? (task.curing_hours > 0 ? task.curing_hours : (task.category === TaskCategory.EPOXY ? 6.0 : 2.0)) : 0.0;
+          const isBlocking = task.curing_is_blocking !== false; // Default true (blocking)
 
-          if (requiresCuring) {
-            nextOffset = currentOffset + task.estimated_hours + cureDur;
+          // If curing is blocking: operator cursor advances past curing.
+          // If curing is non-blocking (curing_is_blocking = false): operator cursor advances to taskActiveEnd immediately.
+          let nextOperatorCursor = operatorCursor + task.estimated_hours;
+          if (requiresCuring && isBlocking) {
+            nextOperatorCursor = operatorCursor + task.estimated_hours + cureDur;
           }
 
           // Test weather compatibility specifically for this candidate task in this window
           const taskTeardownEnd = taskActiveEnd + cfg.teardown_hours;
           const taskMaxCuringEnd = requiresCuring ? taskStart + task.estimated_hours + cureDur : taskTeardownEnd;
-          const checkBufferEnd = Math.min(23, Math.floor(Math.max(taskTeardownEnd + 1, taskMaxCuringEnd)));
           const isEpoxyTask = task.category === TaskCategory.EPOXY || (task.category as string) === "epoxy";
 
           let taskWeatherConflict = false;
           let conflictDetail: string | null = null;
 
-          for (let h = startHour; h <= checkBufferEnd; h++) {
+          // Preventative climate check across the entire activity & curing window:
+          // Active work hours: check setup, work, teardown
+          // Curing hours: [taskActiveEnd, taskActiveEnd + cureDur] checked for rain and humidity limits
+          const checkStartH = Math.floor(taskStart);
+          const checkEndH = Math.min(23, Math.floor(taskMaxCuringEnd));
+
+          for (let h = checkStartH; h <= checkEndH; h++) {
             const wf = hourlyWeather.get(h);
             if (wf) {
+              // Rain check: absolute restriction for both active work and curing
               if (isRainyForecast(wf, cfg.min_rain_precipitation_mm)) {
                 taskWeatherConflict = true;
-                conflictDetail = `Riesgo de lluvia a las ${String(h).padStart(2, "0")}:00 hrs durante [${task.project_name || 'Tarea'}] "${task.title}".`;
+                conflictDetail = `Riesgo de lluvia a las ${String(h).padStart(2, "0")}:00 hrs (${wf.precipitation_mm}mm) en ventana de tarea/secado [${task.project_name || 'Tarea'}] "${task.title}".`;
                 break;
               }
 
+              const isDuringCuring = requiresCuring && h >= Math.floor(taskActiveEnd) && h <= Math.ceil(taskStart + task.estimated_hours + cureDur);
               const isPostWorkPassiveCuring = h >= Math.floor(taskTeardownEnd) || h >= cfg.operational_end_hour;
-              if (!isPostWorkPassiveCuring && h >= startHour + cfg.setup_hours && wf.relative_humidity > cfg.max_humidity_percent) {
+
+              // Humidity check:
+              if (wf.relative_humidity > cfg.max_humidity_percent) {
                 taskWeatherConflict = true;
                 conflictDetail = `Exceso de humedad a las ${String(h).padStart(2, "0")}:00 hrs (${wf.relative_humidity}%) durante [${task.project_name || 'Tarea'}] "${task.title}".`;
                 break;
@@ -570,7 +584,7 @@ export function evaluateDayFeasibility(
                   conflictDetail = `Temperatura baja (<15°C) para Epoxi a las ${String(h).padStart(2, "0")}:00 hrs en [${task.project_name || 'Tarea'}] "${task.title}".`;
                   break;
                 }
-                if (!isPostWorkPassiveCuring && wf.relative_humidity > 75.0) {
+                if (wf.relative_humidity > 75.0) {
                   taskWeatherConflict = true;
                   conflictDetail = `Humedad alta (>75%) para Epoxi a las ${String(h).padStart(2, "0")}:00 hrs en [${task.project_name || 'Tarea'}] "${task.title}".`;
                   break;
@@ -589,8 +603,8 @@ export function evaluateDayFeasibility(
 
           scheduledPackage.push(task);
           accumulatedActiveHours += task.estimated_hours;
-          lastActiveEndOffset = currentOffset + task.estimated_hours;
-          currentOffset = nextOffset;
+          lastActiveEndOffset = Math.max(lastActiveEndOffset, operatorCursor + task.estimated_hours);
+          operatorCursor = nextOperatorCursor;
         }
       }
 
@@ -650,17 +664,26 @@ export function evaluateDayFeasibility(
       currH = tEnd;
 
       const reqCur = task.requires_curing || task.curing_hours > 0 || task.category === TaskCategory.PVA_GLUE || task.category === TaskCategory.VARNISH_PAINT || task.category === TaskCategory.EPOXY;
+      const isBlocking = task.curing_is_blocking !== false;
+
       if (reqCur) {
         const cDur = task.curing_hours > 0 ? task.curing_hours : (task.category === TaskCategory.EPOXY ? 6.0 : 2.0);
         const cEnd = tEnd + cDur;
         if (cEnd > maxCuringEnd) maxCuringEnd = cEnd;
-        if (i < bestScheduledTasks.length - 1) {
+
+        if (isBlocking && i < bestScheduledTasks.length - 1) {
           timeline.push({
             time_range: `${formatHour(tEnd)} — ${formatHour(cEnd)}`,
             title: "Curado / Secado (bloquea el inicio de la siguiente tarea)",
             duration: `${cDur.toFixed(1)}h`
           });
           currH = cEnd;
+        } else if (!isBlocking) {
+          timeline.push({
+            time_range: `${formatHour(tEnd)} — ${formatHourCrossDay(cEnd)}`,
+            title: `Secado en Paralelo [${task.title}] (no bloqueante)`,
+            duration: `${cDur.toFixed(1)}h`
+          });
         }
       }
     }

@@ -1,0 +1,182 @@
+<!-- WIDGET DE SECADO EN CURSO (COUNTDOWN) -->
+<% 
+  const curingSessions = locals.active_curing_sessions || [];
+%>
+<div id="curing-widget-container" class="w-full mb-6 <%= curingSessions.length === 0 ? 'hidden' : '' %>">
+    <div class="bg-[var(--w-s1)] border border-[var(--w-bd)] rounded-2xl p-4 sm:p-5 shadow-panel space-y-4">
+        <!-- HEADER DEL WIDGET (Sin badge global climático, cada pieza validada individualmente) -->
+        <div class="flex items-center justify-between pb-3 border-b border-[var(--w-bd)] gap-2 flex-wrap">
+            <div class="flex items-center gap-2 min-w-0">
+                <span class="text-base sm:text-lg shrink-0">⏳</span>
+                <h3 class="font-display text-sm sm:text-base font-bold text-[var(--w-t1)] tracking-tight">
+                    SECADO EN CURSO (<span id="curing-active-count"><%= curingSessions.length %></span> piezas activas)
+                </h3>
+            </div>
+            <span class="text-[11px] font-mono text-[var(--w-amber)] bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/30 px-2.5 py-1 rounded-full font-semibold">
+                Curado no vinculante activo
+            </span>
+        </div>
+
+        <!-- LISTA DE TARJETAS DE PIEZAS EN SECADO -->
+        <div id="curing-cards-list" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <% curingSessions.forEach(function(session) { 
+                const startedTime = new Date(session.started_at).getTime();
+                const finishTime = new Date(session.finishes_at).getTime();
+                const totalDurationMs = Math.max(1000, finishTime - startedTime);
+            %>
+            <div class="curing-session-card bg-[var(--w-s2)] border border-[var(--w-bd)] rounded-xl p-3.5 flex flex-col justify-between gap-3 shadow-xs"
+                 id="curing-card-<%= session.id %>"
+                 data-session-id="<%= session.id %>"
+                 data-started-at="<%= session.started_at %>"
+                 data-finishes-at="<%= session.finishes_at %>">
+                
+                <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                            <h4 class="font-bold text-xs sm:text-sm text-[var(--w-t1)] truncate">
+                                <%= session.piece_label %>
+                            </h4>
+                            <% if (session.project_name) { %>
+                            <span class="text-[10px] font-medium text-[var(--w-brass)] bg-[var(--w-s1)] border border-[var(--w-bd)] px-2 py-0.5 rounded-md truncate">
+                                <%= session.project_name %>
+                            </span>
+                            <% } %>
+                        </div>
+                        <p class="text-[11px] text-[var(--w-t2)] mt-0.5">
+                            Duración: <%= session.duration_hours %>h • Fin estimado: <span class="font-mono font-medium text-[var(--w-t1)]"><%= new Date(session.finishes_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) %></span>
+                        </p>
+                    </div>
+
+                    <!-- Botón Finalizar Secado -->
+                    <button type="button" 
+                            onclick="completeCuringSessionInline('<%= session.id %>')"
+                            class="bg-[var(--w-ok)]/15 hover:bg-[var(--w-ok)] text-[var(--w-ok)] hover:text-[var(--w-bg)] border border-[var(--w-ok)]/30 font-semibold px-3 py-1.5 rounded-lg text-xs transition-colors shrink-0 flex items-center gap-1 min-h-[36px]">
+                        <svg class="w-3.5 h-3.5"><use href="#i-check"/></svg>
+                        <span>Finalizar</span>
+                    </button>
+                </div>
+
+                <!-- Barra de Progreso y Tiempo Restante -->
+                <div class="space-y-1.5">
+                    <div class="flex items-center justify-between text-xs font-mono">
+                        <span class="text-[var(--w-t2)]">Restante:</span>
+                        <span id="curing-countdown-<%= session.id %>" class="font-bold text-[var(--w-brass)] text-xs sm:text-sm">
+                            Calculando...
+                        </span>
+                    </div>
+                    <div class="w-full bg-[var(--w-s1)] rounded-full h-2 overflow-hidden border border-[var(--w-bd)]">
+                        <div id="curing-progress-<%= session.id %>" class="bg-[var(--w-brass)] h-full rounded-full transition-all duration-1000 ease-linear" style="width: 0%;"></div>
+                    </div>
+                </div>
+            </div>
+            <% }); %>
+        </div>
+    </div>
+</div>
+
+<script>
+// Motor de actualización de Countdowns de Secado en Vivo
+function updateAllCuringCountdowns() {
+    const cards = document.querySelectorAll('.curing-session-card');
+    const now = Date.now();
+    let activeCount = 0;
+
+    cards.forEach(card => {
+        const id = card.getAttribute('data-session-id');
+        const startedAt = new Date(card.getAttribute('data-started-at')).getTime();
+        const finishesAt = new Date(card.getAttribute('data-finishes-at')).getTime();
+
+        const totalMs = Math.max(1000, finishesAt - startedAt);
+        const remainingMs = finishesAt - now;
+
+        const countdownEl = document.getElementById(`curing-countdown-${id}`);
+        const progressEl = document.getElementById(`curing-progress-${id}`);
+
+        if (remainingMs <= 0) {
+            if (countdownEl) {
+                countdownEl.innerText = "¡Secado finalizado!";
+                countdownEl.classList.remove('text-[var(--w-brass)]');
+                countdownEl.classList.add('text-[var(--w-ok)]');
+            }
+            if (progressEl) {
+                progressEl.style.width = "100%";
+                progressEl.classList.remove('bg-[var(--w-brass)]');
+                progressEl.classList.add('bg-[var(--w-ok)]');
+            }
+        } else {
+            activeCount++;
+            const totalSec = Math.floor(remainingMs / 1000);
+            const hrs = Math.floor(totalSec / 3600);
+            const mins = Math.floor((totalSec % 3600) / 60);
+            const secs = totalSec % 60;
+
+            const timeStr = `${hrs > 0 ? hrs + 'h ' : ''}${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
+            if (countdownEl) countdownEl.innerText = timeStr;
+
+            const elapsedMs = Math.max(0, now - startedAt);
+            const pct = Math.min(100, Math.max(0, (elapsedMs / totalMs) * 100));
+            if (progressEl) progressEl.style.width = `${pct.toFixed(1)}%`;
+        }
+    });
+
+    const countEl = document.getElementById('curing-active-count');
+    if (countEl) countEl.innerText = cards.length;
+}
+
+// Iniciar tick cada segundo
+setInterval(updateAllCuringCountdowns, 1000);
+document.addEventListener('DOMContentLoaded', updateAllCuringCountdowns);
+
+// Función inline para finalizar secado
+async function completeCuringSessionInline(sessionId) {
+    try {
+        const res = await fetch(`/api/curing-sessions/${sessionId}/complete`, {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' }
+        });
+        const data = await res.json();
+        if (data.success) {
+            const card = document.getElementById(`curing-card-${sessionId}`);
+            if (card) {
+                card.classList.add('opacity-0', 'scale-95');
+                setTimeout(() => {
+                    card.remove();
+                    const remainingCards = document.querySelectorAll('.curing-session-card');
+                    if (remainingCards.length === 0) {
+                        const container = document.getElementById('curing-widget-container');
+                        if (container) container.classList.add('hidden');
+                    }
+                    updateAllCuringCountdowns();
+                }, 300);
+            }
+        } else {
+            alert(data.error || 'Error al completar el secado');
+        }
+    } catch (err) {
+        console.error('Error completing curing:', err);
+    }
+}
+
+// Función inline para iniciar secado desde botón de tarea
+async function triggerStartCuring(taskId, pieceLabel, durationHours) {
+    try {
+        const res = await fetch('/api/curing-sessions/start', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                task_id: taskId,
+                piece_label: pieceLabel,
+                duration_hours: durationHours
+            })
+        });
+        const data = await res.json();
+        if (data.success) {
+            window.location.reload();
+        } else {
+            alert(data.error || 'Error al iniciar secado');
+        }
+    } catch (err) {
+        console.error('Error starting curing session:', err);
+    }
+}
+</script>

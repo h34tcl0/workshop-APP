@@ -143,11 +143,312 @@ async function unlinkTelegram() {
     }
 }
 
+async function runCalendarReconciliation(btn) {
+    const feedbackEl = document.getElementById('calendar-action-feedback');
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>🔄 Reconciliando...</span>';
+    }
+    if (feedbackEl) {
+        feedbackEl.classList.remove('hidden');
+        feedbackEl.textContent = 'Reconciliando eventos con Google Calendar...';
+    }
+
+    try {
+        const res = await fetch('/api/calendar/reconcile', { method: 'POST' });
+        const data = await res.json();
+        if (feedbackEl) {
+            if (data.success) {
+                feedbackEl.textContent = data.reason || 'Reconciliación completada exitosamente.';
+            } else {
+                feedbackEl.textContent = data.reason || data.error || 'Error al reconciliar.';
+            }
+        }
+        if (typeof showToast === 'function' && data.success) {
+            showToast('Google Calendar reconciliado');
+        }
+    } catch (err) {
+        if (feedbackEl) feedbackEl.textContent = 'Error de conexión al reconciliar.';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+let currentOrphanEventIds = [];
+
+async function previewCalendarCleanupOrphans(btn) {
+    const feedbackEl = document.getElementById('calendar-action-feedback');
+    const previewContainer = document.getElementById('calendar-orphan-preview-container');
+    const previewMsg = document.getElementById('calendar-orphan-preview-msg');
+    const orphanListEl = document.getElementById('calendar-orphan-list');
+    
+    if (previewContainer) previewContainer.classList.add('hidden');
+    
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>🔍 Buscando...</span>';
+    }
+    if (feedbackEl) {
+        feedbackEl.classList.remove('hidden');
+        feedbackEl.textContent = 'Consultando eventos en tu Google Calendar...';
+    }
+
+    try {
+        const res = await fetch('/api/calendar/preview-orphans');
+        const data = await res.json();
+        
+        if (!data.success) {
+            if (feedbackEl) feedbackEl.textContent = data.error || 'Error al consultar Google Calendar.';
+            return;
+        }
+
+        const orphans = data.orphanEvents || [];
+        currentOrphanEventIds = orphans.map(o => o.id);
+
+        if (orphans.length === 0) {
+            if (feedbackEl) {
+                feedbackEl.textContent = '✨ Tu Google Calendar está limpio. No se encontraron eventos huérfanos.';
+            }
+            return;
+        }
+
+        if (feedbackEl) feedbackEl.classList.add('hidden');
+        
+        if (previewContainer && previewMsg && orphanListEl) {
+            previewMsg.textContent = `Se encontraron ${orphans.length} evento(s) en Google Calendar sin jornada de trabajo activa asociada:`;
+            orphanListEl.innerHTML = orphans.map(o => {
+                const dateStr = o.start ? o.start.replace('T', ' ').substring(0, 16) : 'Fecha sin definir';
+                return `
+                    <div class="p-1.5 rounded bg-surface border border-hairline flex flex-col gap-0.5">
+                        <span class="font-semibold text-ink">${escapeHtml(o.summary || 'Sin título')}</span>
+                        <span class="text-[10px] text-ink3">🕒 ${escapeHtml(dateStr)}</span>
+                    </div>
+                `;
+            }).join('');
+            previewContainer.classList.remove('hidden');
+        }
+    } catch (err) {
+        if (feedbackEl) feedbackEl.textContent = 'Error de conexión al buscar eventos huérfanos.';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+function cancelCalendarCleanupPreview() {
+    const previewContainer = document.getElementById('calendar-orphan-preview-container');
+    if (previewContainer) previewContainer.classList.add('hidden');
+    currentOrphanEventIds = [];
+}
+
+async function executeConfirmedCalendarCleanup(btn) {
+    const feedbackEl = document.getElementById('calendar-action-feedback');
+    const previewContainer = document.getElementById('calendar-orphan-preview-container');
+    
+    if (currentOrphanEventIds.length === 0) {
+        if (previewContainer) previewContainer.classList.add('hidden');
+        return;
+    }
+
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>⏳ Eliminando...</span>';
+    }
+
+    try {
+        const res = await fetch('/api/calendar/cleanup-orphans', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetEventIds: currentOrphanEventIds })
+        });
+        const data = await res.json();
+        
+        if (previewContainer) previewContainer.classList.add('hidden');
+        if (feedbackEl) {
+            feedbackEl.classList.remove('hidden');
+            if (data.success) {
+                feedbackEl.textContent = `✅ Limpieza completada: ${data.deletedCount} evento(s) huérfano(s) eliminado(s) exitosamente.`;
+            } else {
+                feedbackEl.textContent = data.error || 'Error al eliminar eventos huérfanos.';
+            }
+        }
+        if (typeof showToast === 'function' && data.success) {
+            showToast(`Limpieza: ${data.deletedCount} eventos eliminados`);
+        }
+        currentOrphanEventIds = [];
+    } catch (err) {
+        if (feedbackEl) {
+            feedbackEl.classList.remove('hidden');
+            feedbackEl.textContent = 'Error de conexión al ejecutar el borrado.';
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return text.replace(/[&<>"']/g, m => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    })[m]);
+}
+
+function toggleChangePasswordSection(forceState) {
+    const panel = document.getElementById('change-password-panel');
+    const inputPass = document.getElementById('input-new-password');
+    const inputConfirm = document.getElementById('input-new-password-confirm');
+    const feedback = document.getElementById('change-password-feedback');
+    
+    if (!panel) return;
+    
+    const shouldShow = typeof forceState === 'boolean' ? forceState : panel.classList.contains('hidden');
+    if (shouldShow) {
+        panel.classList.remove('hidden');
+        if (inputPass) inputPass.focus();
+    } else {
+        panel.classList.add('hidden');
+        if (inputPass) inputPass.value = '';
+        if (inputConfirm) inputConfirm.value = '';
+        if (feedback) {
+            feedback.classList.add('hidden');
+            feedback.textContent = '';
+        }
+    }
+}
+
+async function submitChangePassword(btn) {
+    const inputPass = document.getElementById('input-new-password');
+    const inputConfirm = document.getElementById('input-new-password-confirm');
+    const feedback = document.getElementById('change-password-feedback');
+    
+    const new_password = inputPass ? inputPass.value.trim() : '';
+    const new_password_confirm = inputConfirm ? inputConfirm.value.trim() : '';
+
+    if (!feedback) return;
+    feedback.classList.remove('hidden', 'text-emerald-400', 'text-red-400', 'border-emerald-500/40', 'border-red-500/40');
+
+    if (!new_password || new_password.length < 6) {
+        feedback.classList.add('text-red-400', 'border-red-500/40');
+        feedback.textContent = 'La nueva contraseña debe tener al menos 6 caracteres.';
+        return;
+    }
+
+    if (new_password !== new_password_confirm) {
+        feedback.classList.add('text-red-400', 'border-red-500/40');
+        feedback.textContent = 'Las contraseñas no coinciden.';
+        return;
+    }
+
+    const originalText = btn ? btn.innerHTML : '';
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>Actualizando...</span>';
+    }
+
+    try {
+        const res = await fetch('/api/user/change-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ new_password, new_password_confirm })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.status === 'ok') {
+            feedback.classList.add('text-emerald-400', 'border-emerald-500/40');
+            feedback.textContent = '✅ ' + (data.message || 'Contraseña actualizada correctamente.');
+            if (inputPass) inputPass.value = '';
+            if (inputConfirm) inputConfirm.value = '';
+            if (typeof showToast === 'function') {
+                showToast('Contraseña actualizada correctamente');
+            }
+            setTimeout(() => {
+                toggleChangePasswordSection(false);
+            }, 1800);
+        } else {
+            feedback.classList.add('text-red-400', 'border-red-500/40');
+            feedback.textContent = '❌ ' + (data.error || 'Error al actualizar contraseña.');
+        }
+    } catch (err) {
+        feedback.classList.add('text-red-400', 'border-red-500/40');
+        feedback.textContent = 'Error de conexión al intentar cambiar la contraseña.';
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+async function triggerManualBackup(btn) {
+    const feedbackEl = document.getElementById('backup-action-feedback');
+    const originalText = btn ? btn.innerHTML : '';
+
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span>💾 Generando Backup...</span>';
+    }
+    if (feedbackEl) {
+        feedbackEl.classList.remove('hidden', 'text-emerald-400', 'text-red-400', 'border-emerald-500/40', 'border-red-500/40');
+        feedbackEl.textContent = 'Generando copia de seguridad en caliente (WAL mode)...';
+    }
+
+    try {
+        const res = await fetch('/api/admin/backup', { method: 'POST' });
+        const data = await res.json();
+
+        if (feedbackEl) {
+            if (res.ok && data.status === 'ok') {
+                const pathMsg = data.backup_path ? ` (${data.backup_path})` : '';
+                feedbackEl.classList.add('text-emerald-400', 'border-emerald-500/40');
+                feedbackEl.textContent = `✅ ${data.message || 'Copia de seguridad creada con éxito'}${pathMsg}`;
+                if (typeof showToast === 'function') {
+                    showToast('Backup WAL creado exitosamente');
+                }
+            } else {
+                feedbackEl.classList.add('text-red-400', 'border-red-500/40');
+                feedbackEl.textContent = `❌ ${data.error || 'Error al generar la copia de seguridad.'}`;
+            }
+        }
+    } catch (err) {
+        if (feedbackEl) {
+            feedbackEl.classList.add('text-red-400', 'border-red-500/40');
+            feedbackEl.textContent = 'Error de conexión al generar la copia de seguridad.';
+        }
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
 Object.assign(window, {
     openSettingsModal,
     closeSettingsModal,
     toggleTip,
     generateTelegramLinkCode,
     saveSettings,
-    unlinkTelegram
+    unlinkTelegram,
+    runCalendarReconciliation,
+    previewCalendarCleanupOrphans,
+    cancelCalendarCleanupPreview,
+    executeConfirmedCalendarCleanup,
+    toggleChangePasswordSection,
+    submitChangePassword,
+    triggerManualBackup
 });
