@@ -1707,6 +1707,14 @@ app.post('/settings/update', (req: AuthenticatedRequest, res) => {
     google_calendar_id: body.google_calendar_id !== undefined ? String(body.google_calendar_id).trim() : undefined,
     google_calendar_enabled: body.google_calendar_enabled === 'true' || body.google_calendar_enabled === 'on' || body.google_calendar_enabled === '1'
   });
+
+  // Disparar reevaluación silenciosa en background para actualizar daily_logs y Google Calendar
+  triggerSilentReevaluation(userId);
+
+  if (req.xhr || req.headers.accept?.includes('application/json') || req.headers['x-requested-with'] === 'XMLHttpRequest') {
+    return res.json({ success: true, message: 'Configuración actualizada exitosamente' });
+  }
+
   res.redirect(303, '/');
 });
 

@@ -1,10 +1,51 @@
 // ── Modal de configuración ──
-function openSettingsModal() { document.getElementById('settings-modal').classList.remove('hidden'); }
+function openSettingsModal() { 
+    document.getElementById('settings-modal').classList.remove('hidden');
+    switchSettingsTab('location');
+}
 function closeSettingsModal() { document.getElementById('settings-modal').classList.add('hidden'); }
+
+// ── Tabs horizontales del modal de configuración ──
+function switchSettingsTab(tabKey) {
+    // Actualizar botones de tab
+    document.querySelectorAll('.settings-tab-btn').forEach(btn => {
+        btn.classList.remove('border-brass', 'text-brass', 'bg-surface');
+        btn.classList.add('border-transparent', 'text-ink3');
+    });
+    const activeBtn = document.getElementById('tab-btn-' + tabKey);
+    if (activeBtn) {
+        activeBtn.classList.remove('border-transparent', 'text-ink3');
+        activeBtn.classList.add('border-brass', 'text-brass', 'bg-surface');
+    }
+
+    // Actualizar paneles de contenido
+    document.querySelectorAll('.settings-tab-content').forEach(content => {
+        content.classList.add('hidden');
+    });
+    const activeContent = document.getElementById('tab-content-tab-' + tabKey) || document.getElementById('tab-content-' + tabKey);
+    if (activeContent) {
+        activeContent.classList.remove('hidden');
+    }
+}
+
+// ── Sincronización de inputs de tiempo (Horas + Minutos -> Decimal) ──
+function syncDurationField(fieldPrefix) {
+    const hInput = document.getElementById(fieldPrefix + '_h');
+    const mInput = document.getElementById(fieldPrefix + '_m');
+    const targetInput = document.getElementById('input_' + fieldPrefix + '_hours');
+
+    if (hInput && mInput && targetInput) {
+        const hours = parseInt(hInput.value, 10) || 0;
+        const minutes = parseInt(mInput.value, 10) || 0;
+        const decimalVal = Math.round((hours + minutes / 60.0) * 100) / 100;
+        targetInput.value = decimalVal;
+    }
+}
 
 // ── Tooltips de ayuda junto a cada campo del modal ──
 function toggleTip(tipId) {
-    document.getElementById('tip-' + tipId).classList.toggle('hidden');
+    const tip = document.getElementById('tip-' + tipId);
+    if (tip) tip.classList.toggle('hidden');
 }
 
 // ── Vinculación de Telegram por código OTP ──
@@ -80,11 +121,17 @@ async function saveSettings(event) {
     const form = document.getElementById('settings-form') || (event && event.target);
     if (!form) return;
 
-    const btn = form.querySelector('button[type="submit"]');
-    const originalText = btn ? btn.textContent : '';
+    const btn = document.getElementById('btn-save-settings') || form.querySelector('button[type="submit"]');
+    const btnText = document.getElementById('btn-save-settings-text');
+    const originalText = btnText ? btnText.innerHTML : (btn ? btn.innerHTML : 'Guardar ajustes');
+    
     if (btn) {
         btn.disabled = true;
-        btn.textContent = 'Guardando...';
+        if (btnText) {
+            btnText.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-canvas inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Guardando y evaluando...`;
+        } else {
+            btn.innerHTML = 'Guardando y evaluando...';
+        }
     }
 
     try {
@@ -94,7 +141,9 @@ async function saveSettings(event) {
         const res = await fetch('/settings/update', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
             },
             body: body.toString()
         });
@@ -102,23 +151,31 @@ async function saveSettings(event) {
         if (res.ok) {
             closeSettingsModal();
             if (typeof showToast === 'function') {
-                showToast('Ajustes guardados correctamente');
+                showToast('Ajustes guardados y agenda reevaluada correctamente', 'success');
             }
+            
+            // Actualizar la vista de ajustes/header
             await refreshSettingsView();
+
+            // Actualizar la agenda, backlog y cola de trabajo en vivo
+            if (typeof window.refreshWorkshopView === 'function') {
+                await window.refreshWorkshopView();
+            }
         } else {
             const txt = await res.text();
             alert('Error al guardar configuración: ' + (txt || res.statusText));
-            if (btn) {
-                btn.disabled = false;
-                btn.textContent = originalText;
-            }
         }
     } catch (err) {
         console.error('Error al guardar la configuración:', err);
         alert('Error de red al guardar la configuración');
+    } finally {
         if (btn) {
             btn.disabled = false;
-            btn.textContent = originalText;
+            if (btnText) {
+                btnText.innerHTML = originalText;
+            } else {
+                btn.innerHTML = originalText;
+            }
         }
     }
 }
@@ -440,6 +497,8 @@ async function triggerManualBackup(btn) {
 Object.assign(window, {
     openSettingsModal,
     closeSettingsModal,
+    switchSettingsTab,
+    syncDurationField,
     toggleTip,
     generateTelegramLinkCode,
     saveSettings,

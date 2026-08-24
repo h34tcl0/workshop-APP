@@ -476,7 +476,7 @@
                 <form action="/day-override/<%= date_iso %>/save" method="post" onsubmit="submitDayOverrideForm(event)" class="space-y-4">
                     <div>
                         <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Estado del día</label>
-                        <select name="force_status" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none min-h-[44px] sm:min-h-0">
+                        <select name="force_status" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer transition-colors">
                             <option value="" <%= (!override || !override.force_status) ? 'selected' : '' %>>Automático (según clima)</option>
                             <option value="VIABLE" <%= (override && override.force_status === 'VIABLE') ? 'selected' : '' %>>Forzar viable</option>
                             <option value="BLOCKED" <%= (override && override.force_status === 'BLOCKED') ? 'selected' : '' %>>Forzar bloqueado</option>
@@ -485,17 +485,17 @@
 
                     <div>
                         <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Motivo (opcional, se muestra si está bloqueado)</label>
-                        <input type="text" name="note" value="<%= (override && override.note) ? override.note : '' %>" placeholder="Ej. Viaje, evento familiar..." class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
+                        <input type="text" name="note" value="<%= (override && override.note) ? override.note : '' %>" placeholder="Ej. Viaje, evento familiar..." class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
                         <div>
                             <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Inicio jornada (este día)</label>
-                            <input type="number" min="0" max="23" name="custom_start_hour" value="<%= (override && override.custom_start_hour != null) ? override.custom_start_hour : '' %>" placeholder="<%= app_settings.operational_start_hour %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
+                            <input type="number" min="0" max="23" name="custom_start_hour" value="<%= (override && override.custom_start_hour != null) ? override.custom_start_hour : '' %>" placeholder="<%= app_settings.operational_start_hour %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
                         </div>
                         <div>
                             <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Fin jornada (este día)</label>
-                            <input type="number" min="0" max="23" name="custom_end_hour" value="<%= (override && override.custom_end_hour != null) ? override.custom_end_hour : '' %>" placeholder="<%= app_settings.operational_end_hour %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0">
+                            <input type="number" min="0" max="23" name="custom_end_hour" value="<%= (override && override.custom_end_hour != null) ? override.custom_end_hour : '' %>" placeholder="<%= app_settings.operational_end_hour %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
                         </div>
                     </div>
                     <p class="text-[11px] text-ink3 -mt-2">Vacío = usa la jornada general configurada.</p>
@@ -544,7 +544,7 @@
                     <form action="/day-override/<%= date_iso %>/force-task" method="post" onsubmit="submitForceTaskForm(event)" class="flex flex-col sm:flex-row sm:items-end gap-2">
                         <div class="flex-1 min-w-0">
                             <label class="block text-[10px] text-ink3 mb-1">Tarea</label>
-                            <select name="task_id" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2 py-2 text-xs focus:outline-none min-h-[44px] sm:min-h-0">
+                            <select name="task_id" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-lg px-2 py-2 text-xs focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer transition-colors">
                                 <% tasks.forEach(function(t) { %>
                                 <option value="<%= t.id %>"><%= t.title %></option>
                                 <% }); %>
@@ -552,7 +552,7 @@
                         </div>
                         <div class="w-full sm:w-20 shrink-0">
                             <label class="block text-[10px] text-ink3 mb-1">Hora</label>
-                            <input type="number" name="forced_start_hour" min="0" max="23" value="9" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2 py-2 text-xs focus:outline-none min-h-[44px] sm:min-h-0">
+                            <input type="number" name="forced_start_hour" min="0" max="23" value="9" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-2 py-2 text-xs focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
                         </div>
                         <button type="submit" class="bg-chalk hover:bg-chalk/80 text-canvas font-semibold px-4 py-2.5 rounded-lg text-xs transition-colors shrink-0 min-h-[44px] sm:min-h-0 flex items-center justify-center">Forzar</button>
                     </form>

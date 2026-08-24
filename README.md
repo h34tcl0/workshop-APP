@@ -1,8 +1,8 @@
 # 🚀 AGENDAPP (Workshop OS) — Documentación Técnica y Arquitectura del Sistema
 
-**AGENDAPP** (anteriormente *Workshop OS*) es un sistema operativo de ejecución operacional autónomo e inteligente respecto al clima, diseñado específicamente para talleres de carpintería al aire libre, estudios de ebanistería y procesos de manufactura sensibles a condiciones ambientales.
+**AGENDAPP** (anteriormente *Workshop OS*) es un sistema operativo de ejecución operacional autónomo e inteligente respecto al clima, diseñado específicamente para talleres de carpintería al aire libre, estudios de ebanistería y procesos de manufactura artesanal sensibles a condiciones ambientales.
 
-El sistema funciona como un **bucle de decisión continuo**: ingiere pronósticos meteorológicos en tiempo real, evalúa umbrales ambientales de secado y curado frente al backlog de tareas, agenda bloques de trabajo optimizados, sincroniza eventos espejo en **Google Calendar API v3**, emite alertas intradía de emergencia ante cambios climáticos intempestivos y entrega notificaciones operacionales e interactivas a través de un **Bot de Telegram**.
+El sistema funciona como un **bucle de decisión continuo**: ingiere pronósticos meteorológicos en tiempo real, evalúa umbrales ambientales de secado y curado frente al backlog de tareas, agenda bloques de trabajo optimizados, sincroniza eventos espejo en **Google Calendar API v3**, emite alertas intradía de emergencia ante cambios climáticos intempestivos, gestiona el inventario de materiales y herramientas, y entrega notificaciones operacionales e interactivas a través de un **Bot de Telegram** y su despachador centralizado **`NotificationDispatcher`**.
 
 ---
 
@@ -11,16 +11,18 @@ El sistema funciona como un **bucle de decisión continuo**: ingiere pronóstico
 1. [Visión General y Arquitectura Multi-Tenant con Geolocalización](#-1-visión-general-y-arquitectura-multi-tenant-con-geolocalización)
 2. [Arquitectura y Modelo de Datos (Esquema Completo)](#-2-arquitectura-y-modelo-de-datos-esquema-completo)
 3. [Motor de Evaluación Meteorológica, Curado Pasivo y Auditoría Horaria](#-3-motor-de-evaluación-meteorológica-curado-pasivo-y-auditoría-horaria)
-4. [Sistema de Alertas (Humedad Informativa vs. Lluvia Crítica de Emergencia)](#-4-sistema-de-alertas-humedad-informativa-vs-lluvia-crítica-de-emergencia)
+4. [Sistema de Notificaciones y Alertas por Tiers (`NotificationDispatcher`)](#-4-sistema-de-notificaciones-y-alertas-por-tiers-notificationdispatcher)
 5. [Concurrencia, Locks en Memoria y Re-evaluación Automática Silenciosa](#-5-concurrencia-locks-en-memoria-y-re-evaluación-automática-silenciosa)
 6. [Botón "Término de la Jornada" (Check-in Manual y Fallback)](#-6-botón-término-de-la-jornada-check-in-manual-y-fallback)
 7. [Sincronización Espejo Multi-Día (Google Calendar API v3)](#-7-sincronización-espejo-multi-día-google-calendar-api-v3)
-8. [Seguridad, CSRF, Rate Limiting y Auditoría Multi-Tenant](#-8-seguridad-csrf-rate-limiting-y-auditoría-multi-tenant)
-9. [Frontend, UI, Modos de Navegación y Patrón AJAX](#-9-frontend-ui-modos-de-navegación-y-patrón-ajax)
-10. [Operaciones, Despliegue en Producción y Comandos de Diagnóstico](#-10-operaciones-despliegue-en-producción-y-comandos-de-diagnóstico)
-11. [Historial de Incidentes Conocidos y Lecciones Aprendidas](#-11-historial-de-incidentes-conocidos-y-lecciones-aprendidas)
-12. [Especificación de Endpoints REST (API Reference)](#-12-especificación-de-endpoints-rest-api-reference)
-13. [Árbol de Archivos del Proyecto y Matriz Técnica por Archivo](#-13-árbol-de-archivos-del-proyecto-y-matriz-técnica-por-archivo)
+8. [Seguridad, CSRF, Rate Limiting y Administración (Backups y Contraseñas)](#-8-seguridad-csrf-rate-limiting-y-administración-backups-y-contraseñas)
+9. [Frontend, UI, Modos de Navegación, Componentes y Patrón AJAX](#-9-frontend-ui-modos-de-navegación-componentes-y-patrón-ajax)
+10. [Suite de Pruebas Automatizadas y Aseguramiento de Calidad (Vitest)](#-10-suite-de-pruebas-automatizadas-y-aseguramiento-de-calidad-vitest)
+11. [Operaciones, Despliegue en Producción y Comandos de Diagnóstico](#-11-operaciones-despliegue-en-producción-y-comandos-de-diagnóstico)
+12. [Historial de Incidentes Conocidos y Lecciones Aprendidas](#-12-historial-de-incidentes-conocidos-y-lecciones-aprendidas)
+13. [Especificación de Endpoints REST (API Reference)](#-13-especificación-de-endpoints-rest-api-reference)
+14. [Árbol de Archivos del Proyecto y Matriz Técnica por Archivo](#-14-árbol-de-archivos-del-proyecto-y-matriz-técnica-por-archivo)
+15. [💡 Sugerencias y Roadmap para Futuras Iteraciones](#-15--sugerencias-y-roadmap-para-futuras-iteraciones)
 
 ---
 
@@ -29,18 +31,20 @@ El sistema funciona como un **bucle de decisión continuo**: ingiere pronóstico
 ### El Desafío Operacional
 La carpintería técnica y el trabajo en taller al aire libre sufren vulnerabilidades climáticas estrictamente delimitadas:
 - **Colas PVA y Adhesivos**: Requieren temperaturas mínimas (usualmente > 10 °C) y ausencia de humedad directa durante la aplicación y el curado. Niveles de humedad relativa superiores al 80% degradan significativamente la resistencia mecánica del ensamblado.
-- **Acabados, Barnices y Pinturas**: Los recubrimientos al agua o sintéticos requieren ventanas térmicas específicas y humedad controlada para evitar "velado", burbujas o fallas de secado.
+- **Acabados, Barnices y Pinturas**: Los recubrimientos al agua o sintéticos requieren ventanas térmicas específicas y humedad controlada para evitar "velado", falta de adherencia, burbujas o fallas de secado.
 - **Epoxi y Resinas**: Exigen condiciones térmicas estrictas (mínimo 15 °C) y humedad relativa < 75% tanto en la colada activa como durante sus 6 horas o más de curado continuo.
-- **Ensamblado e Insumos**: La lluvia o humedad crítica interrumpe el trabajo exterior con herramientas eléctricas y deteriora la madera expuesta.
+- **Herramientas Eléctricas y Madera Expuesta**: La lluvia directa o humedad crítica interrumpe el trabajo en patio, estropea la maquinaria y tuerce los tablones de madera aserrada o cepillada.
 
 ### La Solución AGENDAPP
 AGENDAPP automatiza completamente la planificación del taller mediante una arquitectura **Multi-Tenant aislada**:
 
 1. **Entorno de Ejecución Moderno**:
-   - Ejecución sobre **Node.js 22 (Web Runtime)** utilizando **Express 4** para la API REST, renderizado de plantillas modulares **EJS** y empaquetado optimizado con **`esbuild`** (`dist/server.cjs`) escuchando en el **puerto 3000**.
+   - Backend escrito en **TypeScript** ejecutado sobre **Node.js 22 (Web Runtime)** con **Express 4**.
+   - Renderizado server-side de vistas modulares **EJS** asistido por estilos de utilidad **Tailwind CSS**.
+   - Empaquetado optimizado para producción con **`esbuild`** (`dist/server.cjs`), escuchando en el **puerto 3000**.
 2. **Aislamiento Multi-Tenant y Unicidad Estricta de Chat ID**:
-   - Cada usuario (`user_id`) posee un contexto completamente aislado en la base de datos: su propio backlog de tareas, proyectos, plantillas, materiales/insumos, logs diarios, sobreescrituras manuales (`day_overrides`) y configuración operacional (`app_settings`).
-   - **Garantía de Unicidad**: Cada `telegram_chat_id` está estrictamente vinculado a un único usuario activo. Si un usuario registra un Chat ID ya usado por otra cuenta, el sistema desvincula automáticamente la cuenta anterior (`telegram_chat_id = NULL`), evitando la duplicación de notificaciones.
+   - Cada usuario (`user_id`) posee un contexto completamente aislado en la base de datos: su propio backlog de tareas, proyectos, plantillas, materiales/insumos, herramientas, logs diarios, sobreescrituras manuales (`day_overrides`) y configuración operacional (`app_settings`).
+   - **Garantía de Unicidad**: Cada `telegram_chat_id` está estrictamente vinculado a un único usuario activo. Si un usuario registra un Chat ID ya usado por otra cuenta, el sistema desvincula automáticamente la cuenta anterior (`telegram_chat_id = NULL`), evitando la duplicación de notificaciones o cruce de datos.
 3. **Geolocalización y Cálculo Dinámico de Zona Horaria**:
    - El usuario configura la latitud y longitud exactas de su taller (mediante un mapa interactivo Leaflet/OpenStreetMap).
    - El backend utiliza `tz-lookup` para determinar automáticamente la zona horaria IANA correspondiente (ej. `America/Santiago`, `America/Buenos_Aires`).
@@ -50,18 +54,19 @@ AGENDAPP automatiza completamente la planificación del taller mediante una arqu
 
 ## 🗄️ 2. Arquitectura y Modelo de Datos (Esquema Completo)
 
-AGENDAPP almacena la persistencia relacional en SQLite (`data/workshop.db`) mediante el driver de alto rendimiento `better-sqlite3` con modo WAL (`journal_mode = WAL`).
+AGENDAPP almacena la persistencia relacional en SQLite (`data/workshop.db`) mediante el driver de alto rendimiento `better-sqlite3` con modo WAL activado (`journal_mode = WAL`).
 
-### Patrón de Migraciones Idempotentes en `db.ts`
+### Patrón de Migraciones Idempotentes en `src/db.ts`
 Para garantizar que la base de datos se actualice de forma transparente en cada inicio del servidor sin destruir datos ni requerir herramientas CLI externas (las cuales no existen en el contenedor de producción), `db.ts` implementa una convención de **migraciones idempotentes condicionales**:
 
 ```typescript
 // Convención estándar en db.ts:
 const currentDailyLogCols = dbInstance.prepare("PRAGMA table_info(daily_logs)").all() as any[];
-if (!currentDailyLogCols.some(c => c.name === 'hourly_forecast')) {
-  dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN hourly_forecast TEXT;");
+if (!currentDailyLogCols.some(c => c.name === 'last_rain_alert_hour')) {
+  dbInstance.exec("ALTER TABLE daily_logs ADD COLUMN last_rain_alert_hour INTEGER;");
 }
 ```
+
 Cualquier modificación o adición de columna futura **DEBE** seguir este mismo patrón:
 1. Inspeccionar las columnas existentes con `PRAGMA table_info(nombre_tabla)`.
 2. Verificar con `.some(c => c.name === 'columna')` si la columna ya existe.
@@ -75,7 +80,7 @@ Cualquier modificación o adición de columna futura **DEBE** seguir este mismo 
 | `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID único del usuario. |
 | `email` | TEXT | UNIQUE NOT NULL | Correo electrónico de acceso. |
 | `password_hash` | TEXT | NOT NULL | Hash PBKDF2 en formato de 4 partes (`pbkdf2:sha256:100000:salt:hash`). |
-| `must_change_password` | INTEGER | NOT NULL DEFAULT 0 | Flag de cambio obligatorio de clave. |
+| `must_change_password` | INTEGER | NOT NULL DEFAULT 0 | Flag de cambio obligatorio de clave (1=Sí, 0=No). |
 | `created_at` | TEXT | NOT NULL | Fecha de creación ISO. |
 
 #### Tabla `app_settings`
@@ -92,7 +97,7 @@ Cualquier modificación o adición de columna futura **DEBE** seguir este mismo 
 | `setup_hours` | REAL | NOT NULL DEFAULT 1.0 | Tiempo de preparación pre-jornada (horas). |
 | `teardown_hours` | REAL | NOT NULL DEFAULT 1.0 | Tiempo de limpieza post-jornada (horas). |
 | `min_work_hours` | REAL | NOT NULL DEFAULT 1.0 | Duración mínima para validar un día como viable. |
-| `min_work_hours_unless_final`| REAL | NOT NULL DEFAULT 4.0 | Duración mínima a menos que complete la última tarea. |
+| `min_work_hours_unless_final`| REAL | NOT NULL DEFAULT 4.0 | Duración mínima a menos que complete la última tarea del proyecto. |
 | `min_rain_precipitation_mm` | REAL | NOT NULL DEFAULT 0.2 | Umbral de precipitación para considerar riesgo de lluvia (mm). |
 | `checkin_hour` | INTEGER | NOT NULL DEFAULT 19 | Hora para la notificación nocturna de Telegram. |
 | `morning_eval_lead_hours` | INTEGER | NOT NULL DEFAULT 1 | Horas de anticipación para la evaluación matutina. |
@@ -132,16 +137,17 @@ Cualquier modificación o adición de columna futura **DEBE** seguir este mismo 
 | `scheduled_task_ids` | TEXT | NULL | JSON con IDs de tareas agendadas. |
 | `morning_climate_snapshot`| TEXT | NULL | JSON con snapshot climático recibido de Open-Meteo. |
 | `hourly_forecast` | TEXT | NULL | JSON con el desglose auditado hora por hora del día (~1.5 KB/día). |
-| `telegram_notified` | INTEGER | NOT NULL DEFAULT 0 | Flag de notificación matutina enviada. |
+| `telegram_notified` | INTEGER | NOT NULL DEFAULT 0 | Flag de notificación de inicio de jornada enviada (Tier 2). |
 | `calendar_created` | INTEGER | NOT NULL DEFAULT 0 | Flag de confirmación de evento en Google Calendar. |
 | `google_event_id` | TEXT | NULL | Identificador del evento en Google Calendar. |
-| `checkin_sent` | INTEGER | NOT NULL DEFAULT 0 | Flag de prompt nocturno enviado. |
+| `checkin_sent` | INTEGER | NOT NULL DEFAULT 0 | Flag de prompt de check-in nocturno enviado (Tier 3). |
 | `checkin_resolved` | INTEGER | NOT NULL DEFAULT 0 | Flag de check-in resuelto por el operario. |
-| `humidity_alert_sent` | INTEGER | NOT NULL DEFAULT 0 | Flag de alerta informativa de humedad enviada hoy. |
+| `humidity_alert_sent` | INTEGER | NOT NULL DEFAULT 0 | Flag de aviso informativo de humedad enviado hoy. |
 | `intraday_alert_triggered`| INTEGER | NOT NULL DEFAULT 0 | Flag de alerta de emergencia de lluvia activada hoy. |
 | `intraday_alert_acknowledged`| INTEGER | NOT NULL DEFAULT 0 | Flag de confirmación/revisión por parte del operario. |
-| `intraday_alert_last_sent_at`| TEXT | NULL | Timestamp ISO de la última ráfaga de lluvia. |
+| `intraday_alert_last_sent_at`| TEXT | NULL | Timestamp ISO de la última ráfaga de lluvia enviada. |
 | `intraday_alert_burst_count`| INTEGER | NOT NULL DEFAULT 0 | Contador de ráfagas enviadas (máx 3 ráfagas cada 5 min). |
+| `last_rain_alert_hour`| INTEGER | NULL | Hora de lluvia registrada en la última alerta para detectar adelantos. |
 | `weather_alert_message`| TEXT | NULL | Mensaje de la última alerta emitida. |
 | `calendar_sync_claimed_at`| TEXT | NULL | Timestamp ISO de lock optimista para creación en Google Calendar. |
 | `updated_at` | TEXT | NOT NULL | Timestamp ISO de actualización. |
@@ -166,6 +172,7 @@ Cualquier modificación o adición de columna futura **DEBE** seguir este mismo 
 | `estimated_hours` | REAL | NOT NULL DEFAULT 1.0 | Horas de trabajo activo. |
 | `curing_hours` | REAL | NOT NULL DEFAULT 0.0 | Horas de curado o secado pasivo. |
 | `requires_curing` | INTEGER | NOT NULL DEFAULT 0 | Indica si requiere protección ambiental de secado. |
+| `curing_is_blocking` | INTEGER | NOT NULL DEFAULT 1 | 1 = Bloquea el avance del taller, 0 = Curado en paralelo no vinculante. |
 | `status` | TEXT | NOT NULL DEFAULT 'pending' | Estado (`pending`, `scheduled`, `in_progress`, `completed`). |
 | `order_num` | INTEGER | NOT NULL DEFAULT 1 | Orden secuencial en el backlog. |
 
@@ -183,11 +190,22 @@ Cualquier modificación o adición de columna futura **DEBE** seguir este mismo 
 | `created_at` | TEXT | NOT NULL | Fecha ISO de creación. |
 | `updated_at` | TEXT | NOT NULL | Fecha ISO de actualización. |
 
+#### Tabla `tools`
+| Columna | Tipo | Restricciones | Descripción |
+| :--- | :--- | :--- | :--- |
+| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | ID de la herramienta. |
+| `user_id` | INTEGER | NOT NULL | FK hacia `users.id`. |
+| `name` | TEXT | NOT NULL | Nombre de la herramienta o accesorio. |
+| `category` | TEXT | NOT NULL DEFAULT 'General' | Categoría de la herramienta. |
+| `status` | TEXT | NOT NULL DEFAULT 'in_stock' | Estado (`to_buy` [Por Comprar] o `in_stock` [En Taller]). |
+| `created_at` | TEXT | NOT NULL | Fecha ISO de creación. |
+| `updated_at` | TEXT | NOT NULL | Fecha ISO de actualización. |
+
 ---
 
 ## 🔍 3. Motor de Evaluación Meteorológica, Curado Pasivo y Auditoría Horaria
 
-El motor de evaluación en `src/evaluator.ts` calcula la viabilidad de agendamiento a lo largo de un horizonte móvil multi-día (usualmente 7 a 10 días).
+El motor de evaluación en `src/evaluator.ts` calcula la viabilidad de agendamiento a lo largo de un horizonte móvil multi-día (usualmente 7 a 14 días).
 
 ```
 Jornada Operativa (09:00 - 18:00)             Extensión de Curado Pasivo Nocturno (hasta 23:00)
@@ -198,347 +216,299 @@ Jornada Operativa (09:00 - 18:00)             Extensión de Curado Pasivo Noctur
                                                --> DÍA RECHAZADO / DAY_BLOCKED PREVENTIVO
 ```
 
-### Regla de Negocio Central: Precedencia Absoluta de `day_overrides`
-> ⚠️ **REGLA INVARIABLE**: Las sobreescrituras manuales registradas en `day_overrides` tienen **prioridad absoluta** sobre cualquier regla predeterminada de exclusión (`exclude_saturdays`, `exclude_sundays`, `exclude_holidays`).
+### Reglas de Negocio Centrales del Evaluador
 
-1. **Si un día tiene `force_status === "BLOCKED"`**:
-   El evaluador **retorna inmediatamente** `DayStatus.DAY_BLOCKED` con la razón definida por el usuario, omitiendo cualquier evaluación meteorológica o asignación de tareas.
-2. **Si un día tiene `force_status === "VIABLE"` o horas personalizadas (`custom_start_hour`/`custom_end_hour`)**:
-   Incluso si es domingo, sábado o feriado irrenunciable, el motor **anula el bloqueo por calendario**, establece la ventana con los horarios personalizados solicitados (ej. 15:00 a 21:00) y evalúa el clima y la asignación de tareas dentro de esa ventana específica.
+1. **Precedencia Absoluta de `day_overrides`**:
+   - Las sobreescrituras manuales tienen **prioridad absoluta** sobre cualquier regla de exclusión (`exclude_saturdays`, `exclude_sundays`, `exclude_holidays`).
+   - Si un día tiene `force_status === "BLOCKED"`, el evaluador retorna `DAY_BLOCKED` inmediatamente con la nota del usuario.
+   - Si un día tiene `force_status === "VIABLE"` u horas personalizadas (`custom_start_hour` / `custom_end_hour`), anula el bloqueo de calendario y evalúa el clima en esa ventana horaria específica.
+2. **Jornada Concluida y Exclusión del Día de Hoy**:
+   - Si para el día de hoy `checkin_resolved === true` (cerrado manualmente vía check-in o el botón "Término de la Jornada"), o si la hora actual ya no permite completar el mínimo de horas de trabajo antes del cierre operativo (`operational_end_hour`), el día de hoy se marca como `DAY_BLOCKED` ("Jornada concluida").
+   - Las tareas pendientes se agendan automáticamente a partir de **MAÑANA**.
+3. **Fases de la Jornada Evaluada**:
+   - **PREP (Setup)**: Preparación del taller (duración `setup_hours`, ej. 1.0h).
+   - **TRABAJO (Trabajo Activo)**: Ejecución de tareas con herramientas y ensamblajes.
+   - **CIERRE (Teardown)**: Limpieza y guardado (duración `teardown_hours`, ej. 1.0h).
+   - **CURADO (Curado Pasivo)**: Secado que puede extenderse después de la jornada (hasta las 23:00 hrs).
+4. **Umbrales Ambientales**:
+   - **Lluvia**: Precipitación `>= min_rain_precipitation_mm` (0.2 mm) o probabilidad `>= 30%` en trabajo activo o curado pasivo bloquea el día.
+   - **Humedad**: Humedad `>= max_humidity_percent` (ej. 80%) durante trabajo o curado invalida la ventana.
+   - **Epoxi / Resinas**: Exige temperatura `>= 15.0 °C` y humedad `<= 75.0%` continuas.
+   - **Umbral de Tarea Final (`min_work_hours_unless_final`)**: Si la jornada no alcanza `min_work_hours` estándar (ej. 4h) pero la tarea evaluada es la **última pendiente del backlog**, el motor aplica el umbral reducido (ej. 1h o 2h) para completar el proyecto sin demoras artificiales.
+5. **Curado No Vinculante (`curing_is_blocking = false`)**:
+   - Si una tarea requiere curado pero no bloquea el taller, el evaluador permite programar tareas adicionales en paralelo ese mismo día siempre que haya horas disponibles.
 
-### Regla de Negocio Central: Jornada Concluida y Exclusión del Día Actual
-> ⚠️ **REGLA INVARIABLE**: El horizonte de evaluación excluye el día de **HOY** como candidato a nueva asignación cuando:
-> 1. **Check-in Resuelto**: `checkin_resolved === true` para hoy (la jornada fue cerrada manualmente por el usuario a través del check-in nocturno o el botón "Término de la Jornada").
-> 2. **Horario Operativo Agotado**: La hora actual ya no permite completar ni siquiera la ventana mínima de trabajo (`currentHour + min_work_hours > operational_end_hour` o el tiempo restante antes del cierre es insuficiente).
->
-> En ambos casos, el día de hoy se marca con estado bloqueado (`DAY_BLOCKED` con motivo de jornada concluida) y el horizonte activo de asignación de tareas arranca obligatoriamente a partir de **MAÑANA**.
-
-### Fases de una Jornada Evaluada y Umbrales Ambientales
-Cada día evaluado pasa por 4 fases secuenciales:
-1. **PREP (Setup)**: Preparación del taller (duración `setup_hours`, ej. 1.0h).
-2. **TRABAJO (Trabajo Activo)**: Ejecución de tareas activas con herramientas y aplicación de materiales.
-3. **CIERRE (Teardown)**: Limpieza y guardado de herramientas (duración `teardown_hours`, ej. 1.0h).
-4. **CURADO (Curado Activo y Pasivo Nocturno)**:
-   - **Curado Activo**: Ocurre durante la jornada mientras se aplican recubrimientos o adhesivos.
-   - **Curado Pasivo**: Ocurre **después** de terminar el trabajo activo o el cierre. Se extiende durante las horas de secado necesarias (`curing_hours`, ej. 2h a 6h), pudiendo adentrarse en la noche (hasta las 23:00 hrs).
-
-**Umbrales Climáticos y Reglas de Asignación**:
-- **Lluvia**: Precipitación `>= min_rain_precipitation_mm` (0.2mm) o probabilidad `>= 30%` en **cualquiera** de las horas de trabajo activo o curado pasivo provoca el bloqueo preventivo del día.
-- **Humedad Relativa**: Humedad `>= max_humidity_percent` (ej. 80%) durante trabajo activo o curado invalida la ventana.
-- **Epoxi**: Exige estricto cumplimiento de `temperatura >= 15.0 °C` y `humedad <= 75.0%` en todas las horas activas y sus 6 horas de curado.
-- **Umbral de Tarea Final (`min_work_hours_unless_final`)**: Si la jornada disponible no alcanza la duración mínima estándar (`min_work_hours`, ej. 4h) pero la tarea evaluada es la **última pendiente del backlog** del proyecto, el motor aplica de forma estricta el umbral reducido (`min_work_hours_unless_final`, ej. 1h o 2h), permitiendo completar el proyecto sin retrasos artificiales.
-
-### Resiliencia Climática, Caché en Memoria y Anclaje de Fechas
-1. **Caché de Pronóstico Meteorológico (TTL 15-30 min)**:
-   - Las respuestas de Open-Meteo se indexan por coordenadas geográficas (`lat,lon,days`) con un TTL de 15 a 30 minutos.
-   - Esta caché se reutiliza eficientemente entre la evaluación matutina (Tier 1), las alertas intradía (Tier 4) y las mutaciones del usuario (adición/edición de tareas o check-in), evitando saturar la API externa o incurrir en rate limits.
-2. **Eliminación de Mocks Climáticos en Producción**:
-   - Ante errores de red o caídas de Open-Meteo, el sistema **nunca** recurre a pronósticos inventados (como el mock "sunny" en producción).
-   - En su lugar, el evaluador utiliza el último pronóstico válido en caché o preserva intacto el último `morning_climate_snapshot` registrado en `daily_logs`.
-3. **Value Object Inmutable `LocalDate` (Arquitectura V2)**:
-   - Todo cálculo de fechas de calendario se centraliza en el Value Object inmutable `LocalDate` (`src/LocalDate.ts`).
-   - Proporciona aritmética de días pura (`addDays(n)`), comparaciones cronológicas (`isBefore`, `isAfter`, `equals`, `diffInDays`), formateo en español (`formatShortEs`, `formatLongEs`) e interoperabilidad con SQLite (`toSql()`, `toIso()`).
-   - Genera representaciones Date ancladas de forma determinista al mediodía UTC (`toUtcNoonDate()`, `T12:00:00Z`), erradicando por completo desfases horarios donde el servidor cruza la medianoche UTC antes que la hora local del taller (evitando que la UI y el motor queden desfasados por un día en husos horarios occidentales como `America/Santiago`).
-4. **Máquina de Estados Finita (FSM) de Tareas y Días (Arquitectura V2)**:
-   - Centraliza todas las mutaciones de ciclo de vida en `TaskService` (`src/services/taskService.ts`) y `DayService` (`src/services/dayService.ts`).
-   - Valida transiciones legales rechazando estados inválidos (`InvalidStateTransitionError`).
-   - Soporta reactivación directa a `pending` tanto de tareas completadas como pausadas/inactivas.
-   - Documenta los motivos reales de conclusión de jornada: cierre manual (`checkin_resolved`) vs. cierre automático por horario operativo agotado.
+### Value Object Inmutable `LocalDate`
+Todo cálculo de fechas de calendario se realiza a través de `LocalDate` (`src/LocalDate.ts`), que proporciona aritmética de días pura (`addDays(n)`), comparaciones cronológicas deterministas y anclaje al mediodía UTC (`toUtcNoonDate()`, `T12:00:00Z`), eliminando por completo cualquier desfase horario entre la UI y el motor en husos horarios occidentales (`America/Santiago`).
 
 ### Auditoría Horaria Climática (`hourly_forecast`)
-El evaluador genera un objeto de auditoría hora por hora (`getHourlyClimateAudit`) que se guarda serializado en `daily_logs.hourly_forecast`.
-- **Propósito**: Permitir inspeccionar exactamente qué ocurrió en cada hora del día (0 a 23), indicando si era hora de trabajo activo, hora de curado pasivo, y los riesgos detectados.
-- **Detección de Lluvia en Curado Pasivo**: Si la lluvia ocurre durante las horas de curado pasivo (ej. a las 15:00 hrs, cuando el trabajo activo ya terminó a las 12:00), el audit registra explícitamente:
-  `"is_curing": true`, `risk_reasons: ["Lluvia en curado pasivo: 1.5mm (80%)"]`.
-- **Tamaño de Almacenamiento**: Cada registro diario almacena un JSON de ~1.2 KB a 1.8 KB en SQLite, garantizando información detallada para la UI sin sobrecargar la base de datos.
+El evaluador genera un desglose hora por hora (`getHourlyClimateAudit`) almacenado en `daily_logs.hourly_forecast` (~1.5 KB/día), permitiendo a la interfaz web mostrar con precisión en qué hora específica ocurrió un riesgo climático (trabajo activo o curado pasivo).
 
 ---
 
-## 🚨 4. Sistema de Alertas (Humedad Informativa vs. Lluvia Crítica de Emergencia)
+## 📢 4. Sistema de Notificaciones y Alertas por Tiers (`NotificationDispatcher`)
 
-El daemon de fondo (`scheduler.ts`) realiza revisiones climáticas continuas durante la jornada. Existe una **asimetría intencional** en el tratamiento de alertas según la severidad del riesgo:
+El sistema de notificaciones está completamente desacoplado del scheduler y centralizado en **`NotificationDispatcher`** (`src/notificationDispatcher.ts`):
 
 ```
-                            +-----------------------------------+
-                            |  REVISIÓN CLIMÁTICA INTRADÍA      |
-                            +-----------------+-----------------+
-                                              |
-                     +------------------------+------------------------+
-                     |                                                 |
-                     v                                                 v
-        [Riesgo de Humedad Excesiva]                        [Riesgo de Lluvia Inminente]
-                     |                                                 |
-                     v                                                 v
-        • Tipo: INFORMATIVO                                 • Tipo: EMERGENCIA CRÍTICA
-        • Frecuencia: 1 vez al día                          • Frecuencia: Ráfaga cada 5 min (máx 3)
-        • Reintentos: Ninguno                               • Reintentos: Hasta confirmación operario
-        • Marcador: `humidity_alert_sent = 1`               • Marcador: `intraday_alert_triggered = 1`
+                                  +-------------------------------+
+                                  |    NotificationDispatcher     |
+                                  +---------------+---------------+
+                                                  |
+       +--------------------+---------------------+--------------------+--------------------+
+       |                    |                     |                    |                    |
+       v                    v                     v                    v                    v
+  [ Tier 1: Matutino ] [ Tier 2: Inicio ]    [ Tier 3: Check-in ] [ Tier 4: Humedad ] [ Tier 4: Lluvia ]
+  Evaluación 7 días    Al empezar bloque     Prompt nocturno      1 aviso diario      Ráfagas cada 5 min
+  Sync Google Cal      telegram_notified=1   checkin_sent=1       humidity_sent=1     Alerta re-adelanto
 ```
 
-### Razón de la Asimetría de Alertas
-1. **Alerta de Humedad (Informativa)**: El exceso de humedad relativa ralentiza el secado de adhesivos o barnices, pero raras veces exige una evacuación de emergencia inmediata del taller. Por ende, se envía un **único aviso informativo diario** para no saturar al operario.
-2. **Alerta de Lluvia (Emergencia Crítica)**: La lluvia directa sobre herramientas eléctricas, madera expuesta o ensambles en proceso destruye materiales y supone un riesgo eléctrico grave. Por ello:
-   - Dispara una **ráfaga de alertas de emergencia** cada 5 minutos (hasta 3 reintentos) hasta que el operario confirme la recepción o intervenga.
-   - **Re-alerta por Adelantamiento**: Si la lluvia estaba prevista originalmente para las 18:00 hrs y el operario ya la había confirmado, pero un nuevo reporte meteorológico indica que la lluvia se **adelantó** a las 17:00 hrs, el sistema **relanza la ráfaga de emergencia de inmediato**. Si la lluvia se retrasa, no se genera una nueva ráfaga molesta.
+### Detalle de los 4 Tiers de Notificación
+
+| Tier | Nombre | Función de Despacho | Condición de Activación | Comportamiento y Persistencia |
+| :--- | :--- | :--- | :--- | :--- |
+| **Tier 1** | **Evaluación Matutina** | `runMorningEvaluation` | Horas antes de la jornada (`operational_start_hour - morning_eval_lead_hours`). | Evalúa los 7-14 días con Open-Meteo, persiste `daily_logs` y sincroniza eventos espejo en Google Calendar. |
+| **Tier 2** | **Inicio de Jornada** | `processWorkStartNotification` | Al inicio exacto de la ventana viable (`now >= window_start`). | Envía a Telegram el resumen de tareas a ejecutar hoy. Marca `telegram_notified = true`. |
+| **Tier 3** | **Check-in Nocturno** | `processCheckinNotification` | Al alcanzar la hora de cierre (`now >= checkin_hour`). | Envía un teclado interactivo inline a Telegram para marcar tareas completadas/postergadas. Marca `checkin_sent = true`. |
+| **Tier 4A** | **Aviso de Humedad** | `processWeatherAlert` | Humedad `> max_humidity_percent` dentro del horario laboral. | **Informativo**: Envía 1 único mensaje al día sin ráfagas. Marca `humidity_alert_sent = true`. |
+| **Tier 4B** | **Emergencia de Lluvia** | `processWeatherAlert` | Lluvia detectada en la ventana de trabajo o curado. | **Emergencia**: Dispara ráfaga de mensajes cada 5 min (hasta 3 veces) hasta que el operario confirme (`intraday_alert_acknowledged`). |
+
+### 🚨 Lógica Crítica de Adelanto de Lluvia (`last_rain_alert_hour`)
+Si una lluvia prevista para las 18:00 hrs ya había sido confirmada por el operario, pero una nueva lectura climática detecta que la lluvia **se adelantó** a las 16:00 hrs:
+1. El despachador detecta `rainHour < previousRainHour` usando la columna `last_rain_alert_hour`.
+2. Resetea `intraday_alert_acknowledged = false` para exigir nueva atención.
+3. Actualiza `last_rain_alert_hour` a la nueva hora.
+4. Emite inmediatamente una nueva ráfaga con el título:
+   `🚨 ¡ALERTA URGENTE DE LLUVIA ADELANTADA!`
 
 ---
 
 ## 🔐 5. Concurrencia, Locks en Memoria y Re-evaluación Automática Silenciosa
 
 ### Sistema de Lock en Memoria
-Para evitar que múltiples solicitudes concurrentes (ej. un cron del scheduler, una acción del usuario en la web y un callback de Telegram) ejecuten el motor de evaluación para el mismo usuario de forma simultánea, `scheduler.ts` implementa un gestor de cerrojos en memoria:
-
-```typescript
-// Estructura del lock en scheduler.ts
-const activeEvaluationLocks = new Set<number>();
-
-export function acquireEvaluationLock(userId: number): boolean {
-  if (activeEvaluationLocks.has(userId)) return false;
-  activeEvaluationLocks.add(userId);
-  return true;
-}
-
-export function releaseEvaluationLock(userId: number): void {
-  activeEvaluationLocks.delete(userId);
-}
-```
-
-### Timeout de Seguridad de 2 Minutos
-**Lección Aprendida de Incidente Real**: En versiones previas, si una solicitud HTTP externa (como Open-Meteo o Telegram) quedaba colgada indefinidamente por problemas de red sin timeout, el lock en memoria jamás se liberaba, dejando las evaluaciones del usuario bloqueadas para siempre.
-- **Red de Protección**: Toda evaluación adquiere el lock con un `setTimeout` de seguridad de 2 minutos que fuerza la liberación del cerrojo si la promesa no concluye.
-- **Timeouts en Peticiones Salientes**: Toda llamada HTTP saliente (Open-Meteo, Telegram, Google Calendar, Servicio de Feriados) incluye un `AbortSignal.timeout(8000)` o `AbortSignal.timeout(10000)` estricto.
+Para evitar condiciones de carrera cuando coinciden un cron en segundo plano, una mutación web del usuario y un callback de Telegram, `scheduler.ts` implementa cerrojos por usuario (`activeEvaluationLocks`):
+- **Timeout de Seguridad de 2 Minutos**: Si una llamada externa a APIs (Open-Meteo o Telegram) quedara colgada, el lock se libera forzosamente tras 2 minutos mediante un `setTimeout` defensivo.
+- **Timeouts en Peticiones Salientes**: Todas las llamadas salientes HTTP utilizan `AbortSignal.timeout(8000)` o `AbortSignal.timeout(10000)`.
 
 ### Re-evaluación Automática Silenciosa
-Cualquier mutación relevante del estado operativo realizada por el usuario en la interfaz web o Telegram:
-- Completar o reagendar una tarea en el check-in nocturno.
-- Agregar, editar o reordenar tareas en el backlog.
-- Cambiar el estado de activación de un proyecto o tarea.
-- Modificar el estado de un material (`to_buy` <-> `in_stock`).
-
-Dispara una **re-evaluación automática y silenciosa** del horizonte multi-día. Esta re-evaluación utiliza el mismo lock de concurrencia, actualiza los registros en `daily_logs` y resincroniza Google Calendar, pero **NO re-envía notificaciones ni alertas** por Telegram para mantener la tranquilidad del operario.
+Cualquier mutación en el sistema (agregar/editar tareas, mover prioridades, alternar materiales a `in_stock`, resolver check-in) dispara una **re-evaluación automática y silenciosa** del horizonte. Actualiza `daily_logs` y resincroniza Google Calendar de inmediato, **sin enviar notificaciones redundantes** a Telegram.
 
 ---
 
 ## 🔘 6. Botón "Término de la Jornada" (Check-in Manual y Fallback)
 
-En la interfaz principal de la Agenda, el operario dispone del botón **"Término de la Jornada"**.
+En la cabecera de la vista de Planificación, el operario cuenta con el botón **"Término de la Jornada"**:
 
 ```
-   [ Botón: Término de la Jornada ]
-                  │
-                  ▼
-   ¿Telegram vinculado y responsivo?
-         ├── SÍ  ──> Envía prompt interactivo a Telegram + Notificación flotante en web.
-         └── NO  ──> Abre Modal Fallback directamente en pantalla para marcar tareas.
+                 [ Botón: Término de la Jornada ]
+                                │
+                                ▼
+                 ¿Telegram vinculado y responsivo?
+                       ├── SÍ  ──> Envía prompt interactivo a Telegram + Notificación web.
+                       └── NO  ──> Abre Modal Fallback directamente en pantalla para marcar tareas.
 ```
 
-### Propósito y Casos Borde Cubiertos
-Permite forzar el cierre de la jornada de trabajo sin esperar a la hora programada (`checkin_hour`, ej. 19:00 hrs).
-
-**Casos Borde Garantizados**:
-1. **Cancelación**: Si el operario abre el modal de cierre y presiona "Cancelar", no se altera el estado de ninguna tarea ni log diario.
-2. **Día Bloqueado (`DAY_BLOCKED`)**: Si se presiona en un día no laborable o bloqueado, la interfaz informa amablemente que no hay jornada activa que cerrar.
-3. **Re-apretar el mismo día (Idempotencia)**: Si el check-in de hoy ya fue completado, al presionar el botón el sistema informa claramente: *"El check-in de la jornada de hoy ya fue completado previamente"*, sin duplicar notificaciones ni corromper registros en la DB.
-4. **Doble Clic Prematuro**: Los controladores del frontend deshabilitan el botón inmediatamente al primer clic (`disabled = true`) y muestran un spinner de carga, previniendo solicitudes duplicadas o apertura de múltiples modales.
+- **Idempotencia**: Si el check-in de hoy ya fue resuelto, informa amablemente sin duplicar acciones.
+- **Doble Clic Prematuro**: El botón se deshabilita instantáneamente (`disabled = true`) y muestra spinner para evitar llamadas dobles concurrentes.
+- **Modal Fallback Web**: Permite al operario marcar cada tarea como completada o postergada directamente en el navegador si no tiene su teléfono a mano.
 
 ---
 
 ## 📅 7. Sincronización Espejo Multi-Día (Google Calendar API v3)
 
-AGENDAPP mantiene un espejo flotante de la agenda en Google Calendar:
-
-1. **Creación de Eventos Macro**: Para días viables (`DAY_VIABLE`), genera eventos del tipo `🔨 Taller Carpintería (09:00 - 17:00)` con el desglose de tareas en la descripción.
-2. **Limpieza de Eventos Inviables**: Si una actualización meteorológica vuelve inviable un día (`DAY_BLOCKED`), el sistema **elimina automáticamente** el evento de Google Calendar.
-3. **Rescate de Errores 404**: Si el operario borra el evento manualmente en Google Calendar, el backend detecta el error `404 Not Found`, limpia `google_event_id` en SQLite y recrea el evento limpiamente.
-4. **Lock Optimista de Sincronización (`calendar_sync_claimed_at`)**: Evita la creación de eventos duplicados si dos rutinas de evaluación coinciden en el tiempo.
-5. **Sanitización de Claves PEM**: Sanitiza y valida claves privadas mediante `crypto.createPrivateKey()` antes de instanciar el cliente JWT de Google.
-
----
-
-## 🛡️ 8. Seguridad, CSRF, Rate Limiting y Auditoría Multi-Tenant
-
-Tras una auditoría formal de seguridad realizada en agosto de 2026, el sistema cuenta con las siguientes protecciones:
-
-1. **Protección CSRF (`verifySameOrigin`)**: Middleware que valida los encabezados `Origin` y `Referer` en todas las peticiones mutativas (`POST`, `PUT`, `DELETE`), bloqueando ataques entre sitios.
-2. **Rate Limiting en Autenticación**: `/login` y `/register` limitan los intentos fallidos por dirección IP para mitigar ataques de fuerza bruta.
-3. **Formato PBKDF2 de 4 Partes y Migración Transparente**:
-   - Formato de almacenamiento: `pbkdf2:sha256:100000:salt:hash`.
-   - Soporta migración transparente: si un usuario con hash antiguo (`salt:hash`) inicia sesión correctamente, su contraseña se re-encripta automáticamente al formato moderno de 4 partes.
-4. **Validación Multi-Tenant de `project_id`**: Los endpoints REST de tareas y materiales verifican que el `project_id` provisto pertenezca estrictamente al `user_id` de la sesión activa, impidiendo que un usuario modifique o asigne elementos a proyectos de otro usuario.
+AGENDAPP mantiene un espejo automático de la agenda en Google Calendar (`src/calendarService.ts`):
+1. **Eventos Macro**: Para días viables (`DAY_VIABLE`), genera eventos titulados `🔨 Taller Carpintería (09:00 - 17:00)` con la lista de tareas en la descripción.
+2. **Eliminación Automática**: Si un día se vuelve inviable por lluvia (`DAY_BLOCKED`), el evento se remueve automáticamente de Google Calendar.
+3. **Rescate de Errores 404**: Si el usuario elimina el evento manualmente en Google Calendar, el sistema limpia `google_event_id` y lo regenera limpiamente en la siguiente evaluación.
+4. **Lock Optimista (`calendar_sync_claimed_at`)**: Previene la creación de eventos duplicados entre hilos concurrentes.
+5. **Validación de Claves PEM**: Sanitiza y valida claves de Service Account mediante `crypto.createPrivateKey()` antes de instanciar el cliente JWT.
 
 ---
 
-## 🎨 9. Frontend, UI, Modos de Navegación y Patrón AJAX
+## 🛡️ 8. Seguridad, CSRF, Rate Limiting y Administración (Backups y Contraseñas)
+
+### Medidas de Seguridad Integradas
+1. **Protección CSRF (`verifySameOrigin`)**: Valida encabezados `Origin` y `Referer` en todas las mutaciones (`POST`, `PUT`, `DELETE`).
+2. **Rate Limiting**: Mitigación de fuerza bruta en los endpoints `/login` y `/register`.
+3. **Hashing PBKDF2 de 4 Partes**: Formato `pbkdf2:sha256:100000:salt:hash` con migración transparente automática de claves legadas.
+4. **Aislamiento de Recursos Multi-Tenant**: Los endpoints de tareas y materiales validan que el `project_id` pertenezca al `user_id` de la sesión.
+
+### Herramientas de Administración en Modal de Configuración
+- **Cambio de Contraseña Seguro**: Sección colapsable que valida la contraseña actual antes de actualizar el hash PBKDF2.
+- **Creación de Backup Manual (WAL)**: Botón que ejecuta un checkpoint de SQLite y genera un respaldo íntegro de la base de datos descargable.
+
+---
+
+## 🎨 9. Frontend, UI, Modos de Navegación, Componentes y Patrón AJAX
 
 ### 3 Modos de Navegación de Primer Nivel
-La interfaz web se estructura en 3 vistas principales seleccionables mediante la barra superior:
-1. **Planificación**: Vista general del horizonte de agendamiento, línea de tiempo diaria, panel de detalle climático hora por hora y gestión del backlog.
-2. **Taller**: Enfoque de ejecución directa para el trabajo diario en el espacio de trabajo.
-3. **Inventario**: Control de materiales e insumos (`Por Comprar` / `En Taller`) agrupados por proyecto.
-
-- **Botón Modo Enfoque**: Condicional y **únicamente visible** dentro del modo *Planificación*, permitiendo maximizar la línea de tiempo y el detalle climático sin distracciones.
+1. **Planificación**: Línea de tiempo diaria del horizonte, desglose horario auditado del clima, botón "Término de la Jornada", botón condicional "Modo Enfoque" y gestión del backlog.
+2. **Taller**: Vista de ejecución directa para el trabajo diario en el espacio de trabajo.
+3. **Inventario**: Control de inventario unificado en dos pestañas:
+   - **Materiales e Insumos** (`Por Comprar` / `En Taller` por proyecto).
+   - **Herramientas y Accesorios** (`Por Comprar` / `En Taller`).
 
 ### Patrón AJAX Obligatorio (Sin `location.reload()`)
-> ⚠️ **CONVENCIÓN DE DESARROLLO**: Todo formulario, modal o acción interactiva en el frontend **DEBE** ejecutarse mediante peticiones asíncronas `fetch()` (AJAX) y actualizar puntualmente el DOM. Está **estrictamente prohibido** utilizar envíos de `<form>` tradicionales que recarguen la página o invocar `location.reload()`, salvo excepciones de autenticación/logout explícitamente justificadas.
+> ⚠️ **CONVENCIÓN DE DESARROLLO**: Todo formulario, modal o acción interactiva en el frontend **DEBE** ejecutarse mediante peticiones asíncronas `fetch()` (AJAX) y actualizar puntualmente el DOM. Está **estrictamente prohibido** utilizar envíos de `<form>` tradicionales que recarguen la página o invocar `location.reload()`.
 
 ---
 
-## ⚙️ 10. Operaciones, Despliegue en Producción y Comandos de Diagnóstico
+## 🧪 10. Suite de Pruebas Automatizadas y Aseguramiento de Calidad (Vitest)
 
-### Comando de Despliegue Actual
+El proyecto cuenta con una exhaustiva suite de pruebas unitarias y de integración sobre **Vitest**:
+
+- **14 suites de prueba** (`tests/*.test.ts`).
+- **89 tests pasando al 100%** en verde.
+
+### Cobertura de Suites Clave
+1. `tests/notificationDispatcher.test.ts`: Pruebas directas de cada tier de notificación (Tier 2 inicio de jornada, Tier 3 check-in, Tier 4 alertas de lluvia, ráfagas y avisos de humedad).
+2. `tests/alertScenarios.test.ts`: Validación de escenarios climáticos complejos (adelanto de hora de lluvia, confirmación de operario, independencia de humedad y lluvia).
+3. `tests/evaluator.test.ts`: Umbrales de curado, resina epóxica, tareas finales y precedencia de sobreescrituras manuales (`day_overrides`).
+4. `tests/fsm.test.ts`: Máquinas de estado finitas de tareas y días (`TaskService`, `DayService`).
+5. `tests/curingAndAdmin.test.ts`: Curado no vinculante en paralelo (`curing_is_blocking = false`).
+6. `tests/localDate.test.ts`: Aritmética de fechas inmutables y anclaje al mediodía UTC.
+7. `tests/validation.test.ts`: Aislamiento multi-tenant y prevención de cruce de proyectos.
+8. `tests/toolsToBuy.test.ts`: Gestión y reportes de herramientas por comprar.
+9. `tests/materialsFlow.test.ts`: Adición secuencial y reactividad de materiales.
+10. `tests/weatherCache.test.ts`: TTL y reutilización de pronósticos meteorológicos en memoria.
+
+---
+
+## ⚙️ 11. Operaciones, Despliegue en Producción y Comandos de Diagnóstico
+
+### Comando de Despliegue en Docker
 ```bash
-# Construcción e inicio del contenedor Docker en puerto 3000
+# Construcción e inicio del contenedor en puerto 3000 con volumen persistente
 docker build -t workshop-os .
 docker run -d -p 3000:3000 --name workshop-app -v $(pwd)/data:/app/data workshop-os
 ```
 
-> ⚠️ **ADVERTENCIA CRÍTICA DE DESPLIEGUE**: Nunca realizar un despliegue o reinicio del contenedor en la ventana horaria cercana al check-in nocturno (`checkin_hour`, ej. 18:55 - 19:05 hrs). Un despliegue ejecutado durante esa ventana puede interrumpir el scheduler justo en el instante de emisión de notificaciones, dejando registros incompletos o impidiendo el envío de la alerta diaria.
+> ⚠️ **ADVERTENCIA CRÍTICA**: No desplegar ni reiniciar el contenedor en la ventana horaria cercana al check-in nocturno (`checkin_hour`, ej. 18:55 - 19:05 hrs) para evitar interrumpir las notificaciones y locks en ejecución.
 
-### Comandos de Diagnóstico Útiles en Producción
-Dado que no existe el ejecutable CLI `sqlite3` dentro del contenedor de producción, toda inspección o diagnóstico de la base de datos se realiza mediante comandos de una sola línea con `node -e` y `better-sqlite3`:
+### Comandos de Diagnóstico Útiles en Producción (CLI `node -e`)
+Dado que el contenedor de producción no incluye el binario CLI `sqlite3`, cualquier inspección directa se realiza con `node -e`:
 
 ```bash
-# 1. Consultar las columnas de una tabla (ej. daily_logs):
+# 1. Inspeccionar columnas de daily_logs:
 node -e "const db = require('better-sqlite3')('./data/workshop.db'); console.log(db.prepare('PRAGMA table_info(daily_logs)').all());"
 
-# 2. Consultar los parámetros de configuración de un usuario:
-node -e "const db = require('better-sqlite3')('./data/workshop.db'); console.log(db.prepare('SELECT * FROM app_settings WHERE user_id = 1').all());"
+# 2. Ver logs diarios recientes:
+node -e "const db = require('better-sqlite3')('./data/workshop.db'); console.log(db.prepare('SELECT eval_date, status, window_start, window_end, telegram_notified, checkin_sent, checkin_resolved, last_rain_alert_hour FROM daily_logs ORDER BY eval_date DESC LIMIT 5').all());"
 
-# 3. Filtrar logs del sistema en búsqueda de errores de sincronización o clima:
-docker logs workshop-app 2>&1 | grep -iE "scheduler|weather|calendar|error" | tail -n 50
+# 3. Ver configuración del usuario #1:
+node -e "const db = require('better-sqlite3')('./data/workshop.db'); console.log(db.prepare('SELECT user_id, timezone, operational_start_hour, operational_end_hour, checkin_hour, telegram_chat_id FROM app_settings WHERE user_id = 1').all());"
 
-# 4. Verificar presencia de credenciales de Google sin exponer la clave privada:
-node -e "console.log('CLIENT_EMAIL:', !!process.env.GOOGLE_CLIENT_EMAIL, 'PRIVATE_KEY_LENGTH:', (process.env.GOOGLE_PRIVATE_KEY||'').length);"
+# 4. Filtrar logs de la aplicación en Docker:
+docker logs workshop-app 2>&1 | grep -iE "scheduler|weather|calendar|notification" | tail -n 50
 ```
 
 ---
 
-## 📜 11. Historial de Incidentes Conocidos y Lecciones Aprendidas
-
-A continuación se resumen los incidentes operacionales más relevantes experimentados durante el desarrollo y producción del sistema, documentados como lecciones aprendidas para prevenir su reaparición:
+## 📜 12. Historial de Incidentes Conocidos y Lecciones Aprendidas
 
 1. **Formularios Anidados Rompiendo Submits Silenciosamente**:
-   - *Causa Raíz*: Elementos `<form>` declarados dentro de otros formularios HTML en plantillas EJS causaban que el navegador ignorara los botones de submit internos sin emitir errores en consola.
-   - *Lección*: Mantener modales y formularios completamente desacoplados fuera del árbol DOM de otros formularios y usar el patrón AJAX.
-
-2. **Cálculos Erróneos entre UTC y Hora Local (`America/Santiago`)**:
-   - *Causa Raíz*: El uso de `new Date().toISOString()` para comparar horas operativas (ej. 19:00 hrs) interpretaba la hora en UTC (UTC-3 / UTC-4 según época del año), provocando que los check-in nocturnos se dispararan a las 15:00 hrs locales.
-   - *Lección*: Toda lógica horaria del taller debe canalizarse a través de las utilidades de `src/dateUtils.ts` (`getLocalDateIso`, `getLocalHoursAndMinutes`) usando la zona horaria IANA configurada.
-
+   - *Causa*: `<form>` declarados dentro de otros formularios HTML en plantillas EJS ignoraban clics en botones internos.
+   - *Lección*: Mantener modales y formularios desacoplados fuera del árbol DOM y usar exclusivamente el patrón AJAX.
+2. **Cálculos Erróneos entre UTC y Hora Local**:
+   - *Causa*: El uso de `new Date().toISOString()` interpretaba la hora en UTC (UTC-3/UTC-4 en Chile), disparando check-ins nocturnos a las 15:00 hrs locales.
+   - *Lección*: Toda lógica horaria se calcula a través de `src/dateUtils.ts` (`getLocalDateIso`, `getLocalHoursAndMinutes`) usando la zona horaria IANA calculada.
 3. **Lock de Concurrencia Bloqueado por Promesas Colgadas**:
-   - *Causa Raíz*: Llamadas HTTP salientes sin timeout hacia APIs externas (Open-Meteo / Telegram) quedaban en estado `pending` indefinidamente ante fallas de red, impidiendo que `releaseEvaluationLock` se ejecutara.
-   - *Lección*: Toda petición red saliente implementa `AbortSignal.timeout()` y el gestor de cerrojos incorpora un `setTimeout` de liberación forzosa de 2 minutos.
-
+   - *Causa*: Peticiones salientes a Open-Meteo o Telegram sin timeout dejaban locks tomados indefinidamente.
+   - *Lección*: Toda petición saliente tiene `AbortSignal.timeout()` y el gestor de locks incluye liberación forzosa a los 2 minutos.
 4. **Sobreescrituras Manuales (`day_overrides`) Ignoradas en Fines de Semana**:
-   - *Causa Raíz*: El evaluador verificaba la regla `exclude_sundays` antes de consultar la tabla `day_overrides`, descartando el domingo antes de leer la intención del usuario.
-   - *Lección*: Las sobreescrituras en `day_overrides` poseen precedencia absoluta y se evalúan antes que las exclusiones por defecto.
-
+   - *Causa*: El evaluador comprobaba `exclude_sundays` antes de consultar `day_overrides`.
+   - *Lección*: Las sobreescrituras manuales tienen precedencia absoluta y se evalúan antes que las reglas de exclusión por defecto.
 5. **Bug de "Al Backlog" con Confirmación Falsa de Éxito**:
-   - *Causa Raíz*: El endpoint `/tasks/:id/activate-to-backlog` solo modificaba `is_active = 1` sin restablecer `status = 'pending'` ni limpiar `completed_at`, dejando la tarea invisible para el motor de evaluación pese a responder con código de éxito.
-   - *Lección*: Toda reactivación de tarea debe resetear su ciclo de vida completo (`status`, `progress_percentage`, `completed_at`) y disparar la re-evaluación silenciosa inmediata del horizonte.
-
+   - *Causa*: Se marcaba `is_active = 1` sin resetear `status = 'pending'` ni limpiar `completed_at`.
+   - *Lección*: Reactivar una tarea resetea su ciclo de vida completo (`status`, `progress_percentage`, `completed_at`) y dispara una re-evaluación silenciosa.
 6. **Fallback Silencioso a Clima Mock Reescribiendo la Agenda**:
-   - *Causa Raíz*: Ante errores transitorios de red o rate limit de Open-Meteo, el scheduler recurría a un mock "sunny", sobrescribiendo diagnósticos reales y agendando tareas en días con lluvia efectiva.
-   - *Lección*: En producción no se utilizan mocks como fallback de red; se prioriza la caché activa en memoria o se preserva el último snapshot climático sin sobrescribir la agenda con datos falsos.
-
+   - *Causa*: Ante caídas transitorias de red, el scheduler recurría a un mock "sunny", sobrescribiendo diagnósticos reales y agendando tareas en días lluviosos.
+   - *Lección*: En producción no se usan mocks como fallback; se utiliza la caché en memoria o se preserva el último snapshot climático sin inventar datos.
 7. **Desfase de Fecha UTC entre UI y Motor de Evaluación**:
-   - *Causa Raíz*: Instanciar fechas con `new Date(yyyy-mm-dd)` asumía medianoche UTC (`00:00:00Z`), lo que en zonas horarias negativas (ej. `America/Santiago` UTC-3/UTC-4) retrocedía la fecha local al día anterior tras cruzar la medianoche UTC.
-   - *Lección*: Todas las fechas del horizonte se anclan explícitamente al mediodía UTC (`T12:00:00Z`) a partir de la fecha local calculada con la zona horaria del taller.
-
-8. **Regla de "Jornada Concluida" Faltante en Re-evaluaciones**:
-   - *Causa Raíz*: Tras completar el check-in nocturno o al realizar mutaciones a altas horas de la noche, el motor seguía evaluando el día de hoy e intentaba asignar tareas en ventanas horarias ya vencidas.
-   - *Lección*: Si `checkin_resolved = true` o la hora actual no permite completar la ventana mínima operativa, el día de hoy se marca como bloqueado/concluido y el horizonte de asignación arranca obligatoriamente a partir de mañana.
+   - *Causa*: Fechas instanciadas en medianoche UTC (`00:00:00Z`) retrocedían un día en zonas horarias occidentales.
+   - *Lección*: Todas las fechas del horizonte se anclan al mediodía UTC (`T12:00:00Z`) mediante `LocalDate`.
+8. **Bug de `Lluvia_Hour` y Re-Alerta por Adelanto de Lluvia**:
+   - *Causa*: No se persistía la hora de la lluvia alertada previamente, por lo que si una lluvia confirmada para las 18:00 se adelantaba a las 16:00, el sistema no volvía a alertar.
+   - *Lección*: Se introdujo la columna `last_rain_alert_hour` en `daily_logs` y `NotificationDispatcher` detecta adelantos para relanzar la alarma de emergencia.
 
 ---
 
-## 📡 12. Especificación de Endpoints REST (API Reference)
-
-A continuación se detallan todos los endpoints expuestos en `server.ts`, verificados contra el código fuente real:
+## 📡 13. Especificación de Endpoints REST (API Reference)
 
 ### 🔐 Sistema, Autenticación y Administración
-- `GET /health`: Endpoint de estado del servidor (retorna status OK y timestamp ISO).
-- `GET /manifest.json`: Servidor de manifiesto Web App (PWA).
+- `GET /health`: Estado del servidor y timestamp.
+- `GET /manifest.json`: Manifiesto Web App (PWA).
 - `GET /sw.js`: Service Worker cliente.
-- `GET /.well-known/assetlinks.json`: Archivo Digital Asset Links para compatibilidad PWA/Android.
-- `GET /login`: Renderiza la vista HTML de inicio de sesión.
-- `POST /login`: Procesa las credenciales de acceso (valida PBKDF2 de 4 partes y migra hashes antiguos).
-- `GET /register`: Renderiza la vista HTML de registro.
-- `POST /register`: Crea una nueva cuenta de usuario y le asigna configuración por defecto.
-- `GET /logout`: Destruye la cookie de sesión `workshop_token` y redirige a `/login`.
-- `GET /api/auth/status`: Retorna el estado de autenticación del usuario actual y si requiere cambio obligatorio de clave.
-- `POST /api/user/change-password`: Cambia la contraseña del usuario tras validar la clave actual.
-- `POST /api/admin/backup`: Endpoint administrativo para generación y descarga de backups SQLite.
+- `GET /.well-known/assetlinks.json`: Compatibilidad PWA/Android.
+- `GET /login` / `POST /login`: Renderizado y procesamiento de login (PBKDF2 de 4 partes).
+- `GET /register` / `POST /register`: Registro de usuario y configuración inicial.
+- `GET /logout`: Destruye la sesión del usuario.
+- `GET /api/auth/status`: Consulta el estado de la sesión activa y cambio obligatorio de clave.
+- `POST /api/user/change-password`: Cambio seguro de contraseña validando la actual.
+- `POST /api/admin/backup`: Generación y descarga de backup de SQLite.
 
 ### 📁 Proyectos
-- `GET /`: Renderiza el Dashboard principal de la aplicación (incluye las vistas de Planificación, Taller e Inventario).
-- `POST /projects/add`: Crea un nuevo proyecto en el taller.
-- `POST /projects/:id/toggle`: Alterna el estado de activación de un proyecto (`is_active`).
-- `POST /projects/:id/update`: Actualiza el nombre y la descripción de un proyecto.
+- `GET /`: Dashboard principal (Planificación, Taller, Inventario).
+- `POST /projects/add`: Crea un nuevo proyecto.
+- `POST /projects/:id/toggle`: Alterna el estado activo/inactivo del proyecto.
+- `POST /projects/:id/update`: Actualiza nombre y descripción del proyecto.
 
-### 📋 Backlog de Tareas y Sugerencias
-- `POST /tasks/add`: Agrega una nueva tarea al backlog del proyecto activo.
-- `POST /tasks/:id/activate-to-backlog`: Restaura una tarea al backlog activo reseteando su ciclo de vida completo (`is_active = 1`, `status = 'pending'`, `completed_at = null`, `progress_percentage = 0`) y dispara una re-evaluación silenciosa del horizonte de agendamiento.
-- `POST /tasks/:id/toggle-active`: Activa o pausa una tarea en el flujo de agendamiento.
-- `POST /tasks/:id/update`: Modifica título, categoría, horas de trabajo activo y horas de curado pasivo.
-- `POST /tasks/:id/update_status`: Actualiza el estado de la tarea (`pending`, `in_progress`, `completed`).
-- `POST /tasks/:id/delete`: Elimina una tarea del backlog.
-- `POST /tasks/:id/move-up`: Desplaza una tarea un lugar hacia arriba en el backlog.
-- `POST /tasks/:id/move-down`: Desplaza una tarea un lugar hacia abajo en el backlog.
-- `POST /tasks/reorder`: Reordena secuencialmente las tareas mediante un arreglo JSON con la lista de IDs.
+### 📋 Backlog de Tareas
+- `POST /tasks/add`: Agrega una tarea al backlog del proyecto activo.
+- `POST /tasks/:id/activate-to-backlog`: Restaura una tarea reseteando su ciclo de vida y reevalúa silenciosamente.
+- `POST /tasks/:id/toggle-active`: Pausa o activa una tarea en el agendamiento.
+- `POST /tasks/:id/update`: Edita título, categoría, horas activas y horas de curado.
+- `POST /tasks/:id/update_status`: Actualiza estado (`pending`, `in_progress`, `completed`).
+- `POST /tasks/:id/delete`: Elimina una tarea.
+- `POST /tasks/:id/move-up` / `POST /tasks/:id/move-down`: Reordena tareas paso a paso.
+- `POST /tasks/reorder`: Reordenamiento secuencial masivo mediante JSON.
 - `POST /tasks/import`: Importación masiva de tareas en formato JSON.
-- `GET /tasks/history`: Retorna el historial de títulos de tareas previas para autocompletado en el frontend.
-- `GET /tasks/suggestions`: Proporciona sugerencias de tareas comunes (alias de /tasks/history).
+- `GET /tasks/history` / `GET /tasks/suggestions`: Historial de títulos para autocompletado.
 
 ### 📑 Plantillas de Proyecto
-- `POST /project-templates/save`: Guarda las tareas del proyecto activo como una plantilla reutilizable.
-- `POST /project-templates/:id/apply`: Aplica una plantilla previamente guardada al proyecto actual.
-- `POST /project-templates/:id/delete`: Elimina una plantilla de proyecto.
+- `POST /project-templates/save`: Guarda tareas activas como plantilla reutilizable.
+- `POST /project-templates/:id/apply`: Aplica una plantilla al proyecto actual.
+- `POST /project-templates/:id/delete`: Elimina una plantilla.
 
 ### 📦 Insumos y Materiales
-- `GET /api/materials`: Obtiene la lista de materiales e insumos asociados al usuario/proyecto.
-- `POST /materials/add`: Agrega un nuevo material al inventario del proyecto.
-- `POST /materials/:id/toggle`: Alterna el estado del material entre `to_buy` (Por Comprar) e `in_stock` (En Taller).
-- `POST /materials/:id/update`: Edita el nombre, cantidad, unidad y categoría de un material.
-- `POST /materials/:id/set-status`: Establece explícitamente el estado del material (`to_buy` / `in_stock`).
-- `POST /materials/:id/delete`: Elimina un material del inventario.
-- `POST /materials/import`: Importación masiva de materiales vía JSON.
+- `GET /api/materials`: Obtiene materiales del usuario/proyecto.
+- `POST /materials/add`: Agrega un material al inventario.
+- `POST /materials/:id/toggle`: Alterna estado entre `to_buy` y `in_stock`.
+- `POST /materials/:id/update`: Edita datos del material.
+- `POST /materials/:id/set-status`: Fija explícitamente `to_buy` o `in_stock`.
+- `POST /materials/:id/delete`: Elimina un material.
+- `POST /materials/import`: Importación masiva de materiales.
 
 ### 🛠️ Herramientas
-- `GET /api/tools`: Obtiene el listado de herramientas registradas por el usuario.
-- `POST /tools/add`: Registra una nueva herramienta en el taller.
-- `POST /tools/:id/update`: Edita el nombre, categoría y estado de una herramienta.
-- `POST /tools/:id/set-status`: Actualiza explícitamente el estado de la herramienta (`to_buy` [Por Comprar] o `in_stock` [En Taller]).
-- `POST /tools/:id/delete`: Elimina una herramienta del catálogo.
-- `GET /api/inventory/export-context`: Exporta un resumen consolidado de materiales y herramientas en formato JSON para asistentes de IA o reportes.
+- `GET /api/tools`: Lista de herramientas del taller.
+- `POST /tools/add`: Registra una nueva herramienta.
+- `POST /tools/:id/update`: Edita una herramienta.
+- `POST /tools/:id/set-status`: Fija estado `to_buy` o `in_stock`.
+- `POST /tools/:id/delete`: Elimina una herramienta.
+- `GET /api/inventory/export-context`: Exportación consolidada de inventario en JSON para IA y reportes.
 
-### 🧮 Calculadora de Offsets / Tiempos
-- `GET /api/calculator/offsets`: Obtiene los desplazamientos/offsets de tiempo preconfigurados.
-- `POST /calculator/offsets/add`: Agrega un nuevo offset de cálculo.
-- `POST /calculator/offsets/:id/update`: Edita un offset de cálculo existente.
-- `POST /calculator/offsets/:id/delete`: Elimina un offset de cálculo.
+### 📆 Sobreescrituras Manuales (`day_overrides`)
+- `POST /day-override/:override_date/save`: Fija estado forzado (`VIABLE`/`BLOCKED`), horas personalizadas y notas.
+- `POST /day-override/:override_date/clear`: Elimina sobreescritura retornando a evaluación climática automática.
+- `POST /day-override/:override_date/force-task`: Fuerza una tarea a una fecha específica.
+- `POST /day-override/forced-task/:forced_id/delete`: Elimina asignación forzada de tarea.
 
-### 📆 Sobreescrituras Manuales por Día (`day_overrides`)
-- `POST /day-override/:override_date/save`: Registra o actualiza el estado forzado (`VIABLE` / `BLOCKED`), horarios personalizados o notas para un día específico.
-- `POST /day-override/:override_date/clear`: Elimina la sobreescritura manual de una fecha, retornando a la evaluación meteorológica automática.
-- `POST /day-override/:override_date/force-task`: Fuerza la inclusión manual de una tarea específica en un día determinado.
-- `POST /day-override/forced-task/:forced_id/delete`: Elimina una tarea asignada manualmente a una fecha.
+### ☀️ Evaluación Climática y Check-in
+- `POST /evaluation/force_run`: Fuerza la re-evaluación del horizonte multi-día.
+- `POST /evaluation/force_checkin`: Emite prompt de check-in en Telegram (pruebas/desarrollo).
+- `POST /api/checkin/end_shift`: Controlador del botón "Término de la Jornada" (Telegram o modal web).
+- `POST /api/checkin/resolve`: Procesa la resolución de tareas del check-in.
 
-### ☀️ Evaluación Climática, Check-in y Calendario
-- `POST /evaluation/force_run`: Ejecuta el controlador `handleEvaluationRequest` para reevaluar el horizonte multi-día.
-- `POST /evaluation/force_checkin`: Fuerza la emisión del prompt de check-in nocturno por Telegram (exclusivo para pruebas/desarrollo).
-- `POST /api/checkin/end_shift`: Endpoint disparado por el botón "Término de la Jornada". Verifica disponibilidad de Telegram o indica a la UI que despliegue el modal web de fallback.
-- `POST /api/checkin/resolve`: Procesa la resolución de tareas del check-in (completar, postergar) y re-evalúa silenciosamente el horizonte.
-
-### ⚙️ Configuración del Sistema y Telegram
-- `GET /api/timezone`: Retorna la zona horaria IANA calculada según las coordenadas del taller (`tz-lookup`).
-- `POST /settings/update`: Guarda los parámetros operacionales, ubicación geográfica del taller y preferencias.
-- `POST /settings/telegram/generate-code`: Genera un código OTP de 6 dígitos para vinculación de Telegram.
-- `POST /settings/telegram/unlink`: Desvincula la cuenta de Telegram del usuario (`telegram_chat_id = NULL`).
-- `POST /webhook/telegram`: Webhook para recepción de mensajes e interacciones inline del Bot de Telegram.
+### ⚙️ Configuración y Telegram
+- `GET /api/timezone`: Obtiene zona horaria calculada según lat/lon.
+- `POST /settings/update`: Guarda ubicación, horarios operativos y umbrales climáticos.
+- `POST /settings/telegram/generate-code`: Genera código OTP de 6 dígitos para vincular bot.
+- `POST /settings/telegram/unlink`: Desvincula cuenta de Telegram.
+- `POST /webhook/telegram`: Webhook para mensajes y callbacks interactivos de Telegram.
 
 ---
 
-## 📂 13. Árbol de Archivos del Proyecto y Matriz Técnica por Archivo
+## 📂 14. Árbol de Archivos del Proyecto y Matriz Técnica por Archivo
 
 ```
 AGENDAPP/
@@ -549,9 +519,10 @@ AGENDAPP/
 ├── metadata.json                 # Metadatos del applet
 ├── package.json                  # Dependencias NPM, scripts de compilación y linter
 ├── tsconfig.json                 # Configuración del compilador TypeScript
+├── vitest.config.ts              # Configuración del runner de pruebas Vitest
 ├── server.ts                     # Punto de entrada de Express y definición de rutas REST
 ├── data/                         # Directorio de persistencia de SQLite
-│   └── workshop.db               # Archivo de base de datos SQLite (runtime)
+│   └── workshop.db               # Base de datos SQLite en runtime (WAL mode)
 ├── src/                          # Código fuente backend en TypeScript
 │   ├── auth.ts                   # Autenticación, hashing PBKDF2 y firma HMAC de sesiones
 │   ├── calendarService.ts        # Integración con Google Calendar API v3 y validación PEM
@@ -559,10 +530,15 @@ AGENDAPP/
 │   ├── db.ts                     # Gestor SQLite, migraciones idempotentes y capa DAO (`store`)
 │   ├── evaluator.ts              # Motor de evaluación meteorológica y auditoría horaria
 │   ├── holidaysService.ts        # Detección de feriados e irrenunciables
-│   ├── scheduler.ts              # Daemon de fondo, locks de concurrencia y tickers
-│   ├── telegramBot.ts            # Bot de Telegram, webhooks, long polling y callbacks
+│   ├── LocalDate.ts              # Value Object inmutable para aritmética de fechas
+│   ├── notificationDispatcher.ts # Despachador centralizado de notificaciones (Tiers 2, 3 y 4)
+│   ├── scheduler.ts              # Daemon de fondo, locks de concurrencia y orquestación
+│   ├── telegramBot.ts            # Bot de Telegram, webhooks, long polling y teclados inline
 │   ├── types.ts                  # Interfaces TypeScript, modelos y enums
-│   └── weatherService.ts         # Ingesta de pronósticos meteorológicos de Open-Meteo
+│   ├── weatherService.ts         # Ingesta de pronósticos meteorológicos de Open-Meteo
+│   └── services/                 # Servicios de dominio FSM
+│       ├── taskService.ts        # Máquina de estados y transiciones de tareas
+│       └── dayService.ts         # Máquina de estados y transiciones de días
 ├── static/                       # Archivos estáticos del frontend
 │   ├── manifest.json             # Manifiesto Web App (PWA)
 │   ├── sw.js                     # Service Worker
@@ -573,7 +549,18 @@ AGENDAPP/
 │       ├── agenda.js             # Lógica del cliente para la línea de tiempo y auditoría
 │       ├── backlog.js            # Lógica del backlog, drag & drop y autocompletado
 │       ├── map.js                # Selector interactivo de coordenadas (Leaflet)
-│       └── settings.js           # Gestor de configuración y vinculación de Telegram
+│       └── settings.js           # Gestor de configuración, backup WAL y cambio de contraseña
+├── tests/                        # Suite de pruebas automatizadas (14 archivos, 89 tests)
+│   ├── alertScenarios.test.ts    # Escenarios de lluvia, ráfagas y adelanto de hora
+│   ├── curingAndAdmin.test.ts    # Curado en paralelo y permisos de administrador
+│   ├── evaluator.test.ts         # Pruebas del motor evaluador y umbrales climáticos
+│   ├── fsm.test.ts               # Pruebas de máquinas de estado de tareas y días
+│   ├── localDate.test.ts         # Pruebas unitarias de LocalDate
+│   ├── materialsFlow.test.ts     # Pruebas de flujo reactivo de materiales
+│   ├── notificationDispatcher.test.ts # Pruebas directas de los tiers de notificación
+│   ├── toolsToBuy.test.ts        # Pruebas de herramientas por comprar
+│   ├── validation.test.ts        # Pruebas de aislamiento multi-tenant
+│   └── weatherCache.test.ts      # Pruebas de caché de clima en memoria
 └── views/                        # Plantillas de renderizado EJS
     ├── index.ejs                 # Vista principal del Dashboard
     ├── login.ejs                 # Vista de inicio de sesión
@@ -581,20 +568,41 @@ AGENDAPP/
     └── components/               # Componentes EJS modulares
         ├── agenda.ejs            # Componente de línea de tiempo y auditoría horaria
         ├── backlog.ejs           # Componente de backlog de tareas
-        ├── materials.ejs         # Componente unificado de Inventario (pestañas Materiales e Insumos + Herramientas)
-        └── settings_modal.ejs    # Modal de configuración operacional
+        ├── materials.ejs         # Componente de Inventario (Materiales + Herramientas)
+        └── settings_modal.ejs    # Modal de configuración, backups y seguridad
 ```
 
 ### Matriz Técnica por Archivo
 | Archivo | Responsabilidad Principal | Dependencias Clave |
 | :--- | :--- | :--- |
 | `server.ts` | Servidor HTTP Express, controladores REST y middleware de seguridad. | `express`, `src/db.ts`, `src/auth.ts`, `src/scheduler.ts` |
-| `src/auth.ts` | Hashing PBKDF2 en 4 partes, migración transparente y cookies HMAC. | Node `crypto`, `express`, `src/db.ts` |
-| `src/calendarService.ts` | Sincronización espejo con Google Calendar API v3 y validación PEM. | `googleapis`, Node `crypto`, `src/db.ts` |
-| `src/dateUtils.ts` | Lógica de fechas en zona horaria IANA del taller. | Date Standard API, `tz-lookup` |
+| `src/notificationDispatcher.ts` | Despacho, formateo y validación de notificaciones de inicio, check-in y alertas climáticas. | `src/db.ts`, `src/telegramBot.ts`, `src/weatherService.ts`, `src/types.ts` |
+| `src/scheduler.ts` | Daemon de fondo, ciclo de vida del evaluador, locks de concurrencia y timers cron. | `src/db.ts`, `src/evaluator.ts`, `src/notificationDispatcher.ts` |
+| `src/evaluator.ts` | Motor climático, precedencia de sobreescrituras y auditoría horaria. | `src/types.ts`, `src/holidaysService.ts`, `src/LocalDate.ts` |
+| `src/LocalDate.ts` | Representación inmutable de fechas de calendario ancladas al mediodía UTC. | Ninguna (código puro) |
 | `src/db.ts` | DAO de SQLite, migraciones idempotentes condicionales y consultas relacionales. | `better-sqlite3`, `src/types.ts` |
-| `src/evaluator.ts` | Motor climático, precedencia de sobreescrituras y auditoría horaria. | `src/types.ts`, `src/holidaysService.ts` |
-| `src/scheduler.ts` | Daemon en segundo plano, cerrojos de concurrencia y tickers de alertas. | `src/db.ts`, `src/evaluator.ts`, `src/weatherService.ts`, `src/telegramBot.ts` |
-| `src/telegramBot.ts` | Bot de Telegram, desvinculación automática de duplicados y callbacks inline. | `src/db.ts`, HTTP fetch API |
-| `src/weatherService.ts` | Ingesta de pronósticos de Open-Meteo con cache local y fallback a snapshot. | HTTP fetch API, `src/types.ts` |
-| `views/components/materials.ejs` | Vista de Inventario que renderiza tanto Materiales/Insumos como Herramientas (pestaña 'Por Comprar' y 'En Taller'). | EJS, Tailwind CSS |
+| `src/calendarService.ts` | Sincronización espejo con Google Calendar API v3 y validación PEM. | `googleapis`, Node `crypto`, `src/db.ts` |
+| `src/auth.ts` | Hashing PBKDF2 en 4 partes, migración transparente y cookies HMAC. | Node `crypto`, `express`, `src/db.ts` |
+| `src/telegramBot.ts` | Bot de Telegram, desvinculación automática de duplicados y teclados inline. | `src/db.ts`, HTTP fetch API |
+| `src/weatherService.ts` | Ingesta de pronósticos de Open-Meteo con caché local TTL 15-30 min. | HTTP fetch API, `src/types.ts` |
+
+---
+
+## 💡 15. Sugerencias y Roadmap para Futuras Iteraciones
+
+Para continuar fortaleciendo la plataforma en futuras versiones, se sugieren las siguientes mejoras arquitectónicas y funcionales:
+
+1. **Notificaciones Push Web (Web Push API / Service Worker)**:
+   - Añadir soporte nativo de notificaciones push en el navegador mediante el Service Worker ya existente (`sw.js`).
+   - Permitiría recibir las alertas críticas de lluvia o el prompt de check-in directamente en la pantalla de la tablet o laptop del taller, incluso si el operario no tiene Telegram abierto.
+2. **Cálculo de Costo Real por Proyecto e Insumos**:
+   - Agregar campos de `costo_unitario` y `moneda` en la tabla `materials` y `tools`.
+   - Permitiría al taller conocer el costo acumulado de materiales e insumos utilizados por proyecto al momento de completarlo.
+3. **Módulo de Registro Fotográfico de Avances**:
+   - Permitir adjuntar fotos del estado de avance durante el check-in (vía Telegram enviando la foto con la confirmación de la tarea o subiéndola en la interfaz web).
+   - Generaría un histórico visual del proyecto útil para control de calidad y reportes a clientes.
+4. **Soporte de Estaciones Meteorológicas Locales (PWS / MQTT)**:
+   - Integrar un endpoint webhook/MQTT para recibir datos de sensores ambientales locales instalados en el propio taller (ej. sensor DHT22 / BME280 conectado por ESP32).
+   - Complementaría el pronóstico satelital de Open-Meteo con la medición de humedad y temperatura real dentro del cobertizo de trabajo.
+5. **Generador de Reportes PDF / Plan de Corte para Clientes**:
+   - Crear un generador de fichas técnicas en PDF exportables con la cronología real de trabajo, materiales utilizados y fechas de curado para certificar la durabilidad de los muebles ante clientes exigentes.

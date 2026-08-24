@@ -429,4 +429,90 @@ describe("Evaluator - Day Overrides Precedence", () => {
     expect(result.reason).toContain("horario operativo finalizado");
     expect(result.scheduled_tasks).toBeUndefined();
   });
+
+  it("should schedule a 20-minute final task after 5h blocking cure without minimum hours restriction", () => {
+    // Caso real reproducible: proyecto taburete con tarea previa + 5h de curado bloqueante + tarea final de 20 min (0.33h)
+    const task1 = createMockTask({
+      id: 101,
+      project_id: 50,
+      project_name: "Taburete",
+      title: "Encolado y fijación de patas",
+      estimated_hours: 1.0,
+      requires_curing: true,
+      curing_hours: 5.0,
+      curing_is_blocking: true,
+      order: 1
+    });
+
+    const finalTask = createMockTask({
+      id: 102,
+      project_id: 50,
+      project_name: "Taburete",
+      title: "Retoque final y cera",
+      estimated_hours: 0.33, // 20 minutos
+      requires_curing: false,
+      curing_hours: 0.0,
+      order: 2
+    });
+
+    const forecasts = createMockForecasts(20, 50, 0, 0);
+    const settingsWithHighMin: AppSettings = {
+      ...mockSettings,
+      operational_start_hour: 8,
+      operational_end_hour: 20,
+      setup_hours: 0.5,
+      teardown_hours: 0.5,
+      min_work_hours: 3.0 // El mínimo es 3h, pero la tarea final sola (0.33h) o ambas juntas (1.33h activo + 5h curado = 6.33h taller) deben ser viables
+    };
+
+    // Evaluamos sólo la tarea final pendiente (ej. si el encolado ya se realizó antes o se agenda sola)
+    const resultSoloFinal = evaluateDayFeasibility("2026-08-25", [finalTask], forecasts, settingsWithHighMin);
+    expect(resultSoloFinal.status).toBe(DayStatus.DAY_VIABLE);
+    expect(resultSoloFinal.scheduled_tasks).toHaveLength(1);
+    expect(resultSoloFinal.scheduled_tasks[0].id).toBe(102);
+    expect(resultSoloFinal.scheduled_tasks[0].estimated_hours).toBe(0.33);
+
+    // Evaluamos el paquete completo: Tarea 1 (1.0h) + 5.0h curado bloqueante + Tarea final (0.33h)
+    const resultCompleto = evaluateDayFeasibility("2026-08-25", [task1, finalTask], forecasts, settingsWithHighMin);
+    expect(resultCompleto.status).toBe(DayStatus.DAY_VIABLE);
+    expect(resultCompleto.scheduled_tasks).toHaveLength(2);
+    expect(resultCompleto.scheduled_tasks.map(t => t.id)).toEqual([101, 102]);
+  });
+
+  it("should schedule small remaining tasks when project has significant progress (>=50% pending hours)", () => {
+    // Proyecto pequeño donde las tareas suman poco tiempo pero representan avance significativo
+    const taskA = createMockTask({
+      id: 201,
+      project_id: 60,
+      project_name: "Caja de Té",
+      title: "Fresado de ranuras",
+      estimated_hours: 0.4, // 24 min (57% de las 0.7h pendientes)
+      order: 1
+    });
+
+    const taskB = createMockTask({
+      id: 202,
+      project_id: 60,
+      project_name: "Caja de Té",
+      title: "Lijado suave interior",
+      estimated_hours: 0.3, // 18 min
+      order: 2
+    });
+
+    const forecasts = createMockForecasts(20, 50, 0, 0);
+    const settings: AppSettings = {
+      ...mockSettings,
+      operational_start_hour: 10,
+      operational_end_hour: 18,
+      setup_hours: 0.5,
+      teardown_hours: 0.5,
+      min_work_hours: 2.0 // Mínimo estándar de 2.0h
+    };
+
+    // Evaluamos ambas tareas pendientes en backlog
+    const result = evaluateDayFeasibility("2026-08-25", [taskA, taskB], forecasts, settings);
+    expect(result.status).toBe(DayStatus.DAY_VIABLE);
+    expect(result.scheduled_tasks).toHaveLength(2);
+    expect(result.scheduled_tasks.map(t => t.id)).toEqual([201, 202]);
+  });
 });

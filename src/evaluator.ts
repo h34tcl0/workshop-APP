@@ -401,6 +401,32 @@ export function isFinalTaskPackage(candidateTasks: Task[], allPendingInBacklog: 
   return false;
 }
 
+export function hasSignificantProgressOrSmallProject(candidateTasks: Task[], allPendingInBacklog: Task[], minWorkHours: number): boolean {
+  if (!candidateTasks || candidateTasks.length === 0) return false;
+  if (!allPendingInBacklog || allPendingInBacklog.length === 0) return false;
+
+  const candidateProjectIds = new Set(candidateTasks.map(t => t.project_id));
+  for (const pid of candidateProjectIds) {
+    const candidateProjTasks = candidateTasks.filter(t => t.project_id === pid);
+    const allPendingProjTasks = allPendingInBacklog.filter(t => t.project_id === pid);
+
+    const pendingTotalHours = allPendingProjTasks.reduce((acc, t) => acc + (t.estimated_hours || 0), 0);
+    const candidateActiveHours = candidateProjTasks.reduce((acc, t) => acc + (t.estimated_hours || 0), 0);
+
+    // 1. Proyecto pequeño: todas las tareas pendientes del proyecto suman menos del mínimo estándar
+    if (pendingTotalHours > 0 && pendingTotalHours < minWorkHours) {
+      return true;
+    }
+
+    // 2. Avance significativo: el paquete cubre >= 50% de las horas pendientes del proyecto (con guard contra división por cero)
+    if (pendingTotalHours > 0 && (candidateActiveHours / pendingTotalHours) >= 0.50) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function evaluateDayFeasibility(
   evalDateInput: Date | string,
   backlogTasks: Task[],
@@ -441,9 +467,19 @@ export function evaluateDayFeasibility(
   const pendingTasks = backlogTasks.filter(t => t.status !== TaskStatus.COMPLETED).sort((a, b) => a.order - b.order);
 
   const isFinalBacklog = isFinalTaskPackage(pendingTasks, pendingTasks);
-  const effectiveMinWorkHours = isFinalBacklog && cfg.min_work_hours_unless_final != null && cfg.min_work_hours_unless_final > 0
-    ? cfg.min_work_hours_unless_final
+  const isSmallOrSignificant = hasSignificantProgressOrSmallProject(pendingTasks, pendingTasks, cfg.min_work_hours);
+
+  // Umbral exploratorio de ventana:
+  // - Para paquete final: umbral 0.0h (cualquier ventana positiva > 0 es viable).
+  // - Para proyectos pequeños / avance significativo: la menor duración de tarea en backlog.
+  // - Para proyectos estándar: min_work_hours.
+  const minTaskDuration = pendingTasks.length > 0
+    ? Math.min(...pendingTasks.map(t => t.estimated_hours || 0).filter(h => h > 0), cfg.min_work_hours)
     : cfg.min_work_hours;
+
+  const effectiveMinWorkHours = isFinalBacklog
+    ? 0.0 // Nota de diseño: umbral 0.0h intencional para permitir agendar tareas finales sin mínimos artificiales.
+    : (isSmallOrSignificant ? Math.min(cfg.min_work_hours, minTaskDuration) : cfg.min_work_hours);
 
   const freeWindows = extractFreeWindows(climateMap, effectiveMinWorkHours);
   const climateOnlyStatus = freeWindows.length > 0 ? "clear" : "blocked";
@@ -495,9 +531,9 @@ export function evaluateDayFeasibility(
     };
   }
 
-  const totalActivePending = pendingTasks.reduce((acc, t) => acc + t.estimated_hours, 0);
-  if (totalActivePending < effectiveMinWorkHours) {
-    const reasonMsg = `Sin agendamiento: La carga de trabajo pendiente en backlog (${totalActivePending.toFixed(1)}h) es menor al tiempo mínimo de ${effectiveMinWorkHours.toFixed(1)}h ${isFinalBacklog ? "configurado para tarea final" : "general de jornada configurado"}.`;
+  const totalActivePending = pendingTasks.reduce((acc, t) => acc + (t.estimated_hours || 0), 0);
+  if (!isFinalBacklog && !isSmallOrSignificant && totalActivePending < effectiveMinWorkHours) {
+    const reasonMsg = `Sin agendamiento: La carga de trabajo pendiente en backlog (${totalActivePending.toFixed(1)}h) es menor al tiempo mínimo de ${effectiveMinWorkHours.toFixed(1)}h general de jornada configurado.`;
     return {
       ...commonFields,
       status: DayStatus.DAY_BLOCKED,
@@ -512,15 +548,16 @@ export function evaluateDayFeasibility(
   let hadWeatherViableButTooShort = false;
   let firstWeatherConflictDetail: string | null = null;
 
-  const minSpan = Math.max(1, Math.floor(cfg.setup_hours + effectiveMinWorkHours));
+  const minSpan = Math.max(1, Math.floor(cfg.setup_hours + (effectiveMinWorkHours > 0 ? effectiveMinWorkHours : 0.25)));
 
   for (let startHour = startLimit; startHour <= endLimit - minSpan; startHour++) {
     for (let endHour = startHour + minSpan; endHour <= endLimit; endHour++) {
       const availableNetWork = endHour - startHour - cfg.setup_hours;
-      if (availableNetWork < effectiveMinWorkHours) continue;
+      if (effectiveMinWorkHours > 0 && availableNetWork < effectiveMinWorkHours) continue;
 
       const scheduledPackage: Task[] = [];
       let accumulatedActiveHours = 0.0;
+      let accumulatedBlockingCureHours = 0.0;
       let operatorCursor = cfg.setup_hours;
       let lastActiveEndOffset = cfg.setup_hours;
 
@@ -603,17 +640,35 @@ export function evaluateDayFeasibility(
 
           scheduledPackage.push(task);
           accumulatedActiveHours += task.estimated_hours;
+          if (requiresCuring && isBlocking) {
+            accumulatedBlockingCureHours += cureDur;
+          }
           lastActiveEndOffset = Math.max(lastActiveEndOffset, operatorCursor + task.estimated_hours);
           operatorCursor = nextOperatorCursor;
         }
       }
 
-      const packageIsFinal = isFinalTaskPackage(scheduledPackage, pendingTasks);
-      const packageMinHours = packageIsFinal && cfg.min_work_hours_unless_final != null && cfg.min_work_hours_unless_final > 0
-        ? cfg.min_work_hours_unless_final
-        : cfg.min_work_hours;
+      if (scheduledPackage.length === 0 || accumulatedActiveHours <= 0) continue;
 
-      if (accumulatedActiveHours < packageMinHours || scheduledPackage.length === 0) continue;
+      const packageIsFinal = isFinalTaskPackage(scheduledPackage, pendingTasks);
+      const packageIsSmallOrSignificant = hasSignificantProgressOrSmallProject(scheduledPackage, pendingTasks, cfg.min_work_hours);
+
+      // Determinación del umbral mínimo de trabajo requerido para este paquete
+      // - Si es paquete final: 0.0h (intencional: cualquier tarea final >0h se agenda).
+      // - Si es proyecto pequeño o avance significativo (>=50%): umbral flexible o menor tarea.
+      // - Estándar: cfg.min_work_hours.
+      let packageMinHours = cfg.min_work_hours;
+      if (packageIsFinal) {
+        packageMinHours = 0.0;
+      } else if (packageIsSmallOrSignificant) {
+        const smallestTaskInPkg = Math.min(...scheduledPackage.map(t => t.estimated_hours || 0).filter(h => h > 0), cfg.min_work_hours);
+        packageMinHours = Math.min(cfg.min_work_hours, smallestTaskInPkg);
+      }
+
+      // Tiempo comprometido total = trabajo activo + secado bloqueante intermedio
+      const totalCommittedHours = accumulatedActiveHours + accumulatedBlockingCureHours;
+
+      if (!packageIsFinal && totalCommittedHours < packageMinHours) continue;
 
       if (accumulatedActiveHours > maxWorkScheduled) {
         maxWorkScheduled = accumulatedActiveHours;

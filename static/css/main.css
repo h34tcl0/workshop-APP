@@ -246,3 +246,53 @@ html { scroll-behavior: smooth; -webkit-tap-highlight-color: transparent; }
     }
 }
 
+/* ── CUSTOM SELECT STYLING & HOVER PALETTE ── */
+select:not(.status-badge-select) {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-color: #1a2532 !important; /* surface2 */
+    color: #e9f1f8 !important; /* ink */
+    border: 1px solid #2b3a4b !important; /* hairline */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239cb1c3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.75rem center !important;
+    background-size: 1rem 1rem !important;
+    padding-right: 2.25rem !important;
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease !important;
+    color-scheme: dark !important;
+}
+
+select:not(.status-badge-select):hover {
+    background-color: #223041 !important; /* Dark slate highlight from palette, never native gray */
+    border-color: rgba(244, 168, 58, 0.5) !important; /* Brass subtle highlight */
+}
+
+select:not(.status-badge-select):focus {
+    background-color: #1a2532 !important;
+    border-color: #f4a83a !important; /* brass */
+    outline: none !important;
+    box-shadow: 0 0 0 2px rgba(244, 168, 58, 0.25) !important;
+}
+
+select option {
+    background-color: #131c27 !important; /* surface */
+    color: #e9f1f8 !important;
+    padding: 8px 12px;
+}
+
+/* Status Badge Selects inside Inventory Tables */
+select.status-badge-select {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239cb1c3'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 0.35rem center !important;
+    background-size: 0.75rem 0.75rem !important;
+    padding-right: 1.4rem !important;
+    transition: background-color 0.15s ease, border-color 0.15s ease, filter 0.15s ease !important;
+    color-scheme: dark !important;
+}
+
+
