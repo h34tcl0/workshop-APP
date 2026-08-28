@@ -1,0 +1,56 @@
+<!-- BARRA UNIFICADA DE TABS, FILTROS Y ACCIONES -->
+<div class="w-full bg-surface border border-hairline rounded-2xl p-2.5 shadow-panel space-y-2.5">
+    <!-- FILA 1: PESTAÑAS (IZQUIERDA) Y ACCIONES PRIMARIAS (DERECHA) -->
+    <div class="flex flex-wrap items-center justify-between gap-2.5">
+        <!-- IZQUIERDA: PESTAÑAS CON ÍCONOS DEL SISTEMA -->
+        <div class="flex items-center gap-1 p-1 bg-surface2 rounded-xl shrink-0 overflow-x-auto max-w-full">
+            <button type="button" onclick="switchInventoryTab('materials')" id="inv-tab-materials" class="inv-tab-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-brass text-canvas shadow-xs whitespace-nowrap">
+                <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-box"/></svg>
+                <span>Insumos y Materiales (<%= (locals.materials || []).length %>)</span>
+            </button>
+            <button type="button" onclick="switchInventoryTab('tools')" id="inv-tab-tools" class="inv-tab-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-ink2 hover:text-ink whitespace-nowrap">
+                <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-wrench"/></svg>
+                <span>Herramientas (<%= (locals.tools || []).length %>)</span>
+            </button>
+            <button type="button" onclick="switchInventoryTab('all')" id="inv-tab-all" class="inv-tab-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all text-ink2 hover:text-ink whitespace-nowrap">
+                <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-list"/></svg>
+                <span>Vista Unificada</span>
+            </button>
+        </div>
+
+        <!-- DERECHA: BOTONES DE ACCIÓN PRINCIPALES -->
+        <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
+            <button type="button" onclick="openAiExportModal()" title="Exportar Inventario" class="flex items-center justify-center gap-1.5 bg-surface2 hover:bg-hairline text-ink border border-hairline px-3 py-1.5 rounded-xl text-xs font-medium transition-colors whitespace-nowrap">
+                <svg class="w-3.5 h-3.5 text-ink2 shrink-0"><use href="#i-terminal"/></svg>
+                <span>Exportar</span>
+            </button>
+            <button type="button" id="btn-add-material-action" onclick="toggleAddMaterialForm()" title="Nuevo Material" class="flex items-center justify-center gap-1.5 bg-brass hover:bg-brassdim text-canvas px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shadow-xs whitespace-nowrap">
+                <svg class="w-3.5 h-3.5 shrink-0"><use href="#i-plus"/></svg>
+                <span>Nuevo Material</span>
+            </button>
+            <button type="button" id="btn-add-tool-action" onclick="toggleAddToolForm()" title="Nueva Herramienta" class="flex items-center justify-center gap-1.5 bg-surface2 hover:bg-hairline text-ink border border-hairline px-3 py-1.5 rounded-xl text-xs font-medium transition-colors whitespace-nowrap">
+                <svg class="w-3.5 h-3.5 text-chalk shrink-0"><use href="#i-plus"/></svg>
+                <span>Nueva Herramienta</span>
+            </button>
+            <button type="button" onclick="openImportMaterialsModal()" title="Importar JSON" class="p-1.5 bg-surface2 hover:bg-hairline text-ink border border-hairline rounded-xl text-xs font-medium transition-colors shrink-0">
+                <svg class="w-4 h-4 text-chalk shrink-0"><use href="#i-import"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- FILA 2: FILTRO CONTEXTUAL DE CATEGORÍA Y BUSCADOR EN TIEMPO REAL -->
+    <div class="flex items-center gap-2 pt-0.5 border-t border-hairline/50">
+        <!-- FILTRO DE CATEGORÍA DE TALLER -->
+        <div class="shrink-0 min-w-[150px] sm:min-w-[170px]">
+            <select id="inventory-category-filter" onchange="filterInventory()" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-xl px-2.5 py-1.5 text-xs font-medium focus:outline-none focus:border-brass cursor-pointer transition-colors">
+                <option value="all">Todas las Categorías</option>
+            </select>
+        </div>
+
+        <!-- BÚSQUEDA RÁPIDA -->
+        <div class="relative flex-1 min-w-0">
+            <svg class="w-3.5 h-3.5 absolute left-3 top-2.5 text-ink3 pointer-events-none"><use href="#i-search"/></svg>
+            <input type="text" id="inventory-search-input" onkeyup="filterInventory()" placeholder="Buscar insumo, herramienta, notas o proyecto..." class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-brass placeholder:text-ink3 transition-colors">
+        </div>
+    </div>
+</div>

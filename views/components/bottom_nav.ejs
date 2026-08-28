@@ -1,0 +1,59 @@
+<!-- BOTTOM NAVIGATION BAR (EXCLUSIVO MOBILE < 768px) -->
+<nav id="mobile-bottom-nav" class="flex md:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface/95 backdrop-blur-md border-t border-hairline shadow-2xl px-2 py-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] items-center justify-around">
+
+    <!-- 1. Botón + Nueva Tarea -->
+    <button type="button" 
+            id="mobile-nav-add-task" 
+            onclick="openAddTaskDrawer()" 
+            class="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-brass hover:text-brassdim active:scale-95 transition-all">
+        <div class="w-8 h-8 rounded-lg bg-brass text-canvas flex items-center justify-center shadow-xs mb-0.5">
+            <svg class="w-4 h-4"><use href="#i-plus"/></svg>
+        </div>
+        <span class="text-[10px] font-semibold tracking-tight text-ink font-sans">+ Nueva</span>
+    </button>
+
+    <!-- 2. Botón Backlog -->
+    <button type="button" 
+            id="mobile-nav-backlog" 
+            onclick="toggleBacklogDrawerTab('backlog')" 
+            class="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-ink3 hover:text-ink active:scale-95 transition-all relative">
+        <div class="w-8 h-8 rounded-lg bg-surface2 flex items-center justify-center mb-0.5 text-ink relative">
+            <svg class="w-4 h-4"><use href="#i-list"/></svg>
+            <% if (typeof tasks !== 'undefined' && tasks && tasks.length > 0) { %>
+                <span class="absolute -top-1 -right-1 text-[9px] font-mono px-1 py-0.2 rounded-full bg-brass text-canvas font-bold border border-surface shrink-0 leading-none">
+                    <%= tasks.length %>
+                </span>
+            <% } %>
+        </div>
+        <span class="text-[10px] font-medium tracking-tight text-ink3 font-sans">Backlog</span>
+    </button>
+
+    <!-- 3. Botón Proyectos -->
+    <button type="button" 
+            id="mobile-nav-projects" 
+            onclick="toggleBacklogDrawerTab('projects')" 
+            class="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-ink3 hover:text-ink active:scale-95 transition-all relative">
+        <div class="w-8 h-8 rounded-lg bg-surface2 flex items-center justify-center mb-0.5 text-ink relative">
+            <svg class="w-4 h-4"><use href="#i-box"/></svg>
+            <% const projCount = (typeof all_projects !== 'undefined' && all_projects) ? all_projects.length : 0; %>
+            <% if (projCount > 0) { %>
+                <span class="absolute -top-1 -right-1 text-[9px] font-mono px-1 py-0.2 rounded-full bg-surface border border-hairline text-ink2 font-bold shrink-0 leading-none">
+                    <%= projCount %>
+                </span>
+            <% } %>
+        </div>
+        <span class="text-[10px] font-medium tracking-tight text-ink3 font-sans">Proyectos</span>
+    </button>
+
+    <!-- 4. Botón Historial -->
+    <button type="button" 
+            id="mobile-nav-history" 
+            onclick="toggleBacklogDrawerTab('history')" 
+            class="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-ink3 hover:text-ink active:scale-95 transition-all relative">
+        <div class="w-8 h-8 rounded-lg bg-surface2 flex items-center justify-center mb-0.5 text-ink">
+            <svg class="w-4 h-4"><use href="#i-history"/></svg>
+        </div>
+        <span class="text-[10px] font-medium tracking-tight text-ink3 font-sans">Historial</span>
+    </button>
+
+</nav>

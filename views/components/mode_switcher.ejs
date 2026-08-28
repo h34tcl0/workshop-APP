@@ -1,16 +1,5 @@
 <!-- GRUPO DE NAVEGACIÓN PRINCIPAL EN HEADER -->
 <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-    <!-- BOTÓN MODO ENFOQUE (A la izquierda de Planificación, sólo visible cuando Planificación está activo) -->
-    <button type="button" 
-            id="toggle-backlog-btn" 
-            aria-label="Modo Enfoque"
-            class="flex items-center gap-1.5 bg-surface hover:bg-surface2 border border-hairline hover:border-brassdim text-ink2 hover:text-ink p-1.5 sm:p-2 md:px-3 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors shrink-0">
-        <svg class="w-4 h-4 text-brass shrink-0">
-            <use href="#i-sidebar" />
-        </svg>
-        <span id="toggle-backlog-text" class="hidden md:inline">Modo Enfoque</span>
-    </button>
-
     <!-- CONMUTADOR SEGMENTADO DE MODOS DE PRIMER NIVEL (Planificación | Taller | Inventario) -->
     <div class="bg-surface2/80 border border-hairline p-1 rounded-xl flex items-center gap-1 shadow-inner shrink-0">
         <button type="button" 
@@ -41,13 +30,6 @@
 </div>
 
 <script>
-function updateFocusModeButtonVisibility(mode) {
-    const focusBtn = document.getElementById('toggle-backlog-btn');
-    if (!focusBtn) return;
-    const shouldShow = (mode === 'planning');
-    focusBtn.classList.toggle('hidden', !shouldShow);
-}
-
 function switchWorkspaceMode(mode) {
     const planningBtn = document.getElementById('mode-btn-planning');
     const workshopBtn = document.getElementById('mode-btn-workshop');
@@ -76,7 +58,6 @@ function switchWorkspaceMode(mode) {
 
         if (workshopContainer) workshopContainer.classList.remove('hidden');
 
-        updateFocusModeButtonVisibility('workshop');
         localStorage.setItem('agendapp_workspace_mode', 'workshop');
     } else if (mode === 'inventory') {
         inventoryBtn.classList.add('bg-brass', 'text-canvas', 'shadow-sm', 'font-bold');
@@ -84,7 +65,6 @@ function switchWorkspaceMode(mode) {
 
         if (materialsView) materialsView.classList.remove('hidden');
 
-        updateFocusModeButtonVisibility('inventory');
         localStorage.setItem('agendapp_workspace_mode', 'inventory');
     } else {
         // Por defecto: 'planning'
@@ -93,7 +73,6 @@ function switchWorkspaceMode(mode) {
 
         if (planningContainer) planningContainer.classList.remove('hidden');
 
-        updateFocusModeButtonVisibility('planning');
         localStorage.setItem('agendapp_workspace_mode', 'planning');
     }
 }
@@ -114,6 +93,5 @@ document.addEventListener('DOMContentLoaded', () => {
 // Exponer en window para acceso global si se requiere
 if (typeof window !== 'undefined') {
     window.switchWorkspaceMode = switchWorkspaceMode;
-    window.updateFocusModeButtonVisibility = updateFocusModeButtonVisibility;
 }
 </script>

@@ -1,0 +1,111 @@
+<!-- COLUMNA DERECHA: CANVAS DE TAREAS Y EVENTOS -->
+<%
+    const totalGridSlots = (typeof locals.totalGridSlots !== 'undefined') ? locals.totalGridSlots : 0;
+    const grid_start_hour = (typeof locals.grid_start_hour !== 'undefined') ? locals.grid_start_hour : 8;
+    const grid_end_hour = (typeof locals.grid_end_hour !== 'undefined') ? locals.grid_end_hour : 18;
+    const start_limit = (typeof locals.start_limit !== 'undefined') ? locals.start_limit : 8;
+    const end_limit = (typeof locals.end_limit !== 'undefined') ? locals.end_limit : 18;
+    const HOUR_HEIGHT_PX = (typeof locals.HOUR_HEIGHT_PX !== 'undefined') ? locals.HOUR_HEIGHT_PX : 44;
+    const hasTimeline = (typeof locals.hasTimeline !== 'undefined') ? locals.hasTimeline : false;
+    const blocks = locals.blocks || [];
+    const all_projects = locals.all_projects || [];
+    const eval = locals.eval || (locals.item && (locals.item.evaluation || locals.item)) || {};
+%>
+<div class="flex-1 relative min-w-0 h-full overflow-hidden">
+    <!-- Guías de fondo y zonas de margen -->
+    <% for (let i = 0; i < totalGridSlots; i++) { %>
+        <% 
+            const hourVal = grid_start_hour + i;
+            const isMarginHour = (hourVal < start_limit || hourVal > end_limit);
+        %>
+        <!-- Fondo atenuado de margen fuera de jornada -->
+        <% if (isMarginHour) { %>
+            <div class="absolute left-0 right-0 bg-[var(--w-s2)]/35 pointer-events-none"
+                 style="top: <%= i * HOUR_HEIGHT_PX %>px; height: <%= HOUR_HEIGHT_PX %>px;">
+            </div>
+        <% } %>
+        
+        <!-- Línea divisoria de hora -->
+        <div class="absolute left-0 right-0 <%= isMarginHour ? 'border-b border-dashed border-[var(--w-bd)]/35' : 'border-b border-[var(--w-bd)]/20' %> pointer-events-none"
+             style="top: <%= (i + 1) * HOUR_HEIGHT_PX %>px;"></div>
+    <% } %>
+
+    <!-- Delimitadores visuales sutiles de inicio y fin de jornada laboral si hay margen -->
+    <% if (grid_start_hour < start_limit) { %>
+        <% const startWorkTop = (start_limit - grid_start_hour) * HOUR_HEIGHT_PX; %>
+        <div class="absolute left-0 right-0 border-t-2 border-[var(--w-bd)]/80 pointer-events-none z-10"
+             style="top: <%= startWorkTop %>px;">
+        </div>
+    <% } %>
+    <% if (grid_end_hour > end_limit) { %>
+        <% const endWorkTop = (end_limit - grid_start_hour + 1) * HOUR_HEIGHT_PX; %>
+        <div class="absolute left-0 right-0 border-t-2 border-[var(--w-bd)]/80 pointer-events-none z-10"
+             style="top: <%= endWorkTop %>px;">
+        </div>
+    <% } %>
+
+    <!-- BLOQUES DE TAREAS POSICIONADOS PROPORCIONALMENTE -->
+    <% if (hasTimeline) { %>
+        <% blocks.forEach(function(b, bIdx) { %>
+            <%
+                const projColor = (b.act && b.act.project_color) || (typeof all_projects !== 'undefined' && all_projects && b.act && b.act.project_id ? (all_projects.find(p => p.id === b.act.project_id)?.color) : null) || 'var(--w-amber)';
+                
+                let blockClasses = 'absolute left-1 right-1 rounded-r-lg rounded-l-xs p-1.5 flex flex-col justify-between transition-all overflow-hidden text-xs z-15 shadow-xs ';
+                
+                if (b.isCuring) {
+                    blockClasses += 'bg-[var(--w-sky)]/10 border-2 border-dashed border-[var(--w-sky)]/60 text-[var(--w-t1)]';
+                } else if (b.isSetup || b.isTeardown) {
+                    blockClasses += 'bg-[var(--w-s2)] border border-[var(--w-bd)] text-[var(--w-t2)]';
+                } else {
+                    blockClasses += 'bg-[var(--w-s2)] border border-[var(--w-bd)] border-l-[3px] text-[var(--w-t1)] hover:border-[var(--w-amber)]';
+                }
+            %>
+            <div class="task-grid-block <%= blockClasses %>"
+                 data-block-start="<%= b.startH %>"
+                 data-block-end="<%= b.endH %>"
+                 style="top: <%= b.topPx %>px; height: <%= b.heightPx %>px; <%= (!b.isCuring && !b.isSetup && !b.isTeardown) ? ('border-left-color: ' + projColor + ';') : '' %>"
+                 title="<%= b.displayTitle %> (<%= b.act.time_range %> - <%= b.durHours.toFixed(1) %>h)">
+
+                <div class="flex items-center justify-between gap-1.5 min-w-0">
+                    <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                        <% if (!b.isSetup && !b.isTeardown) { %>
+                            <span class="w-2 h-2 rounded-full shrink-0 shadow-xs" style="background-color: <%= projColor %>;" title="Proyecto"></span>
+                        <% } %>
+
+                        <span class="task-status-indicator shrink-0"></span>
+
+                        <span class="task-title-text font-semibold text-[11px] truncate <%= b.isCuring ? 'text-[var(--w-sky)]' : 'text-[var(--w-t1)]' %>">
+                            <%= b.displayTitle %>
+                        </span>
+                    </div>
+
+                    <span class="font-mono-jb text-[9.5px] text-[var(--w-t2)] shrink-0 px-1 py-0.2 rounded bg-black/25">
+                        <%= b.act.time_range %> (<%= b.isCuring ? ('+' + b.act.duration) : b.act.duration %>)
+                    </span>
+                </div>
+
+                <% if (b.heightPx >= 44 && (b.isSetup || b.isTeardown || b.isCuring)) { %>
+                    <div class="flex items-center gap-1.5 text-[9px] font-mono-jb text-[var(--w-t3)] mt-0.5 truncate">
+                        <% if (b.isSetup) { %>
+                            <span>Fase Preparación</span>
+                        <% } else if (b.isTeardown) { %>
+                            <span>Fase Guardado y Cierre</span>
+                        <% } else if (b.isCuring) { %>
+                            <span class="text-[var(--w-sky)] font-medium">Secado Pasivo</span>
+                        <% } %>
+                    </div>
+                <% } %>
+            </div>
+        <% }); %>
+    <% } else { %>
+        <!-- Mensaje cuando no hay tareas agendadas -->
+        <div class="absolute inset-0 flex items-center justify-center p-4 text-center z-30 pointer-events-none">
+            <div class="p-3.5 rounded-xl bg-[#1a2532] border border-[var(--w-bd)] max-w-xs shadow-panel pointer-events-auto relative z-30">
+                <p class="text-xs text-[var(--w-t2)] font-medium leading-relaxed no-underline">
+                    <span class="font-bold text-[var(--w-sky)] no-underline inline">Estado — </span> 
+                    <span class="no-underline"><%= eval.unassigned_reason || eval.cutoff_reason || eval.reason || 'Sin tareas agendadas para esta jornada.' %></span>
+                </p>
+            </div>
+        </div>
+    <% } %>
+</div>

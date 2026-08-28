@@ -1,0 +1,156 @@
+<script>
+// MATERIAL FORMS & CRUD ACTIONS
+function toggleAddMaterialForm() {
+    const card = document.getElementById('add-material-form-card');
+    const err = document.getElementById('add-material-error');
+    if (err) { err.classList.add('hidden'); err.textContent = ''; }
+    if (card) card.classList.toggle('hidden');
+}
+
+async function submitAddMaterialForm(e) {
+    e.preventDefault();
+    const form = e.target;
+    const errorContainer = document.getElementById('add-material-error');
+    if (errorContainer) {
+        errorContainer.classList.add('hidden');
+        errorContainer.textContent = '';
+    }
+
+    const formData = new FormData(form);
+    const data = {
+        project_id: formData.get('project_id'),
+        name: formData.get('name'),
+        quantity: formData.get('quantity'),
+        unit: formData.get('unit'),
+        category: formData.get('category'),
+        status: formData.get('status')
+    };
+
+    try {
+        const res = await fetch('/materials/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        const result = await res.json().catch(() => ({}));
+
+        if (res.ok && result.success) {
+            form.reset();
+            toggleAddMaterialForm();
+            localStorage.setItem('agendapp_workspace_mode', 'inventory');
+            await refreshMaterialsView();
+        } else {
+            const errorMsg = result.error || 'Error al guardar el material';
+            if (errorContainer) {
+                errorContainer.textContent = '⚠️ ' + errorMsg;
+                errorContainer.classList.remove('hidden');
+            } else {
+                alert(errorMsg);
+            }
+        }
+    } catch (err) {
+        console.error('Error adding material:', err);
+        if (errorContainer) {
+            errorContainer.textContent = '⚠️ Error de conexión al guardar el material.';
+            errorContainer.classList.remove('hidden');
+        } else {
+            alert('Error de conexión al guardar el material.');
+        }
+    }
+}
+
+function openImportMaterialsModal() {
+    document.getElementById('import-materials-modal')?.classList.remove('hidden');
+}
+
+function closeImportMaterialsModal() {
+    document.getElementById('import-materials-modal')?.classList.add('hidden');
+}
+
+function loadExampleMaterialsJson() {
+    const textarea = document.querySelector('#import-materials-modal textarea[name="json_data"]');
+    if (textarea) {
+        textarea.value = JSON.stringify([
+            { "name": "Plancha Terciado Estructural 18mm", "quantity": 3, "unit": "piezas", "category": "Placas/Tableros", "status": "to_buy" },
+            { "name": "Cola Fría Titebond II 500ml", "quantity": 1, "unit": "botella", "category": "Adhesivos/Barniz", "status": "in_stock" },
+            { "name": "Tornillos Drywall 1 5/8", "quantity": 200, "unit": "unidades", "category": "Tornillería", "status": "to_buy" },
+            { "name": "Lijas Grano 80 / 120 / 220", "quantity": 6, "unit": "piezas", "category": "Insumos", "status": "to_buy" }
+        ], null, 2);
+    }
+}
+
+async function updateMaterialStatusDirect(id, status) {
+    try {
+        const res = await fetch(`/materials/${id}/set-status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+        if (res.ok) await refreshMaterialsView();
+    } catch (e) {
+        console.error('Error setting material status:', e);
+    }
+}
+
+async function deleteMaterial(id) {
+    if (!confirm('¿Seguro que deseas eliminar este material?')) return;
+    try {
+        const res = await fetch(`/materials/${id}/delete`, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        });
+        if (res.ok) await refreshMaterialsView();
+    } catch (e) {
+        console.error('Error deleting material:', e);
+    }
+}
+
+function openEditMaterialModal(mat) {
+    document.getElementById('edit-mat-id').value = mat.id;
+    document.getElementById('edit-mat-name').value = mat.name;
+    document.getElementById('edit-mat-quantity').value = mat.quantity;
+    document.getElementById('edit-mat-unit').value = mat.unit || 'unidades';
+    document.getElementById('edit-mat-category').value = mat.category || 'General';
+    document.getElementById('edit-mat-status').value = mat.status || 'to_buy';
+    if (mat.project_id) {
+        document.getElementById('edit-mat-project').value = mat.project_id;
+    }
+    document.getElementById('edit-material-modal')?.classList.remove('hidden');
+}
+
+function closeEditMaterialModal() {
+    document.getElementById('edit-material-modal')?.classList.add('hidden');
+}
+
+async function submitEditMaterialForm(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-mat-id').value;
+    const data = {
+        name: document.getElementById('edit-mat-name').value,
+        quantity: document.getElementById('edit-mat-quantity').value,
+        unit: document.getElementById('edit-mat-unit').value,
+        category: document.getElementById('edit-mat-category').value,
+        status: document.getElementById('edit-mat-status').value,
+        project_id: document.getElementById('edit-mat-project').value
+    };
+
+    try {
+        const res = await fetch(`/materials/${id}/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) {
+            closeEditMaterialModal();
+            await refreshMaterialsView();
+        }
+    } catch (err) {
+        console.error('Error editing material:', err);
+    }
+}
+</script>

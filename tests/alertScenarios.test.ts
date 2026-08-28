@@ -25,7 +25,8 @@ function buildMockForecasts(rainHour: number | null, humidHour: number | null): 
 describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
   const userId = 1;
   const todayIso = "2026-08-10";
-  const mockNow = new Date("2026-08-10T12:00:00-04:00"); // 12:00 hrs midday
+  const mockNow = new Date("2026-08-10T14:00:00-04:00"); // 14:00 hrs jornada activa
+  const mockNow2 = new Date("2026-08-10T14:05:00-04:00"); // 14:05 hrs (5 min después)
 
   beforeEach(async () => {
     await initDatabase();
@@ -46,6 +47,8 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
       status: DayStatus.DAY_VIABLE,
       window_start: "08:00",
       window_end: "19:00",
+      checkin_sent: false,
+      checkin_resolved: false,
       humidity_alert_sent: false,
       intraday_alert_triggered: false,
       intraday_alert_acknowledged: false,
@@ -73,7 +76,6 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
     const telegramMsgSpy = vi.spyOn(TelegramBotService.prototype, "sendTelegramMessage");
 
     // 2nd tick (5 mins later)
-    const mockNow2 = new Date("2026-08-10T12:05:00-04:00");
     await processWeatherAlertForUser(userId, mockNow2);
 
     log = store.getDailyLogByDate(userId, todayIso)!;
@@ -95,7 +97,6 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
     expect(log.intraday_alert_burst_count).toBe(1);
 
     // 2nd tick (5 min later, no acknowledged)
-    const mockNow2 = new Date("2026-08-10T12:05:00-04:00");
     await processWeatherAlertForUser(userId, mockNow2);
 
     log = store.getDailyLogByDate(userId, todayIso)!;
@@ -117,7 +118,6 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
     forecasts = buildMockForecasts(17, 18);
     vi.spyOn(weatherSvc, "getHourlyForecast").mockResolvedValue(forecasts);
 
-    const mockNow2 = new Date("2026-08-10T12:05:00-04:00");
     await processWeatherAlertForUser(userId, mockNow2);
 
     log = store.getDailyLogByDate(userId, todayIso)!;
@@ -158,8 +158,7 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
       const task = store.addTask(userId, {
         project_id: 1,
         title: "Montaje final de herrajes",
-        estimated_hours: 2.0,
-        order: 1
+        estimated_hours: 4.0
       });
 
       store.saveDailyLog(userId, {
@@ -167,22 +166,20 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
         status: DayStatus.DAY_VIABLE,
         window_start: "14:00",
         window_end: "19:30",
+        net_work_hours: 4.0,
         scheduled_task_ids: JSON.stringify([task.id]),
         telegram_notified: false
       });
 
       const telegramSpy = vi.spyOn(TelegramBotService.prototype, "sendWorkStartNotification").mockResolvedValue(true);
-      telegramSpy.mockClear();
+      const pastTime = new Date("2026-08-10T21:26:00-04:00"); // 21:26 > 19:30
 
-      // Current time is 21:26 (nighttime, after window_end)
-      const lateNight = new Date("2026-08-10T21:26:00-04:00");
-      const result = await processWorkStartNotificationsForUser(userId, lateNight);
+      const result = await processWorkStartNotificationsForUser(userId, pastTime);
 
       expect(result.sent).toBe(false);
       expect(result.reason).toContain("ya finalizó");
       expect(telegramSpy).not.toHaveBeenCalled();
 
-      // Verify dailyLog was NOT marked as notified
       const log = store.getDailyLogByDate(userId, todayIso)!;
       expect(log.telegram_notified).toBe(false);
     });
@@ -191,8 +188,7 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
       const task = store.addTask(userId, {
         project_id: 1,
         title: "Montaje final de herrajes",
-        estimated_hours: 2.0,
-        order: 1
+        estimated_hours: 4.0
       });
 
       store.saveDailyLog(userId, {
@@ -200,28 +196,29 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
         status: DayStatus.DAY_VIABLE,
         window_start: "14:00",
         window_end: "19:30",
+        net_work_hours: 4.0,
         scheduled_task_ids: JSON.stringify([task.id]),
         telegram_notified: false
       });
 
       const telegramSpy = vi.spyOn(TelegramBotService.prototype, "sendWorkStartNotification").mockResolvedValue(true);
-      telegramSpy.mockClear();
+      const earlyTime = new Date("2026-08-10T10:00:00-04:00"); // 10:00 < 14:00
 
-      // Current time is 10:00 (morning, before window_start)
-      const earlyMorning = new Date("2026-08-10T10:00:00-04:00");
-      const result = await processWorkStartNotificationsForUser(userId, earlyMorning);
+      const result = await processWorkStartNotificationsForUser(userId, earlyTime);
 
       expect(result.sent).toBe(false);
-      expect(result.reason).toContain("Notificación programada para el inicio");
+      expect(result.reason).toContain("Notificación programada para el inicio del bloque de trabajo");
       expect(telegramSpy).not.toHaveBeenCalled();
+
+      const log = store.getDailyLogByDate(userId, todayIso)!;
+      expect(log.telegram_notified).toBe(false);
     });
 
     it("Scenario: sends Telegram notification when current time is at or within window_start and window_end (e.g. 14:05)", async () => {
       const task = store.addTask(userId, {
         project_id: 1,
         title: "Montaje final de herrajes",
-        estimated_hours: 2.0,
-        order: 1
+        estimated_hours: 4.0
       });
 
       store.saveDailyLog(userId, {
@@ -229,16 +226,15 @@ describe("Weather Alert Scenarios (Humidity vs. Rain)", () => {
         status: DayStatus.DAY_VIABLE,
         window_start: "14:00",
         window_end: "19:30",
+        net_work_hours: 4.0,
         scheduled_task_ids: JSON.stringify([task.id]),
         telegram_notified: false
       });
 
       const telegramSpy = vi.spyOn(TelegramBotService.prototype, "sendWorkStartNotification").mockResolvedValue(true);
-      telegramSpy.mockClear();
+      const withinTime = new Date("2026-08-10T14:05:00-04:00"); // 14:05 within [14:00, 19:30)
 
-      // Current time is 14:05 (start of work window)
-      const workStart = new Date("2026-08-10T14:05:00-04:00");
-      const result = await processWorkStartNotificationsForUser(userId, workStart);
+      const result = await processWorkStartNotificationsForUser(userId, withinTime);
 
       expect(result.sent).toBe(true);
       expect(telegramSpy).toHaveBeenCalledTimes(1);

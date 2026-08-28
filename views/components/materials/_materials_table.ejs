@@ -1,0 +1,76 @@
+<% const tableMats = locals.materials || []; %>
+<!-- VISTA 1: LISTA DE MATERIALES E INSUMOS -->
+<div id="materials-subpanel" class="space-y-3">
+    <% if (tableMats.length === 0) { %>
+        <div class="bg-surface border border-dashed border-hairline rounded-2xl p-8 text-center">
+            <div class="w-12 h-12 rounded-full bg-surface2 border border-hairline flex items-center justify-center text-ink3 mx-auto mb-3">
+                <svg class="w-6 h-6"><use href="#i-box"/></svg>
+            </div>
+            <h3 class="font-display text-base font-semibold text-ink">No hay insumos o materiales registrados</h3>
+            <p class="text-xs text-ink3 mt-1 max-w-md mx-auto">Agrega tus insumos manualmente o importa una lista en JSON para sincronizar tu taller.</p>
+            <div class="flex items-center justify-center gap-3 mt-4">
+                <button type="button" onclick="toggleAddMaterialForm()" class="bg-brass text-canvas px-4 py-2 rounded-xl text-xs font-bold">Agregar Material</button>
+            </div>
+        </div>
+    <% } else { %>
+        <div class="overflow-x-auto border border-hairline rounded-2xl bg-surface shadow-panel">
+            <table class="w-full text-left text-xs text-ink divide-y divide-hairline min-w-[580px]">
+                <thead class="bg-surface2/60 text-ink3 uppercase text-[10px] tracking-wider font-semibold">
+                    <tr>
+                        <th scope="col" class="py-3 px-4 w-1/2 sm:w-5/12">Nombre & Cantidad</th>
+                        <th scope="col" class="py-3 px-3 w-1/4 sm:w-2/12">Categoría</th>
+                        <th scope="col" class="py-3 px-3 w-1/4 sm:w-3/12">Estado</th>
+                        <th scope="col" class="py-3 px-4 text-right w-16 sm:w-2/12">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-hairline/60">
+                    <% tableMats.forEach(mat => { %>
+                        <tr class="inventory-card material-card hover:bg-surface2/40 transition-colors"
+                            data-type="material"
+                            data-status="<%= mat.status %>"
+                            data-category="<%= (mat.category || '').toLowerCase() %>"
+                            data-name="<%= (mat.name || '').toLowerCase() %>"
+                            data-project="<%= (mat.project_name || '').toLowerCase() %>">
+                            <td class="py-2.5 px-4 min-w-0">
+                                <div class="font-semibold text-sm text-ink truncate max-w-[280px] sm:max-w-md" title="<%= mat.name %>">
+                                    <%= mat.name %>
+                                </div>
+                                <div class="flex items-center gap-2 mt-0.5 text-[11px] text-ink3 flex-wrap">
+                                    <span class="font-mono bg-surface2 border border-hairline text-chalk px-1.5 py-0.2 rounded font-medium">
+                                        <%= mat.quantity %> <%= mat.unit %>
+                                    </span>
+                                    <% if (mat.project_name) { %>
+                                        <span class="truncate max-w-[160px]" title="Proyecto: <%= mat.project_name %>">• Proyecto: <strong class="text-ink2"><%= mat.project_name %></strong></span>
+                                    <% } %>
+                                </div>
+                            </td>
+                            <td class="py-2.5 px-3 whitespace-nowrap">
+                                <span class="inline-block bg-surface2 text-ink2 border border-hairline/80 px-2 py-0.5 rounded text-[11px] font-medium">
+                                    <%= mat.category || 'General' %>
+                                </span>
+                            </td>
+                            <td class="py-2.5 px-3 whitespace-nowrap">
+                                <select onchange="updateMaterialStatusDirect(<%= mat.id %>, this.value)" 
+                                        class="status-badge-select text-xs font-bold px-2.5 py-1 rounded-lg border appearance-none pr-6 cursor-pointer shadow-sm focus:outline-none transition-colors hover:brightness-110 <%= mat.status === 'in_stock' ? 'bg-moss/10 border-moss/40 text-moss hover:border-moss hover:bg-moss/20' : mat.status === 'out_of_stock' ? 'bg-amber-500/10 border-amber-500/40 text-amber-500 hover:border-amber-500 hover:bg-amber-500/20' : 'bg-rust/10 border-rust/40 text-rust hover:border-rust hover:bg-rust/20' %>">
+                                    <option value="in_stock" <%= mat.status === 'in_stock' ? 'selected' : '' %>>En Taller</option>
+                                    <option value="to_buy" <%= mat.status === 'to_buy' ? 'selected' : '' %>>Por Comprar</option>
+                                    <option value="out_of_stock" <%= mat.status === 'out_of_stock' ? 'selected' : '' %>>Agotado</option>
+                                </select>
+                            </td>
+                            <td class="py-2.5 px-4 text-right whitespace-nowrap">
+                                <div class="flex items-center justify-end gap-1">
+                                    <button type="button" onclick='openEditMaterialModal(<%= JSON.stringify(mat) %>)' title="Editar material" class="p-1.5 text-ink3 hover:text-brass rounded-lg hover:bg-surface2 transition-colors">
+                                        <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg>
+                                    </button>
+                                    <button type="button" onclick="deleteMaterial(<%= mat.id %>)" title="Eliminar material" class="p-1.5 text-ink3 hover:text-rust rounded-lg hover:bg-surface2 transition-colors">
+                                        <svg class="w-3.5 h-3.5"><use href="#i-close"/></svg>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    <% }); %>
+                </tbody>
+            </table>
+        </div>
+    <% } %>
+</div>

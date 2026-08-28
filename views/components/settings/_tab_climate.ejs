@@ -1,0 +1,106 @@
+<!-- SUB-SECCIÓN: PARÁMETROS CLIMÁTICOS Y REGLAS DE CIERRE -->
+<div class="grid grid-cols-2 gap-3 sm:gap-4 pt-1">
+    <div>
+        <div class="flex items-center gap-1.5 mb-1.5">
+            <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3">Humedad general máx. (%)</label>
+            <button type="button" onclick="toggleTip('humidity')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Humedad general">
+                <svg class="w-3 h-3"><use href="#i-help"/></svg>
+            </button>
+        </div>
+        <p id="tip-humidity" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">Límite superior de humedad para tareas generales no categorizadas.</p>
+        <input type="number" name="max_humidity_percent" min="0" max="100" value="<%= app_settings ? app_settings.max_humidity_percent : 80 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
+    </div>
+    <div>
+        <div class="flex items-center gap-1.5 mb-1.5">
+            <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3">Prob. lluvia máx. (%)</label>
+            <button type="button" onclick="toggleTip('rain-prob')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Probabilidad lluvia">
+                <svg class="w-3 h-3"><use href="#i-help"/></svg>
+            </button>
+        </div>
+        <p id="tip-rain-prob" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">Probabilidad de precipitación a partir de la cual se considera hora lluviosa (por defecto 40%).</p>
+        <input type="number" name="max_rain_probability" min="0" max="100" value="<%= (app_settings && app_settings.max_rain_probability != null) ? app_settings.max_rain_probability : 40 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
+    </div>
+</div>
+
+<!-- Umbrales de Viento y Punto de Rocío -->
+<div class="grid grid-cols-3 gap-2.5 pt-1">
+    <div>
+        <label class="block text-[10px] text-ink3 font-semibold uppercase mb-1">Ráfaga Corte</label>
+        <div class="flex items-center gap-1">
+            <input type="number" step="1" name="max_wind_gust_carpentry" value="<%= (app_settings && app_settings.max_wind_gust_carpentry != null) ? app_settings.max_wind_gust_carpentry : 40.0 %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2.5 py-1.5 text-xs text-center">
+            <span class="text-[10px] text-ink3 shrink-0">km/h</span>
+        </div>
+    </div>
+    <div>
+        <label class="block text-[10px] text-ink3 font-semibold uppercase mb-1">Ráfaga Pintura</label>
+        <div class="flex items-center gap-1">
+            <input type="number" step="1" name="max_wind_gust_paint" value="<%= (app_settings && app_settings.max_wind_gust_paint != null) ? app_settings.max_wind_gust_paint : 25.0 %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2.5 py-1.5 text-xs text-center">
+            <span class="text-[10px] text-ink3 shrink-0">km/h</span>
+        </div>
+    </div>
+    <div>
+        <label class="block text-[10px] text-ink3 font-semibold uppercase mb-1">Margen Rocío ΔT</label>
+        <div class="flex items-center gap-1">
+            <input type="number" step="0.5" name="dew_point_margin_c" value="<%= (app_settings && app_settings.dew_point_margin_c != null) ? app_settings.dew_point_margin_c : 3.0 %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2.5 py-1.5 text-xs text-center">
+            <span class="text-[10px] text-ink3 shrink-0">°C</span>
+        </div>
+    </div>
+</div>
+
+<!-- Umbrales Específicos de Materiales -->
+<div class="pt-2 border-t border-hairline">
+    <p class="text-[11px] font-semibold text-ink3 uppercase tracking-wide mb-2">Límites por Material / Química</p>
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        <div>
+            <label class="block text-[10px] text-ink3 font-medium mb-1">Cola PVA mín</label>
+            <div class="flex items-center gap-1">
+                <input type="number" step="0.5" name="min_temp_pva_c" value="<%= (app_settings && app_settings.min_temp_pva_c != null) ? app_settings.min_temp_pva_c : 10.0 %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2 py-1 text-xs text-center">
+                <span class="text-[10px] text-ink3 shrink-0">°C</span>
+            </div>
+        </div>
+        <div>
+            <label class="block text-[10px] text-ink3 font-medium mb-1">Cola PVA máx</label>
+            <div class="flex items-center gap-1">
+                <input type="number" step="1" name="max_humidity_pva" value="<%= (app_settings && app_settings.max_humidity_pva != null) ? app_settings.max_humidity_pva : 90.0 %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2 py-1 text-xs text-center">
+                <span class="text-[10px] text-ink3 shrink-0">%</span>
+            </div>
+        </div>
+        <div>
+            <label class="block text-[10px] text-ink3 font-medium mb-1">Epoxi mín</label>
+            <div class="flex items-center gap-1">
+                <input type="number" step="0.5" name="min_temp_epoxy_c" value="<%= (app_settings && app_settings.min_temp_epoxy_c != null) ? app_settings.min_temp_epoxy_c : 15.0 %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2 py-1 text-xs text-center">
+                <span class="text-[10px] text-ink3 shrink-0">°C</span>
+            </div>
+        </div>
+        <div>
+            <label class="block text-[10px] text-ink3 font-medium mb-1">Barniz máx</label>
+            <div class="flex items-center gap-1">
+                <input type="number" step="1" name="max_humidity_varnish" value="<%= (app_settings && app_settings.max_humidity_varnish != null) ? app_settings.max_humidity_varnish : 80.0 %>" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-2 py-1 text-xs text-center">
+                <span class="text-[10px] text-ink3 shrink-0">%</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Días No Laborables -->
+<div class="pt-1 border-t border-hairline space-y-2.5">
+    <p class="text-[11px] font-semibold text-ink3 uppercase tracking-wide">Días no laborables y Reglas de Cierre</p>
+    <div class="space-y-2">
+        <label class="flex items-center gap-2.5 cursor-pointer py-0.5">
+            <input type="checkbox" name="exclude_saturdays" value="true" <%= (app_settings && app_settings.exclude_saturdays) ? 'checked' : '' %> class="w-4 h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
+            <span class="text-xs text-ink2 font-medium flex-1">Excluir sábados</span>
+        </label>
+        <label class="flex items-center gap-2.5 cursor-pointer py-0.5">
+            <input type="checkbox" name="exclude_sundays" value="true" <%= (app_settings && app_settings.exclude_sundays) ? 'checked' : '' %> class="w-4 h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
+            <span class="text-xs text-ink2 font-medium flex-1">Excluir domingos</span>
+        </label>
+        <label class="flex items-center gap-2.5 cursor-pointer py-0.5">
+            <input type="checkbox" name="exclude_holidays" value="true" <%= (app_settings && app_settings.exclude_holidays) ? 'checked' : '' %> class="w-4 h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
+            <span class="text-xs text-ink2 font-medium flex-1">Excluir feriados oficiales (Chile)</span>
+        </label>
+        <label class="flex items-center gap-2.5 cursor-pointer py-0.5">
+            <input type="checkbox" name="require_curing_before_cutoff" value="true" <%= (app_settings && app_settings.require_curing_before_cutoff) ? 'checked' : '' %> class="w-4 h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
+            <span class="text-xs text-ink2 font-medium flex-1">Exigir que el curado termine antes del cierre de jornada</span>
+        </label>
+    </div>
+</div>

@@ -1,0 +1,182 @@
+<!-- RIGHT RAIL: HORIZONTE DE DÍAS (DUAL: TIRA HORIZONTAL EN MOBILE < 768px / LISTA VERTICAL EN DESKTOP >= 768px) -->
+<div id="right-rail-panel" class="w-full lg:w-64 xl:w-72 shrink-0 bg-surface border border-hairline rounded-2xl shadow-panel p-3 sm:p-3.5 space-y-2.5 sm:space-y-3 sticky top-4">
+    
+    <!-- ENCABEZADO (Visible tanto en mobile como en desktop) -->
+    <div class="flex items-center justify-between px-1 pb-1.5 sm:pb-2 border-b border-hairline">
+        <h3 class="font-serif-fraunces text-xs sm:text-sm font-bold text-ink flex items-center gap-1.5 sm:gap-2">
+            <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brass"><use href="#i-calendar"/></svg>
+            Horizonte Climático
+        </h3>
+        <span class="text-[10px] sm:text-[11px] font-mono text-ink3 font-semibold">
+            <%= (forecast_evaluations || []).length %> días
+        </span>
+    </div>
+
+    <!-- 1. VISTA MOBILE (< 768px): TIRA HORIZONTAL DESLIZABLE DE PÍLDORAS COMPACTAS -->
+    <div id="horizon-days-strip-mobile" class="flex md:hidden flex-row gap-2 overflow-x-auto no-scrollbar py-1 px-0.5 scroll-smooth">
+        <% (forecast_evaluations || []).forEach(function(item, idx) { %>
+        <%
+            const eval = item.evaluation || item;
+            const is_viable = eval.status === 'DAY_VIABLE';
+            const cond = (eval.weather_summary && eval.weather_summary.condition) ? eval.weather_summary.condition : 'sunny';
+            const is_manual_block = Boolean(eval.is_manually_blocked);
+            const is_closed = (!is_viable) && (eval.reason && eval.reason.includes('Jornada concluida'));
+            const is_amber = (!is_viable) && (!is_manual_block) && (!is_closed) && (eval.climate_only_status === 'clear');
+            const is_blocked = (!is_viable) && (!is_amber);
+            const date_iso = item.date_iso || eval.eval_date;
+            const date_str = item.date_str || eval.date_str || '';
+
+            // Extraer nombre de día y número (ej. "Mié 26/08" -> "Mié" y "26")
+            let dayName = 'Día';
+            let dayNum = '';
+            const parts = date_str.split(' ');
+            if (parts.length >= 2) {
+                dayName = parts[0];
+                dayNum = parts[1].split('/')[0];
+            } else if (date_iso) {
+                const dObj = new Date(date_iso + 'T12:00:00');
+                dayName = dObj.toLocaleDateString('es-ES', { weekday: 'short' });
+                dayNum = String(dObj.getDate());
+            }
+
+            // Dot color indicator
+            let dotColorClass = 'bg-[var(--w-rust)]';
+            let dotTitle = 'Suspendido';
+            if (is_viable) {
+                dotColorClass = 'bg-[var(--w-ok)]';
+                dotTitle = 'Viable';
+            } else if (is_closed) {
+                dotColorClass = 'bg-ink3';
+                dotTitle = 'Concluida';
+            } else if (is_amber) {
+                dotColorClass = 'bg-[var(--w-warn)]';
+                dotTitle = 'Disponible';
+            } else if (is_manual_block) {
+                dotColorClass = 'bg-ink3';
+                dotTitle = 'Bloqueado';
+            }
+
+            const isFirst = (idx === 0);
+        %>
+
+        <button type="button" 
+                onclick="selectAgendaDay('<%= date_iso %>')" 
+                id="horizon-pill-mobile-<%= date_iso %>"
+                data-date-iso="<%= date_iso %>"
+                title="<%= date_str %> (<%= dotTitle %>)"
+                class="horizon-day-item shrink-0 min-w-[54px] py-2 px-1.5 rounded-xl border transition-all flex flex-col items-center justify-center gap-1 cursor-pointer active:scale-95 <%= isFirst ? 'bg-surface2 border-brass/60 shadow-xs ring-1 ring-brass/40' : 'bg-surface/50 hover:bg-surface2 border-hairline/80 hover:border-hairline' %>">
+            
+            <span class="text-[10px] font-mono text-ink3 font-medium uppercase tracking-tight">
+                <%= dayName %>
+            </span>
+
+            <span class="font-serif-fraunces text-sm font-bold text-ink leading-none">
+                <%= dayNum %>
+            </span>
+
+            <!-- Dot indicador de estado -->
+            <div class="flex items-center gap-1 mt-0.5">
+                <span class="w-2 h-2 rounded-full <%= dotColorClass %> shadow-xs"></span>
+            </div>
+
+        </button>
+        <% }); %>
+    </div>
+
+    <!-- 2. VISTA DESKTOP (>= 768px): LISTA VERTICAL COMPLETA -->
+    <div id="horizon-days-list" class="hidden md:block space-y-1.5 max-h-[calc(100vh-180px)] overflow-y-auto pr-1">
+        <% (forecast_evaluations || []).forEach(function(item, idx) { %>
+        <%
+            const eval = item.evaluation || item;
+            const is_viable = eval.status === 'DAY_VIABLE';
+            const cond = (eval.weather_summary && eval.weather_summary.condition) ? eval.weather_summary.condition : 'sunny';
+            const is_manual_block = Boolean(eval.is_manually_blocked);
+            const is_closed = (!is_viable) && (eval.reason && eval.reason.includes('Jornada concluida'));
+            const is_amber = (!is_viable) && (!is_manual_block) && (!is_closed) && (eval.climate_only_status === 'clear');
+            const is_blocked = (!is_viable) && (!is_amber);
+            const date_iso = item.date_iso || eval.eval_date;
+            const date_str = item.date_str || eval.date_str;
+
+            // Tasks stats
+            const schedTasks = eval.scheduled_tasks || [];
+            const schedCount = schedTasks.length;
+            const totalHours = schedTasks.reduce((acc, t) => acc + (parseFloat(t.estimated_hours) || 0), 0);
+
+            // Weather Emoji
+            let ico_emoji = '☀️';
+            if (cond === 'rain') ico_emoji = '🌧️';
+            else if (cond === 'cloudy') ico_emoji = '☁️';
+            else if (cond === 'partly') ico_emoji = '⛅';
+
+            const isFirst = (idx === 0);
+        %>
+
+        <button type="button" 
+                onclick="selectAgendaDay('<%= date_iso %>')" 
+                id="horizon-day-btn-<%= date_iso %>"
+                data-date-iso="<%= date_iso %>"
+                class="horizon-day-item w-full text-left p-2.5 rounded-xl border transition-all flex items-center justify-between gap-2.5 cursor-pointer <%= isFirst ? 'bg-surface2 border-brass/60 shadow-xs ring-1 ring-brass/40' : 'bg-surface/50 hover:bg-surface2 border-hairline/80 hover:border-hairline' %>">
+            
+            <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                <!-- Weather Emoji & Indicator -->
+                <span class="text-xl shrink-0"><%= ico_emoji %></span>
+
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-serif-fraunces text-xs font-bold text-ink truncate">
+                            <%= date_str %>
+                        </span>
+                    </div>
+
+                    <!-- Subtitle: Tareas o Estado -->
+                    <div class="text-[11px] text-ink3 font-mono mt-0.5 truncate">
+                        <% if (is_closed) { %>
+                            <span class="text-ink3 font-sans">Jornada concluida</span>
+                        <% } else if (is_manual_block) { %>
+                            <span class="text-ink3 font-sans">Bloqueado</span>
+                        <% } else if (is_blocked) { %>
+                            <span class="text-[var(--w-rust)] font-sans font-semibold">Suspendido</span>
+                        <% } else if (schedCount > 0) { %>
+                            <span class="text-ink2"><%= schedCount %> <%= schedCount === 1 ? 'tarea' : 'tareas' %> · <%= totalHours %>h</span>
+                        <% } else { %>
+                            <span class="text-ink3">Sin tareas</span>
+                        <% } %>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Badge estado / Score Eficiencia -->
+            <div class="flex flex-col items-end shrink-0 gap-0.5">
+                <% if (is_viable) { %>
+                    <span class="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-[var(--w-ok)]/15 text-[var(--w-ok)] border border-[var(--w-ok)]/30">
+                        Viable
+                    </span>
+                <% } else if (is_closed) { %>
+                    <span class="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-surface2 text-ink3 border border-hairline">
+                        Concluida
+                    </span>
+                <% } else if (is_amber) { %>
+                    <span class="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-[var(--w-warn)]/15 text-[var(--w-warn)] border border-[var(--w-warn)]/30">
+                        Disponible
+                    </span>
+                <% } else if (is_manual_block) { %>
+                    <span class="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-surface2 text-ink3 border border-hairline">
+                        Bloqueado
+                    </span>
+                <% } else { %>
+                    <span class="text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-[var(--w-rust)]/15 text-[var(--w-rust)] border border-[var(--w-rust)]/30">
+                        Suspendido
+                    </span>
+                <% } %>
+
+                <span class="text-[10px] font-mono text-ink3">
+                    <%= eval.weather_summary ? eval.weather_summary.max_temp : 0 %>°
+                </span>
+            </div>
+
+        </button>
+
+        <% }); %>
+    </div>
+
+</div>

@@ -1,0 +1,42 @@
+<!-- TAB 4: INTEGRACIONES -->
+<div id="tab-content-integrations" class="settings-tab-content hidden space-y-4">
+    <div>
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3 mb-1">Google Calendar ID</label>
+        <input type="text" name="google_calendar_id" placeholder="Ej: usuario@gmail.com o ID de calendario" value="<%= app_settings && app_settings.google_calendar_id ? app_settings.google_calendar_id : '' %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
+        <p class="text-[10px] text-ink3 mt-1">ID del calendario de Google donde se sincronizan las ventanas de taller.</p>
+    </div>
+
+    <label class="flex items-center gap-2.5 cursor-pointer py-1">
+        <input type="checkbox" name="google_calendar_enabled" value="true" <%= (app_settings && app_settings.google_calendar_enabled) ? 'checked' : '' %> class="w-4 h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
+        <span class="text-xs text-ink2 font-medium flex-1">Sincronizar eventos en Google Calendar automáticamente</span>
+    </label>
+
+    <% if (app_settings && app_settings.google_calendar_enabled && app_settings.google_calendar_id) { %>
+    <div class="flex flex-col sm:flex-row gap-2 pt-2">
+        <button type="button" onclick="runCalendarReconciliation(this)" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 min-h-[36px]">
+            <svg class="w-3.5 h-3.5"><use href="#i-refresh"/></svg> Reconciliar Eventos
+        </button>
+        <button type="button" onclick="previewCalendarCleanupOrphans(this)" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 min-h-[36px]">
+            <svg class="w-3.5 h-3.5"><use href="#i-trash"/></svg> Limpiar Huérfanos
+        </button>
+    </div>
+    <div id="calendar-action-feedback" class="hidden text-xs px-3 py-2 rounded-lg bg-surface2 border border-hairline text-ink2"></div>
+    
+    <div id="calendar-orphan-preview-container" class="hidden flex flex-col gap-2 p-3 bg-surface2 border border-brass/40 rounded-lg text-xs">
+        <div class="flex items-center justify-between">
+            <span class="font-bold text-ink flex items-center gap-1">Previsualización de Eliminación</span>
+            <button type="button" onclick="cancelCalendarCleanupPreview()" class="text-ink3 hover:text-ink text-xs">Cerrar</button>
+        </div>
+        <p class="text-ink2 text-[11px]" id="calendar-orphan-preview-msg"></p>
+        <div id="calendar-orphan-list" class="max-h-32 overflow-y-auto space-y-1 py-1"></div>
+        <div class="flex gap-2 pt-1">
+            <button type="button" onclick="cancelCalendarCleanupPreview()" class="flex-1 bg-surface border border-hairline text-ink2 hover:text-ink text-xs font-medium py-1.5 rounded transition-colors">
+                Cancelar
+            </button>
+            <button type="button" id="btn-confirm-delete-orphans" onclick="executeConfirmedCalendarCleanup(this)" class="flex-1 bg-crimson hover:bg-crimson/90 text-white text-xs font-semibold py-1.5 rounded transition-colors">
+                Confirmar y Borrar
+            </button>
+        </div>
+    </div>
+    <% } %>
+</div>

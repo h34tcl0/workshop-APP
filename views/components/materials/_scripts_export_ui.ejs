@@ -1,0 +1,197 @@
+<script>
+// EXPORT MODAL UI & INTERACTION HANDLERS
+let currentExportFormat = 'prompt';
+
+function switchExportFormat(fmt) {
+    currentExportFormat = fmt;
+    const buttons = document.querySelectorAll('.export-format-btn');
+    buttons.forEach(b => {
+        b.classList.remove('bg-brass', 'text-canvas', 'shadow-sm');
+        b.classList.add('text-ink2');
+    });
+
+    const activeBtn = document.getElementById(`export-tab-${fmt}`);
+    if (activeBtn) {
+        activeBtn.classList.remove('text-ink2');
+        activeBtn.classList.add('bg-brass', 'text-canvas', 'shadow-sm');
+    }
+
+    generateActiveExportContent();
+}
+
+async function openAiExportModal() {
+    await reloadInventoryData();
+
+    const toolsCb = document.getElementById('ai-opt-tools');
+    const stockCb = document.getElementById('ai-opt-stock');
+    if (toolsCb && stockCb) {
+        if (!toolsCb.checked && !stockCb.checked) {
+            if (activeInventorySubtab === 'tools') {
+                toolsCb.checked = true;
+                stockCb.checked = false;
+            } else {
+                stockCb.checked = true;
+                toolsCb.checked = false;
+            }
+        }
+    }
+
+    renderAiExportChips();
+    syncAiGroupVisibility();
+    generateActiveExportContent();
+
+    document.getElementById('ai-export-modal')?.classList.remove('hidden');
+}
+
+function closeAiExportModal() {
+    document.getElementById('ai-export-modal')?.classList.add('hidden');
+}
+
+function renderAiExportChips() {
+    const toolContainer = document.getElementById('ai-tool-chips-container');
+    const stockContainer = document.getElementById('ai-stock-chips-container');
+
+    if (toolContainer) {
+        toolContainer.innerHTML = '';
+        TOOL_CATEGORIES.forEach(cat => {
+            const isSelected = selectedToolChips.has(cat.value);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `px-3 py-1 rounded-full text-xs font-semibold border transition-all select-none ${
+                isSelected
+                    ? 'bg-brass text-canvas border-brass shadow-sm font-bold'
+                    : 'bg-surface hover:bg-surface2 text-ink2 border-hairline/80'
+            }`;
+            btn.textContent = (isSelected ? '✓ ' : '+ ') + cat.label;
+            btn.onclick = () => toggleChip('tools', cat.value);
+            toolContainer.appendChild(btn);
+        });
+    }
+
+    if (stockContainer) {
+        stockContainer.innerHTML = '';
+        MATERIAL_CATEGORIES.forEach(cat => {
+            const isSelected = selectedStockChips.has(cat.value);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = `px-3 py-1 rounded-full text-xs font-semibold border transition-all select-none ${
+                isSelected
+                    ? 'bg-brass text-canvas border-brass shadow-sm font-bold'
+                    : 'bg-surface hover:bg-surface2 text-ink2 border-hairline/80'
+            }`;
+            btn.textContent = (isSelected ? '✓ ' : '+ ') + cat.label;
+            btn.onclick = () => toggleChip('stock', cat.value);
+            stockContainer.appendChild(btn);
+        });
+    }
+}
+
+function toggleChip(group, catValue) {
+    if (group === 'tools') {
+        if (selectedToolChips.has(catValue)) {
+            selectedToolChips.delete(catValue);
+        } else {
+            selectedToolChips.add(catValue);
+        }
+    } else if (group === 'stock') {
+        if (selectedStockChips.has(catValue)) {
+            selectedStockChips.delete(catValue);
+        } else {
+            selectedStockChips.add(catValue);
+        }
+    }
+    renderAiExportChips();
+    generateActiveExportContent();
+}
+
+function setAllChips(group, selectAll) {
+    if (group === 'tools') {
+        if (selectAll) {
+            TOOL_CATEGORIES.forEach(c => selectedToolChips.add(c.value));
+        } else {
+            selectedToolChips.clear();
+        }
+    } else if (group === 'stock') {
+        if (selectAll) {
+            MATERIAL_CATEGORIES.forEach(c => selectedStockChips.add(c.value));
+        } else {
+            selectedStockChips.clear();
+        }
+    }
+    renderAiExportChips();
+    generateActiveExportContent();
+}
+
+function toggleAiGroupMain(group, checked) {
+    syncAiGroupVisibility();
+    generateActiveExportContent();
+}
+
+function syncAiGroupVisibility() {
+    const incTools = document.getElementById('ai-opt-tools')?.checked ?? false;
+    const incStock = document.getElementById('ai-opt-stock')?.checked ?? false;
+
+    const toolChips = document.getElementById('ai-tool-chips-container');
+    const toolActions = document.getElementById('ai-tools-quick-actions');
+    const stockChips = document.getElementById('ai-stock-chips-container');
+    const stockActions = document.getElementById('ai-stock-quick-actions');
+
+    if (toolChips) toolChips.classList.toggle('hidden', !incTools);
+    if (toolActions) toolActions.classList.toggle('hidden', !incTools);
+
+    if (stockChips) stockChips.classList.toggle('hidden', !incStock);
+    if (stockActions) stockActions.classList.toggle('hidden', !incStock);
+}
+
+function copyAiExportToClipboard() {
+    const textarea = document.getElementById('ai-export-textarea');
+    if (!textarea) return;
+    textarea.select();
+    navigator.clipboard.writeText(textarea.value).then(() => {
+        const toast = document.getElementById('ai-copy-toast');
+        if (toast) {
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3000);
+        }
+    }).catch(e => console.error('Error copying:', e));
+}
+
+function downloadExportFile() {
+    const textarea = document.getElementById('ai-export-textarea');
+    if (!textarea || !textarea.value) return;
+
+    const content = textarea.value;
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    let filename = `inventario-taller-${dateStr}`;
+    let mimeType = 'text/plain;charset=utf-8';
+
+    if (currentExportFormat === 'prompt') {
+        filename += '.md';
+        mimeType = 'text/markdown;charset=utf-8';
+    } else if (currentExportFormat === 'csv') {
+        filename += '.csv';
+        mimeType = 'text/csv;charset=utf-8';
+    } else if (currentExportFormat === 'json') {
+        filename += '.json';
+        mimeType = 'application/json;charset=utf-8';
+    } else {
+        filename += '.txt';
+        mimeType = 'text/plain;charset=utf-8';
+    }
+
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    switchInventoryTab(activeInventorySubtab || 'materials');
+});
+</script>

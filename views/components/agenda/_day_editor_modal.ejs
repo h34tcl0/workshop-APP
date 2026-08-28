@@ -1,0 +1,105 @@
+<!-- MODAL EDITOR DE DÍA -->
+<%
+    const eval = locals.eval || (locals.item && (locals.item.evaluation || locals.item)) || {};
+    const date_iso = locals.date_iso || (locals.item && locals.item.date_iso) || eval.eval_date || '';
+    const date_str = locals.date_str || (locals.item && locals.item.date_str) || eval.date_str || '';
+    const override = locals.override || eval.day_override || {};
+    const app_settings = locals.app_settings || {};
+    const tasks = locals.tasks || [];
+%>
+<div id="day-editor-<%= date_iso %>" class="fixed inset-0 z-[120] bg-canvas/85 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="bg-surface border-t sm:border border-hairline rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[85vh] sm:max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-panel relative">
+        <div class="w-12 h-1 bg-hairline rounded-full mx-auto mb-3 sm:hidden"></div>
+        <div class="flex items-center justify-between border-b border-hairline pb-4 mb-5">
+            <h3 class="font-display text-lg font-semibold text-ink">Editar <%= date_str %></h3>
+            <button type="button" onclick="toggleDayEditor('<%= date_iso %>')" aria-label="Cerrar" class="text-ink3 hover:text-ink w-11 h-11 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-surface2 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0">
+                <svg class="w-4 h-4"><use href="#i-close"/></svg>
+            </button>
+        </div>
+
+        <form action="/day-override/<%= date_iso %>/save" method="post" onsubmit="submitDayOverrideForm(event)" class="space-y-4">
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Estado del día</label>
+                <select name="force_status" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer transition-colors">
+                    <option value="" <%= (!override || !override.force_status) ? 'selected' : '' %>>Automático (según clima)</option>
+                    <option value="VIABLE" <%= (override && override.force_status === 'VIABLE') ? 'selected' : '' %>>Forzar viable</option>
+                    <option value="BLOCKED" <%= (override && override.force_status === 'BLOCKED') ? 'selected' : '' %>>Forzar bloqueado</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Motivo (opcional, se muestra si está bloqueado)</label>
+                <input type="text" name="note" value="<%= (override && override.note) ? override.note : '' %>" placeholder="Ej. Viaje, evento familiar..." class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Inicio jornada (este día)</label>
+                    <input type="number" min="0" max="23" name="custom_start_hour" value="<%= (override && override.custom_start_hour != null) ? override.custom_start_hour : '' %>" placeholder="<%= app_settings.operational_start_hour %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Fin jornada (este día)</label>
+                    <input type="number" min="0" max="23" name="custom_end_hour" value="<%= (override && override.custom_end_hour != null) ? override.custom_end_hour : '' %>" placeholder="<%= app_settings.operational_end_hour %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
+                </div>
+            </div>
+            <p class="text-[11px] text-ink3 -mt-2">Vacío = usa la jornada general configurada.</p>
+
+            <% if (eval.scheduled_tasks && eval.scheduled_tasks.length > 0) { %>
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Tareas agendadas este día</label>
+                <div class="space-y-2 bg-canvas/40 border border-hairline rounded-lg p-3">
+                    <% eval.scheduled_tasks.forEach(function(t) { %>
+                    <label class="flex items-center gap-2.5 cursor-pointer min-h-[44px] sm:min-h-0 py-1">
+                        <input type="checkbox" name="removed_task_ids" value="<%= t.id %>" class="w-5 h-5 sm:w-4 sm:h-4 rounded border-hairline bg-surface2 text-rust focus:ring-rust">
+                        <span class="text-xs text-ink2">Quitar <strong class="text-ink font-medium"><%= t.title %></strong> de este día</span>
+                    </label>
+                    <% }); %>
+                </div>
+            </div>
+            <% } %>
+
+            <div class="flex items-center gap-3 pt-3 border-t border-hairline">
+                <button type="submit" class="flex-1 bg-brass hover:bg-brassdim text-canvas font-semibold py-3 sm:py-2.5 rounded-lg text-sm transition-colors min-h-[44px] sm:min-h-0">Guardar</button>
+            </div>
+        </form>
+
+        <% if (override && override.id) { %>
+        <form action="/day-override/<%= date_iso %>/clear" method="post" onsubmit="submitClearDayOverrideForm(event)" class="mt-2">
+            <button type="submit" class="w-full text-center text-xs text-ink3 hover:text-rust py-2.5 min-h-[44px] sm:min-h-0 flex items-center justify-center">Quitar todos los ajustes manuales de este día</button>
+        </form>
+        <% } %>
+
+        <div class="pt-4 mt-4 border-t border-hairline">
+            <label class="block text-[11px] font-semibold text-ink3 mb-2 uppercase tracking-wide">Tareas forzadas (se saltan clima y ventana)</label>
+
+            <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
+            <div class="space-y-2 mb-3">
+                <% eval.forced_tasks.forEach(function(ft) { %>
+                <div class="flex items-center justify-between gap-2 bg-brass/5 border border-brassdim/30 rounded-lg px-3 py-2">
+                    <span class="text-xs text-ink2">⚡ <strong class="text-ink font-medium"><%= ft.task ? ft.task.title : 'Tarea' %></strong> a las <%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
+                    <form action="/day-override/forced-task/<%= ft.id || ft.forced_id %>/delete" method="post" onsubmit="submitDeleteForcedTaskForm(event)">
+                        <button type="submit" aria-label="Quitar forzada" class="w-9 h-9 sm:w-6 sm:h-6 rounded-md text-rust hover:bg-rust/10 flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0"><svg class="w-3.5 h-3.5"><use href="#i-close"/></svg></button>
+                    </form>
+                </div>
+                <% }); %>
+            </div>
+            <% } %>
+
+            <form action="/day-override/<%= date_iso %>/force-task" method="post" onsubmit="submitForceTaskForm(event)" class="flex flex-col sm:flex-row sm:items-end gap-2">
+                <div class="flex-1 min-w-0">
+                    <label class="block text-[10px] text-ink3 mb-1">Tarea</label>
+                    <select name="task_id" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-lg px-2 py-2 text-xs focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer transition-colors">
+                        <% tasks.forEach(function(t) { %>
+                        <option value="<%= t.id %>"><%= t.title %></option>
+                        <% }); %>
+                    </select>
+                </div>
+                <div class="w-full sm:w-20 shrink-0">
+                    <label class="block text-[10px] text-ink3 mb-1">Hora</label>
+                    <input type="number" name="forced_start_hour" min="0" max="23" value="9" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-2 py-2 text-xs focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
+                </div>
+                <button type="submit" class="bg-chalk hover:bg-chalk/80 text-canvas font-semibold px-4 py-2.5 rounded-lg text-xs transition-colors shrink-0 min-h-[44px] sm:min-h-0 flex items-center justify-center">Forzar</button>
+            </form>
+        </div>
+    </div>
+</div>

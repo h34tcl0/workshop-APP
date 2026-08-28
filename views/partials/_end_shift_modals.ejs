@@ -1,0 +1,67 @@
+<!-- Modal de Confirmación Término de la Jornada -->
+<div id="end-shift-confirm-modal" class="hidden fixed inset-0 z-[110] bg-canvas/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-surface border border-hairline rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-hairline">
+            <h3 class="font-display text-base font-bold text-ink flex items-center gap-2">
+                <svg class="w-5 h-5 text-brass"><use href="#i-check"/></svg>
+                ¿Finalizar la Jornada de Hoy?
+            </h3>
+            <button type="button" onclick="closeConfirmEndShiftModal()" class="text-ink3 hover:text-ink p-1">
+                <svg class="w-4 h-4"><use href="#i-close"/></svg>
+            </button>
+        </div>
+
+        <p class="text-xs sm:text-sm text-ink2 leading-relaxed">
+            Esta acción registrará el término de tu jornada laboral de hoy y ejecutará el <strong>check-in de cierre</strong> para verificar las tareas completadas.
+        </p>
+
+        <div class="flex items-center justify-end gap-2.5 pt-3 border-t border-hairline">
+            <button type="button" onclick="closeConfirmEndShiftModal()" class="px-4 py-2.5 rounded-xl text-xs font-semibold text-ink2 hover:text-ink bg-surface2 hover:bg-hairline border border-hairline transition-colors min-h-[44px]">
+                Cancelar
+            </button>
+            <button type="button" onclick="executeEndShift()" id="confirm-end-shift-btn" class="bg-brass hover:bg-brassdim text-canvas font-bold px-5 py-2.5 rounded-xl text-xs transition-colors shadow-sm flex items-center gap-2 min-h-[44px]">
+                <svg class="w-4 h-4"><use href="#i-check"/></svg>
+                Confirmar y Hacer Check-in
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Check-in Manual (Término de la Jornada) -->
+<div id="end-shift-modal" class="hidden fixed inset-0 z-[110] bg-canvas/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-surface border border-hairline rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-hairline">
+            <h3 class="font-display text-base font-semibold text-ink flex items-center gap-2">
+                <svg class="w-5 h-5 text-brass"><use href="#i-check"/></svg>
+                Check-in Término de la Jornada
+            </h3>
+            <button type="button" onclick="closeEndShiftModal()" class="text-ink3 hover:text-ink p-1">
+                <svg class="w-4 h-4"><use href="#i-close"/></svg>
+            </button>
+        </div>
+
+        <div id="end-shift-msg" class="text-xs text-ink2 leading-relaxed bg-surface2 p-3 rounded-xl border border-hairline">
+            <!-- Se llena dinámicamente -->
+        </div>
+
+        <form id="end-shift-form" onsubmit="submitEndShiftCheckin(event)" class="space-y-4">
+            <input type="hidden" id="end-shift-log-id" name="dailyLogId" value="">
+            
+            <div class="space-y-2">
+                <label class="block text-xs font-bold text-ink uppercase tracking-wider">Selecciona las tareas terminadas hoy:</label>
+                <div id="end-shift-tasks-list" class="space-y-2 max-h-60 overflow-y-auto pr-1">
+                    <!-- Tareas listadas aquí con checkboxes -->
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-2 border-t border-hairline">
+                <button type="button" onclick="closeEndShiftModal()" class="px-4 py-2 text-xs font-semibold text-ink2 hover:text-ink bg-surface2 hover:bg-hairline border border-hairline rounded-xl transition-colors min-h-[44px]">
+                    Cancelar
+                </button>
+                <button type="submit" id="end-shift-submit-btn" class="bg-brass hover:bg-brassdim text-canvas font-bold px-5 py-2 rounded-xl text-xs transition-colors min-h-[44px]">
+                    Guardar Check-in
+                </button>
+            </div>
+        </form>
+    </div>
+</div>

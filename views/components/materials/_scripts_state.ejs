@@ -1,0 +1,206 @@
+<script>
+// LIVE INVENTORY DATA STATE FOR CLIENT-SIDE FILTERING & AI EXPORT
+let currentMaterialsData = <%- JSON.stringify(locals.materials || []) %>;
+let currentToolsData = <%- JSON.stringify(locals.tools || []) %>;
+
+// Selected chips sets for export modal (all selected by default)
+const selectedToolChips = new Set([
+    'herramientas eléctricas',
+    'herramientas manuales',
+    'medición y trazado',
+    'prensas y sujeción',
+    'accesorios y plantillas'
+]);
+
+const selectedStockChips = new Set([
+    'madera',
+    'placas/tableros',
+    'tornillería',
+    'adhesivos/barniz',
+    'herrajes',
+    'insumos'
+]);
+
+// CATEGORIES CONFIGURATION PER TAB
+const MATERIAL_CATEGORIES = [
+    { value: 'madera', label: 'Madera' },
+    { value: 'placas/tableros', label: 'Placas / Tableros' },
+    { value: 'tornillería', label: 'Tornillería' },
+    { value: 'adhesivos/barniz', label: 'Adhesivos / Barniz' },
+    { value: 'herrajes', label: 'Herrajes' },
+    { value: 'insumos', label: 'Otros Insumos' }
+];
+
+const TOOL_CATEGORIES = [
+    { value: 'herramientas eléctricas', label: 'Eléctricas' },
+    { value: 'herramientas manuales', label: 'Manuales' },
+    { value: 'medición y trazado', label: 'Medición / Trazado' },
+    { value: 'prensas y sujeción', label: 'Prensas / Sujeción' },
+    { value: 'accesorios y plantillas', label: 'Accesorios / Guías' }
+];
+
+let activeInventorySubtab = 'materials';
+
+function updateCategoryFilterDropdown(tab) {
+    const filterSelect = document.getElementById('inventory-category-filter');
+    if (!filterSelect) return;
+
+    const previousValue = filterSelect.value;
+    filterSelect.innerHTML = '';
+
+    const allOption = document.createElement('option');
+    allOption.value = 'all';
+    allOption.textContent = 'Todas las Categorías';
+    filterSelect.appendChild(allOption);
+
+    let allowedValues = ['all'];
+
+    if (tab === 'materials') {
+        MATERIAL_CATEGORIES.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.value;
+            opt.textContent = cat.label;
+            filterSelect.appendChild(opt);
+            allowedValues.push(cat.value);
+        });
+    } else if (tab === 'tools') {
+        TOOL_CATEGORIES.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.value;
+            opt.textContent = cat.label;
+            filterSelect.appendChild(opt);
+            allowedValues.push(cat.value);
+        });
+    } else {
+        const matGroup = document.createElement('optgroup');
+        matGroup.label = 'Materiales e Insumos';
+        MATERIAL_CATEGORIES.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.value;
+            opt.textContent = cat.label;
+            matGroup.appendChild(opt);
+            allowedValues.push(cat.value);
+        });
+        filterSelect.appendChild(matGroup);
+
+        const toolGroup = document.createElement('optgroup');
+        toolGroup.label = 'Herramientas';
+        TOOL_CATEGORIES.forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat.value;
+            opt.textContent = cat.label;
+            toolGroup.appendChild(opt);
+            allowedValues.push(cat.value);
+        });
+        filterSelect.appendChild(toolGroup);
+    }
+
+    if (allowedValues.includes(previousValue)) {
+        filterSelect.value = previousValue;
+    } else {
+        filterSelect.value = 'all';
+    }
+}
+
+// TABS SWITCHING
+function switchInventoryTab(tab) {
+    activeInventorySubtab = tab;
+    const matPanel = document.getElementById('materials-subpanel');
+    const toolPanel = document.getElementById('tools-subpanel');
+    const buttons = document.querySelectorAll('.inv-tab-btn');
+
+    buttons.forEach(b => {
+        b.classList.remove('bg-brass', 'text-canvas', 'shadow-sm');
+        b.classList.add('text-ink2');
+    });
+
+    const activeBtn = document.getElementById(`inv-tab-${tab}`);
+    if (activeBtn) {
+        activeBtn.classList.remove('text-ink2');
+        activeBtn.classList.add('bg-brass', 'text-canvas', 'shadow-sm');
+    }
+
+    if (tab === 'materials') {
+        if (matPanel) matPanel.classList.remove('hidden');
+        if (toolPanel) toolPanel.classList.add('hidden');
+    } else if (tab === 'tools') {
+        if (matPanel) matPanel.classList.add('hidden');
+        if (toolPanel) toolPanel.classList.remove('hidden');
+    } else {
+        if (matPanel) matPanel.classList.remove('hidden');
+        if (toolPanel) toolPanel.classList.remove('hidden');
+    }
+
+    const btnMat = document.getElementById('btn-add-material-action');
+    const btnTool = document.getElementById('btn-add-tool-action');
+    const primaryClasses = ['bg-brass', 'hover:bg-brassdim', 'text-canvas', 'font-bold', 'shadow-xs'];
+    const secondaryClasses = ['bg-surface2', 'hover:bg-hairline', 'text-ink', 'font-medium'];
+
+    if (btnMat && btnTool) {
+        btnMat.classList.remove(...primaryClasses, ...secondaryClasses);
+        btnTool.classList.remove(...primaryClasses, ...secondaryClasses);
+
+        if (tab === 'tools') {
+            btnTool.classList.add(...primaryClasses);
+            btnMat.classList.add(...secondaryClasses);
+        } else if (tab === 'materials') {
+            btnMat.classList.add(...primaryClasses);
+            btnTool.classList.add(...secondaryClasses);
+        } else {
+            btnMat.classList.add(...secondaryClasses);
+            btnTool.classList.add(...secondaryClasses);
+        }
+    }
+
+    updateCategoryFilterDropdown(tab);
+    filterInventory();
+}
+
+// FILTERING
+function filterInventory() {
+    const cat = document.getElementById('inventory-category-filter')?.value?.toLowerCase() || 'all';
+    const query = document.getElementById('inventory-search-input')?.value?.toLowerCase()?.trim() || '';
+    const cards = document.querySelectorAll('.inventory-card');
+
+    cards.forEach(card => {
+        const cardCat = card.getAttribute('data-category') || '';
+        const cardName = card.getAttribute('data-name') || '';
+        const cardNotes = card.getAttribute('data-notes') || '';
+        const cardProj = card.getAttribute('data-project') || '';
+
+        const catMatches = cat === 'all' || cardCat.includes(cat);
+        const searchMatches = !query || cardName.includes(query) || cardCat.includes(query) || cardNotes.includes(query) || cardProj.includes(query);
+
+        if (catMatches && searchMatches) {
+            card.style.display = card.tagName === 'TR' ? 'table-row' : 'flex';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+// ASYNC RELOAD INVENTORY DATA (PREVENTS STALE SNAPSHOTS)
+async function reloadInventoryData() {
+    try {
+        const [matsRes, toolsRes] = await Promise.all([
+            fetch('/api/materials', { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } }),
+            fetch('/api/tools', { headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } })
+        ]);
+
+        if (matsRes.ok) {
+            const matsJson = await matsRes.json();
+            if (matsJson.success && Array.isArray(matsJson.materials)) {
+                currentMaterialsData = matsJson.materials;
+            }
+        }
+        if (toolsRes.ok) {
+            const toolsJson = await toolsRes.json();
+            if (toolsJson.success && Array.isArray(toolsJson.tools)) {
+                currentToolsData = toolsJson.tools;
+            }
+        }
+    } catch (err) {
+        console.error('Error reloading inventory data:', err);
+    }
+}
+</script>

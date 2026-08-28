@@ -46,12 +46,22 @@ export interface AppSettings {
   google_calendar_enabled?: boolean;
   timezone?: string | null;
   forecast_days?: number;
+  workshop_type?: 'outdoor' | 'covered' | 'indoor';
+  max_rain_probability?: number;
+  max_wind_gust_carpentry?: number;
+  max_wind_gust_paint?: number;
+  dew_point_margin_c?: number;
+  min_temp_pva_c?: number;
+  min_temp_epoxy_c?: number;
+  max_humidity_varnish?: number;
+  max_humidity_pva?: number;
 }
 
 export interface Project {
   id: number;
   name: string;
   description?: string;
+  color?: string;
   is_active: boolean;
 }
 
@@ -60,6 +70,7 @@ export interface Task {
   user_id?: number;
   project_id: number;
   project_name?: string;
+  project_color?: string;
   title: string;
   description?: string;
   category: TaskCategory;
@@ -118,6 +129,11 @@ export interface HourlyForecast {
   precipitation_mm: number;
   precipitation_probability: number;
   cloud_cover_percent: number;
+  dew_point_c?: number;
+  wind_gusts_kmh?: number;
+  wind_speed_kmh?: number;
+  weather_code?: number;
+  description?: string;
 }
 
 export interface TimeWindow {
@@ -135,6 +151,8 @@ export interface TimelineItem {
   title: string;
   duration: string;
   project_name?: string;
+  project_id?: number;
+  project_color?: string;
 }
 
 export interface ClimateSegment {
@@ -185,6 +203,27 @@ export interface WeatherSummary {
   total_rain_mm: number;
 }
 
+export interface ClimateEfficiency {
+  score: number; // 0 - 100 (%)
+  jornada_good: number;
+  jornada_total: number;
+  jornada_pct: number;
+  fuera_good: number;
+  fuera_total: number;
+  fuera_pct: number;
+  tooltip: string;
+  ring_color: "var(--w-ok)" | "var(--w-warn)" | "var(--w-rust)";
+  stroke_dash: string;
+}
+
+export interface WeatherCutoffInfo {
+  is_cutoff_by_weather: boolean;
+  cutoff_hour?: number;
+  cutoff_time_label?: string;
+  primary_factor?: "rain" | "humidity" | "temperature" | "none";
+  factor_description?: string;
+}
+
 export interface DayEvaluation {
   eval_date: string; // YYYY-MM-DD
   date_str?: string;
@@ -205,6 +244,8 @@ export interface DayEvaluation {
   day_override?: DayOverride | null;
   hourly_forecast?: HourlyForecast[] | null;
   hourly_audit?: any[] | null;
+  climate_efficiency?: ClimateEfficiency;
+  weather_cutoff?: WeatherCutoffInfo;
 }
 
 export interface DailyLog {
@@ -236,6 +277,7 @@ export interface DailyLog {
   intraday_alert_last_sent_at?: string | null;
   intraday_alert_burst_count?: number;
   last_rain_alert_hour?: number | null;
+  calendar_sync_claimed_at?: string | null;
   updated_at: string;
 }
 

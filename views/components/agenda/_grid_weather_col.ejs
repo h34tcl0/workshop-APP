@@ -1,0 +1,43 @@
+<!-- COLUMNA IZQUIERDA: LÍNEA DE TIEMPO / HORAS CON MARCADORES CLIMÁTICOS -->
+<%
+    const totalGridSlots = (typeof locals.totalGridSlots !== 'undefined') ? locals.totalGridSlots : 0;
+    const grid_start_hour = (typeof locals.grid_start_hour !== 'undefined') ? locals.grid_start_hour : 8;
+    const hourSlots = locals.hourSlots || [];
+    const start_limit = (typeof locals.start_limit !== 'undefined') ? locals.start_limit : 8;
+    const end_limit = (typeof locals.end_limit !== 'undefined') ? locals.end_limit : 18;
+    const HOUR_HEIGHT_PX = (typeof locals.HOUR_HEIGHT_PX !== 'undefined') ? locals.HOUR_HEIGHT_PX : 44;
+%>
+<div class="w-12 sm:w-14 shrink-0 border-r border-[var(--w-bd)]/60 bg-[var(--w-s2)]/40 select-none relative">
+    <% for (let i = 0; i < totalGridSlots; i++) { %>
+        <% 
+            const currentHour = grid_start_hour + i;
+            const currentSlot = (hourSlots && hourSlots[i]) ? hourSlots[i] : null;
+            const isMarginHour = (currentHour < start_limit || currentHour > end_limit);
+            
+            let stripeBg = 'bg-[var(--w-ok)]';
+            let stripeTooltip = `${String(currentHour).padStart(2, '0')}:00 - Clima favorable / Apto`;
+            if (currentSlot) {
+                if (currentSlot.isRain) {
+                    stripeBg = 'bg-[var(--w-rust)]';
+                    stripeTooltip = currentSlot.label;
+                } else if (currentSlot.isHumid) {
+                    stripeBg = 'bg-[var(--w-sky)]';
+                    stripeTooltip = currentSlot.label;
+                }
+            }
+            if (isMarginHour) {
+                stripeTooltip += ' • Margen fuera de jornada';
+            }
+        %>
+        <div class="absolute left-0 right-0 border-b border-[var(--w-bd)]/30 px-1 text-right flex items-center justify-between <%= isMarginHour ? 'bg-[var(--w-s2)]/80' : '' %>"
+             style="top: <%= i * HOUR_HEIGHT_PX %>px; height: <%= HOUR_HEIGHT_PX %>px;"
+             title="<%= stripeTooltip %>">
+            <!-- Marcador vertical de idoneidad climática horaria -->
+            <span class="w-1.5 h-full rounded-r-xs <%= stripeBg %> <%= isMarginHour ? 'opacity-70' : 'opacity-95' %> shrink-0 transition-colors" style="margin-left: -4px;"></span>
+            
+            <span class="font-mono-jb text-[10px] <%= isMarginHour ? 'text-[var(--w-t3)]/60 italic' : 'text-[var(--w-t3)] font-medium' %> pr-1">
+                <%= String(currentHour).padStart(2, '0') %>:00
+            </span>
+        </div>
+    <% } %>
+</div>

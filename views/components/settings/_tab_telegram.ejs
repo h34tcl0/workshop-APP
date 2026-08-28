@@ -1,0 +1,53 @@
+<!-- TAB 3: NOTIFICACIONES -->
+<div id="tab-content-notifications" class="settings-tab-content hidden space-y-4">
+    <div class="grid grid-cols-2 gap-3 sm:gap-4">
+        <div>
+            <div class="flex items-center gap-1.5 mb-1.5">
+                <label class="block text-[11px] font-semibold text-ink3 uppercase tracking-wide">Hora de check-in</label>
+                <button type="button" onclick="toggleTip('checkin-hour')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Hora de check-in">
+                    <svg class="w-3 h-3"><use href="#i-help"/></svg>
+                </button>
+            </div>
+            <p id="tip-checkin-hour" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">Hora fija en que se envía el mensaje nocturno por Telegram para evaluar el cumplimiento de tareas.</p>
+            <input type="number" min="0" max="23" name="checkin_hour" value="<%= app_settings ? app_settings.checkin_hour : 19 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
+        </div>
+        <div>
+            <div class="flex items-center gap-1.5 mb-1.5">
+                <label class="block text-[11px] font-semibold text-ink3 uppercase tracking-wide">Margen evaluación matutina</label>
+                <button type="button" onclick="toggleTip('morning-lead')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Margen matutino">
+                    <svg class="w-3 h-3"><use href="#i-help"/></svg>
+                </button>
+            </div>
+            <p id="tip-morning-lead" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">Horas de anticipación respecto al inicio de jornada para actualizar el pronóstico meteorológico.</p>
+            <input type="number" min="0" max="12" name="morning_eval_lead_hours" value="<%= app_settings ? app_settings.morning_eval_lead_hours : 1 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
+        </div>
+    </div>
+
+    <!-- Vinculación Telegram -->
+    <div class="pt-2 border-t border-hairline">
+        <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3 mb-2">Bot de Telegram</label>
+        <% if (app_settings && app_settings.telegram_chat_id) { %>
+            <div class="flex items-center justify-between gap-2 bg-surface2 border border-hairline rounded-lg px-3.5 py-2.5">
+                <div class="flex items-center gap-2">
+                    <span class="w-2 h-2 rounded-full bg-moss"></span>
+                    <span class="text-xs text-ink font-medium">Vinculado (Chat ID: <%= app_settings.telegram_chat_id %>)</span>
+                </div>
+                <button type="button" onclick="unlinkTelegram()" class="text-xs font-semibold text-red-400 hover:text-red-300 px-2 py-1">Desvincular</button>
+            </div>
+            <p class="text-[10px] text-ink3 mt-1.5">Las notificaciones operativas y el check-in se envían a este chat.</p>
+        <% } else { %>
+            <div id="telegram-link-box">
+                <button type="button" onclick="generateTelegramLinkCode()" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-xs font-semibold hover:border-brass transition-colors flex items-center justify-center gap-2">
+                    <svg class="w-4 h-4 text-chalk"><use href="#i-bell"/></svg> Generar código de vinculación
+                </button>
+            </div>
+            <div id="telegram-link-result" class="hidden mt-2 bg-surface2 border border-hairline rounded-lg px-3 py-2.5 text-xs text-ink space-y-1">
+                <p class="text-ink2">Envía este comando a tu bot de Telegram:</p>
+                <p class="font-mono text-sm font-bold text-brass tracking-wider"><code id="telegram-link-code"></code></p>
+                <p class="text-[10px] text-ink3"><code>/vincular <span id="telegram-link-code-inline"></span></code></p>
+                <p class="text-[10px] text-ink3" id="telegram-link-expiry"></p>
+            </div>
+            <p class="text-[10px] text-ink3 mt-1.5">Genera un código temporal para enlazar tu chat de forma segura.</p>
+        <% } %>
+    </div>
+</div>

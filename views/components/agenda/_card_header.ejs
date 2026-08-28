@@ -1,0 +1,125 @@
+<!-- HEADER DEL DÍA: COMPACTO Y BALANCEADO -->
+<%
+    const date_iso = locals.date_iso || (locals.item && locals.item.date_iso) || '';
+    const date_str = locals.date_str || (locals.item && locals.item.date_str) || '';
+    const eval = locals.eval || (locals.item && (locals.item.evaluation || locals.item)) || {};
+    const is_viable = (typeof locals.is_viable !== 'undefined') ? locals.is_viable : (eval.status === 'DAY_VIABLE');
+    const is_closed = (typeof locals.is_closed !== 'undefined') ? locals.is_closed : ((!is_viable) && (eval.reason && eval.reason.includes('Jornada concluida')));
+    const is_manual_block = (typeof locals.is_manual_block !== 'undefined') ? locals.is_manual_block : Boolean(eval.is_manually_blocked);
+    const is_amber = (typeof locals.is_amber !== 'undefined') ? locals.is_amber : ((!is_viable) && (!is_manual_block) && (!is_closed) && (eval.climate_only_status === 'clear'));
+    const ico_emoji = locals.ico_emoji || '☀️';
+    const pct = (typeof locals.pct !== 'undefined') ? locals.pct : ((eval.climate_efficiency && eval.climate_efficiency.score) || 0);
+    const ring_color = locals.ring_color || ((eval.climate_efficiency && eval.climate_efficiency.ring_color) || 'var(--w-ok)');
+    const ring_tooltip = locals.ring_tooltip || ((eval.climate_efficiency && eval.climate_efficiency.tooltip) || 'Índice de Eficiencia Climática');
+    const total_shift_hours = (typeof locals.total_shift_hours !== 'undefined') ? locals.total_shift_hours : 8;
+%>
+<div class="weather-card-head flex items-center justify-between gap-2.5 px-3 sm:px-4 py-3 border-b border-[var(--w-bd)]/60">
+    <!-- Left: Weather Emoji Button + Date & Summary -->
+    <div class="flex items-center gap-2 min-w-0 flex-1">
+        <button type="button" 
+                onclick="toggleHourlyPanel('<%= date_iso %>')" 
+                class="weather-ico-btn text-xl sm:text-2xl shrink-0 p-1 rounded-xl hover:bg-white/10 transition-transform active:scale-95" 
+                title="Hacé clic para ver o ocultar el pronóstico detallado de 24 horas">
+            <span><%= ico_emoji %></span>
+        </button>
+
+        <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="font-serif-fraunces text-sm sm:text-base font-semibold text-[var(--w-t1)] tracking-tight truncate">
+                    <%= date_str %>
+                </span>
+                <%
+                    let badge_tooltip = eval.unassigned_reason || eval.cutoff_reason || eval.reason || '';
+                    if (!badge_tooltip) {
+                        if (is_viable) badge_tooltip = 'Jornada viable y planificada normalmente';
+                        else if (is_amber) badge_tooltip = 'Condiciones climáticas favorables, pero sin tareas agendadas';
+                        else if (is_manual_block) badge_tooltip = 'Bloqueado manualmente por el usuario';
+                        else badge_tooltip = 'Jornada suspendida por condiciones climáticas no operativas';
+                    }
+                %>
+                <% if (is_viable) { %>
+                    <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-ok)]/15 text-[var(--w-ok)] border border-[var(--w-ok)]/30 shrink-0" title="<%= badge_tooltip %>">
+                        Viable
+                    </span>
+                <% } else if (is_closed) { %>
+                    <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-s2)] text-[var(--w-t2)] border border-[var(--w-bd)] shrink-0" title="<%= badge_tooltip %>">
+                        Concluida
+                    </span>
+                <% } else if (is_amber) { %>
+                    <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-warn)]/15 text-[var(--w-warn)] border border-[var(--w-warn)]/30 shrink-0" title="<%= badge_tooltip %>">
+                        Disponible
+                    </span>
+                <% } else if (is_manual_block) { %>
+                    <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-s2)] text-[var(--w-t2)] border border-[var(--w-bd)] shrink-0" title="<%= badge_tooltip %>">
+                        Bloqueado
+                    </span>
+                <% } else { %>
+                    <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-rust)]/15 text-[var(--w-rust)] border border-[var(--w-rust)]/30 shrink-0" title="<%= badge_tooltip %>">
+                        Suspendido
+                    </span>
+                <% } %>
+            </div>
+            <div class="font-mono-jb text-[10px] text-[var(--w-t2)] flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5">
+                <span class="text-[var(--w-t1)]"><%= eval.weather_summary ? eval.weather_summary.min_temp : 0 %>°–<%= eval.weather_summary ? eval.weather_summary.max_temp : 0 %>°C</span>
+                <span>·</span>
+                <span>💧 <%= eval.weather_summary ? eval.weather_summary.min_humidity : 0 %>%–<%= eval.weather_summary ? eval.weather_summary.max_humidity : 0 %>%</span>
+                <% if (eval.weather_summary && eval.weather_summary.total_rain_mm > 0) { %>
+                    <span>·</span>
+                    <span class="text-[var(--w-rust)] font-semibold">🌧️ <%= eval.weather_summary.total_rain_mm %>mm</span>
+                <% } %>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Mini Donut Eficiencia (38px) + Edit Pencil Button -->
+    <div class="flex items-center gap-1.5 shrink-0">
+        <!-- Donut de Eficiencia Climática -->
+        <div class="ring-container shrink-0" onclick="toggleHourlyPanel('<%= date_iso %>')" role="button" tabindex="0" title="Ver pronóstico 24h">
+            <svg width="38" height="38" viewBox="0 0 44 44" class="block">
+                <% 
+                    const mini_r = 17;
+                    const mini_c = 2 * Math.PI * mini_r; // ~106.81
+                    const mini_filled = (pct / 100) * mini_c;
+                    const mini_dash = `${mini_filled.toFixed(1)} ${mini_c.toFixed(1)}`;
+                %>
+                <circle cx="22" cy="22" r="<%= mini_r %>" fill="none" stroke="var(--w-s2)" stroke-width="4.5"/>
+                <circle cx="22" cy="22" r="<%= mini_r %>" fill="none" stroke="<%= ring_color %>" stroke-width="4.5"
+                    stroke-linecap="round" stroke-dasharray="<%= mini_dash %>" transform="rotate(-90 22 22)" class="transition-all duration-500 ease-out"/>
+                <text x="22" y="26" text-anchor="middle" font-family="JetBrains Mono, IBM Plex Mono, monospace" font-size="11" fill="var(--w-t1)" font-weight="700"><%= pct %></text>
+            </svg>
+            <div class="ring-tooltip">
+                <div class="font-bold text-[10px] text-[var(--w-sky)] uppercase tracking-wider mb-1">Eficiencia Climática (<%= pct %>%)</div>
+                <p class="text-[11px] text-[var(--w-t1)]"><%= ring_tooltip %></p>
+            </div>
+        </div>
+
+        <!-- Botón Editor de Día -->
+        <button type="button" onclick="toggleDayEditor('<%= date_iso %>')" aria-label="Editar día" title="Ajustar jornada o estado" class="w-7 h-7 rounded-lg bg-[var(--w-s2)] hover:bg-[var(--w-bd)] text-[var(--w-t2)] hover:text-[var(--w-t1)] flex items-center justify-center transition-colors">
+            <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg>
+        </button>
+    </div>
+</div>
+
+<!-- BARRA DE EFICIENCIA / CLIMA DE LA JORNADA (~4px) -->
+<div class="w-full h-1 bg-[var(--w-s2)] flex overflow-hidden border-b border-[var(--w-bd)]/60" title="Perfil climático de la jornada">
+    <% if (eval.climate_segments && eval.climate_segments.length > 0) { %>
+        <% eval.climate_segments.forEach(function(cs) { %>
+            <% 
+                const segDuration = Math.max(0, cs.end_h - cs.start_h);
+                const segPct = (segDuration / total_shift_hours) * 100;
+                let segBg = 'bg-[var(--w-ok)]';
+                let segLabel = 'Condición apta';
+                if (cs.condition === 'rain') {
+                    segBg = 'bg-[var(--w-rust)]';
+                    segLabel = 'Lluvia';
+                } else if (cs.condition === 'humid') {
+                    segBg = 'bg-[var(--w-sky)]';
+                    segLabel = 'Humedad elevada';
+                }
+            %>
+            <div style="width: <%= segPct.toFixed(1) %>%;" class="<%= segBg %> transition-all" title="<%= String(cs.start_h).padStart(2,'0') %>:00 - <%= String(cs.end_h).padStart(2,'0') %>:00: <%= segLabel %>"></div>
+        <% }); %>
+    <% } else { %>
+        <div class="w-full h-full <%= is_viable ? 'bg-[var(--w-ok)]' : 'bg-[var(--w-rust)]' %>"></div>
+    <% } %>
+</div>

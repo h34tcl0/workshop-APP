@@ -1,0 +1,25 @@
+<%
+  const summaryMats = locals.materials || [];
+  const summaryTools = locals.tools || [];
+  const sumToBuyCount = summaryMats.filter(m => m.status === 'to_buy').length;
+  const sumInStockCount = summaryMats.filter(m => m.status === 'in_stock').length;
+  const sumOutOfStockCount = summaryMats.filter(m => m.status === 'out_of_stock').length;
+%>
+<!-- BARRA DELGADA DE RESUMEN DE STATS -->
+<div class="flex items-center gap-3 px-4 py-2 bg-surface2/50 border border-hairline/70 rounded-xl text-xs text-ink2 overflow-x-auto whitespace-nowrap">
+    <span><strong class="text-ink font-semibold"><%= summaryMats.length %></strong> insumos registrados</span>
+    <span class="text-hairline">·</span>
+    <span class="inline-flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-moss inline-block shrink-0"></span>
+        <span><strong class="text-ink font-semibold"><%= sumInStockCount %></strong> en taller / stock</span>
+    </span>
+    <span class="text-hairline">·</span>
+    <span class="inline-flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-rust inline-block shrink-0"></span>
+        <span><strong class="text-ink font-semibold"><%= sumToBuyCount + sumOutOfStockCount %></strong> por comprar / agotados</span>
+    </span>
+    <span class="text-hairline">·</span>
+    <span class="inline-flex items-center gap-1.5">
+        <span><strong class="text-ink font-semibold"><%= summaryTools.length %></strong> herramientas registradas</span>
+    </span>
+</div>

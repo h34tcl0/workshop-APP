@@ -1,8 +1,36 @@
-<!-- RIGHT COLUMN: WEATHER FORECAST & EVALUATIONS -->
+<!-- RIGHT COLUMN: WEATHER FORECAST & EVALUATIONS (CENTRAL PANEL) -->
 <div class="space-y-5 min-w-0 w-full max-w-full">
-    <div class="agenda-days-grid flex flex-col md:grid md:grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-5 w-full max-w-full min-w-0">
+    
+    <!-- BARRA DE NAVEGACIÓN ENTRE DÍAS DEL PANEL CENTRAL (Horizonte multi-día) -->
+    <div class="bg-surface border border-hairline rounded-2xl p-2.5 sm:p-3 flex items-center justify-between gap-2 shadow-panel">
+        <button type="button" 
+                id="agenda-prev-day-btn" 
+                onclick="navigateAgendaDay(-1)" 
+                class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-surface2 hover:bg-hairline text-ink2 hover:text-ink text-xs font-semibold flex items-center gap-1 transition-all active:scale-95">
+            <svg class="w-4 h-4"><use href="#i-chev-down" class="rotate-90 origin-center"/></svg>
+            <span class="hidden sm:inline">Anterior</span>
+        </button>
 
-        <% forecast_evaluations.forEach(function(item) { %>
+        <div class="flex items-center gap-2 text-center min-w-0">
+            <span class="text-xs font-semibold text-ink3 uppercase tracking-wide hidden sm:inline">Horizonte:</span>
+            <span id="agenda-current-day-label" class="font-serif-fraunces text-xs sm:text-sm md:text-base font-bold text-ink truncate">
+                <%= (forecast_evaluations && forecast_evaluations.length > 0) ? (forecast_evaluations[0].date_str || forecast_evaluations[0].eval_date) : '' %>
+            </span>
+        </div>
+
+        <button type="button" 
+                id="agenda-next-day-btn" 
+                onclick="navigateAgendaDay(1)" 
+                class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-surface2 hover:bg-hairline text-ink2 hover:text-ink text-xs font-semibold flex items-center gap-1 transition-all active:scale-95">
+            <span class="hidden sm:inline">Siguiente</span>
+            <svg class="w-4 h-4"><use href="#i-chev-down" class="-rotate-90 origin-center"/></svg>
+        </button>
+    </div>
+
+    <!-- GRILLA MULTI-DÍA (2 A 3 COLUMNAS EN PARALELO) -->
+    <div id="agenda-days-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-5 w-full max-w-full min-w-0">
+
+        <% (forecast_evaluations || []).forEach(function(item, dayIndex) { %>
         <% 
             const eval = item.evaluation || item;
             const is_viable = eval.status === 'DAY_VIABLE';
@@ -15,83 +43,29 @@
             const date_iso = item.date_iso || eval.eval_date;
             const date_str = item.date_str || eval.date_str;
             const override = eval.day_override || item.day_override;
-            const start_limit = (override && override.custom_start_hour != null) ? override.custom_start_hour : app_settings.operational_start_hour;
-            const end_limit = (override && override.custom_end_hour != null) ? override.custom_end_hour : app_settings.operational_end_hour;
+            const current_settings = locals.app_settings || {};
+            const start_limit = (override && override.custom_start_hour != null) ? override.custom_start_hour : (current_settings.operational_start_hour != null ? current_settings.operational_start_hour : 8);
+            const end_limit = (override && override.custom_end_hour != null) ? override.custom_end_hour : (current_settings.operational_end_hour != null ? current_settings.operational_end_hour : 18);
             const total_shift_hours = Math.max(1, end_limit - start_limit);
 
-            // Efficiency Ring Calculation: 80% Jornada / 20% Fuera de jornada
-            let rawForecasts = eval.hourly_forecast || item.hourly_forecast;
-            if (typeof rawForecasts === 'string') {
-                try { rawForecasts = JSON.parse(rawForecasts); } catch (e) { rawForecasts = []; }
-            }
+            // Efficiency Ring Data (Centralizado en evaluator.ts con fallback defensivo)
+            const eff = eval.climate_efficiency || {
+                score: 0,
+                jornada_good: 0,
+                jornada_total: 0,
+                jornada_pct: 0,
+                fuera_good: 0,
+                fuera_total: 0,
+                fuera_pct: 0,
+                tooltip: 'Índice de Eficiencia Climática',
+                ring_color: 'var(--w-ok)',
+                stroke_dash: '0.0 163.4'
+            };
 
-            let jornadaGood = 0, jornadaTotal = 0;
-            let fueraGood = 0, fueraTotal = 0;
-
-            if (Array.isArray(rawForecasts) && rawForecasts.length > 0) {
-                const minRain = app_settings.min_rain_precipitation_mm;
-                const maxHum = app_settings.max_humidity_percent;
-                for (const f of rawForecasts) {
-                    const h = f.hour;
-                    const isJornada = (h >= start_limit && h < end_limit);
-                    const isOk = (f.precipitation_mm < minRain && f.relative_humidity <= maxHum);
-
-                    if (isJornada) {
-                        jornadaTotal++;
-                        if (isOk) jornadaGood++;
-                    } else {
-                        fueraTotal++;
-                        if (isOk) fueraGood++;
-                    }
-                }
-            }
-
-            let pJornada = jornadaTotal > 0 ? (jornadaGood / jornadaTotal) : 0;
-            let pFuera = fueraTotal > 0 ? (fueraGood / fueraTotal) : 0;
-            let pctJornada = Math.round(pJornada * 100);
-            let pctFuera = Math.round(pFuera * 100);
-
-            let pct = 0;
-            if (jornadaTotal > 0 || fueraTotal > 0) {
-                if (fueraTotal === 0) {
-                    pct = pctJornada;
-                } else {
-                    pct = Math.round((pJornada * 0.80 + pFuera * 0.20) * 100);
-                }
-            } else {
-                // Fallback si no hay forecast horario
-                let window_hours = 0;
-                if (is_viable && eval.window) {
-                    window_hours = Math.max(0, eval.window.end_hour - eval.window.start_hour);
-                }
-                const total_shift_hours = Math.max(1, end_limit - start_limit);
-                pct = Math.min(100, Math.max(0, Math.round((window_hours / total_shift_hours) * 100)));
-            }
-            pct = Math.min(100, Math.max(0, pct));
-
-            // Ring Color Scale (Independent of phase warm/cool colors):
-            // 70-100% -> Green (--w-ok #63cf8e)
-            // 30-69% -> Yellow (--w-warn #e6c452)
-            // 0-29% -> Red (--w-rust #eb5757)
-            let ring_color = 'var(--w-ok)';
-            if (pct < 30) {
-                ring_color = 'var(--w-rust)';
-            } else if (pct < 70) {
-                ring_color = 'var(--w-warn)';
-            }
-
-            const stroke_dash = ((pct / 100) * 163.4).toFixed(1) + ' 163.4';
-
-            // Tooltip Text: Muestra desglose de Jornada, Resto del día e Índice final
-            let strJornada = (jornadaGood === jornadaTotal && jornadaTotal > 0)
-                ? 'Jornada completa sin restricciones (100%)'
-                : ('Jornada: ' + jornadaGood + '/' + jornadaTotal + 'h óptimas (' + pctJornada + '%)');
-
-            let strFuera = (fueraGood === fueraTotal && fueraTotal > 0)
-                ? 'Resto del día: despejado (100%)'
-                : ('Resto del día: ' + fueraGood + '/' + fueraTotal + 'h despejadas (' + pctFuera + '%)');
-
-            let ring_tooltip = strJornada + ' · ' + strFuera + ' · Índice: ' + pct + '%';
+            const pct = eff.score;
+            const ring_color = eff.ring_color;
+            const stroke_dash = eff.stroke_dash;
+            const ring_tooltip = eff.tooltip;
 
             // Weather Emoji:
             let ico_emoji = '☀️';
@@ -104,461 +78,68 @@
             if (cond === 'rain' || !is_viable) {
                 card_theme = is_blocked_or_suspended ? 'blocked' : (cond === 'rain' ? 'rainy' : 'sunny');
             }
+
+            const isInitialActive = (dayIndex < 3);
+
+            let hourly_items = eval.hourly_audit;
+            if ((!hourly_items || hourly_items.length === 0) && eval.hourly_forecast && typeof getHourlyClimateAudit === 'function') {
+                let rawForecasts = eval.hourly_forecast;
+                if (typeof rawForecasts === 'string') {
+                    try { rawForecasts = JSON.parse(rawForecasts); } catch (e) { rawForecasts = []; }
+                }
+                if (Array.isArray(rawForecasts) && rawForecasts.length > 0) {
+                    hourly_items = getHourlyClimateAudit(rawForecasts, eval.window, eval.scheduled_tasks || [], current_settings);
+                }
+            }
+
+            const dayContext = {
+                ...locals,
+                item,
+                dayIndex,
+                eval,
+                is_viable,
+                seg,
+                cond,
+                is_manual_block,
+                is_closed,
+                is_amber,
+                is_blocked_or_suspended,
+                date_iso,
+                date_str,
+                override,
+                app_settings: current_settings,
+                start_limit,
+                end_limit,
+                total_shift_hours,
+                eff,
+                pct,
+                ring_color,
+                stroke_dash,
+                ring_tooltip,
+                ico_emoji,
+                card_theme,
+                hourly_items,
+                tasks: locals.tasks || [],
+                all_projects: locals.all_projects || []
+            };
         %>
 
-        <article class="weather-card <%= card_theme %> group w-full max-w-full min-w-0 shrink">
+        <article class="weather-card <%= card_theme %> group w-full max-w-full min-w-0 flex flex-col justify-between <%= isInitialActive ? '' : 'hidden' %>" 
+                 id="agenda-day-card-<%= date_iso %>" 
+                 data-day-index="<%= dayIndex %>"
+                 data-date-iso="<%= date_iso %>"
+                 data-date-str="<%= date_str %>">
 
-            <!-- HEADER DEL DÍA -->
-            <div class="weather-card-head">
-                <!-- Weather Icon Clickable Trigger to toggle 24h Hourly Forecast -->
-                <button type="button" 
-                        onclick="toggleHourlyPanel('<%= date_iso %>')" 
-                        class="weather-ico-btn text-2xl shrink-0" 
-                        title="Hacé clic para ver o ocultar el pronóstico de 24 horas">
-                    <span><%= ico_emoji %></span>
-                </button>
-
-                <!-- Date in Fraunces Serif -->
-                <span class="font-serif-fraunces text-lg sm:text-xl md:text-2xl font-semibold text-[var(--w-t1)] tracking-tight whitespace-nowrap shrink-0">
-                    <%= date_str %>
-                </span>
-
-                <!-- Anillo de Eficiencia Climática con Tooltip -->
-                <div class="ring-container shrink-0 ml-auto" onclick="toggleHourlyPanel('<%= date_iso %>')" role="button" tabindex="0" title="Ver pronóstico 24h">
-                    <svg width="60" height="60" viewBox="0 0 64 64" class="block">
-                        <circle cx="32" cy="32" r="26" fill="none" stroke="var(--w-s2)" stroke-width="6"/>
-                        <circle cx="32" cy="32" r="26" fill="none" stroke="<%= ring_color %>" stroke-width="6"
-                            stroke-linecap="round" stroke-dasharray="<%= stroke_dash %>" transform="rotate(-90 32 32)" class="transition-all duration-500 ease-out"/>
-                        <text x="32" y="37" text-anchor="middle" font-family="var(--w-mono)" font-size="15" fill="var(--w-t1)" font-weight="700"><%= pct %></text>
-                        <text x="32" y="47" text-anchor="middle" font-family="var(--w-sans)" font-size="8" fill="var(--w-t2)" font-weight="600" letter-spacing="0.05em">%</text>
-                    </svg>
-                    <div class="ring-tooltip">
-                        <div class="font-bold text-[10px] text-[var(--w-sky)] uppercase tracking-wider mb-1">Eficiencia Climática (<%= pct %>%)</div>
-                        <p class="text-[11px] text-[var(--w-t1)]"><%= ring_tooltip %></p>
-                    </div>
-                </div>
-
-                <!-- Status Badge & Edit Pencil -->
-                <div class="flex items-center gap-1.5 shrink-0 ml-1">
-                    <button type="button" onclick="toggleDayEditor('<%= date_iso %>')" aria-label="Editar día" class="w-8 h-8 rounded-lg bg-[var(--w-s2)] hover:bg-[var(--w-bd)] text-[var(--w-t2)] hover:text-[var(--w-t1)] flex items-center justify-center transition-colors">
-                        <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg>
-                    </button>
-                    <%
-                        let badge_tooltip = eval.unassigned_reason || eval.cutoff_reason || eval.reason || '';
-                        if (!badge_tooltip) {
-                            if (is_viable) badge_tooltip = 'Jornada viable y planificada normalmente';
-                            else if (is_amber) badge_tooltip = 'Condiciones climáticas favorables, pero sin tareas agendadas';
-                            else if (is_manual_block) badge_tooltip = 'Bloqueado manualmente por el usuario';
-                            else badge_tooltip = 'Jornada suspendida por condiciones climáticas no operativas';
-                        }
-                    %>
-                    <% if (is_viable) { %>
-                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-ok)]/15 text-[var(--w-ok)] border border-[var(--w-ok)]/30 whitespace-nowrap" title="<%= badge_tooltip %>">
-                            Viable
-                        </span>
-                    <% } else if (is_closed) { %>
-                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-s2)] text-[var(--w-t2)] border border-[var(--w-bd)] whitespace-nowrap" title="<%= badge_tooltip %>">
-                            Concluida
-                        </span>
-                    <% } else if (is_amber) { %>
-                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-warn)]/15 text-[var(--w-warn)] border border-[var(--w-warn)]/30 whitespace-nowrap" title="<%= badge_tooltip %>">
-                            Disponible
-                        </span>
-                    <% } else if (is_manual_block) { %>
-                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-s2)] text-[var(--w-t2)] border border-[var(--w-bd)] whitespace-nowrap" title="<%= badge_tooltip %>">
-                            Bloqueado
-                        </span>
-                    <% } else { %>
-                        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-[var(--w-rust)]/15 text-[var(--w-rust)] border border-[var(--w-rust)]/30 whitespace-nowrap" title="<%= badge_tooltip %>">
-                            Suspendido
-                        </span>
-                    <% } %>
-                </div>
+            <div>
+                <%- include('agenda/_card_header', dayContext) %>
+                <%- include('agenda/_calendar_grid', dayContext) %>
+                <%- include('agenda/_forced_tasks', dayContext) %>
+                <%- include('agenda/_hourly_modal', dayContext) %>
             </div>
-
-            <!-- SUBTÍTULO COMPACTO METEOROLÓGICO -->
-            <div class="font-mono-jb text-[11px] text-[var(--w-t2)] px-5 pb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                <span class="text-[var(--w-t1)]"><%= eval.weather_summary ? eval.weather_summary.min_temp : 0 %>°–<%= eval.weather_summary ? eval.weather_summary.max_temp : 0 %>°C</span>
-                <span>·</span>
-                <span class="text-[var(--w-t1)]">Humedad <%= eval.weather_summary ? eval.weather_summary.min_humidity : 0 %>%–<%= eval.weather_summary ? eval.weather_summary.max_humidity : 0 %>%</span>
-                <% if (eval.weather_summary && eval.weather_summary.total_rain_mm > 0) { %>
-                    <span>·</span>
-                    <span class="text-[var(--w-rust)] font-semibold">Lluvia <%= eval.weather_summary.total_rain_mm %> mm</span>
-                <% } %>
-            </div>
-
-            <!-- PREPARACIÓN DE AUDITORÍA HORARIA PARA EL ARCO TIPO VELOCÍMETRO -->
-            <%
-                let hourly_items = eval.hourly_audit;
-                if ((!hourly_items || hourly_items.length === 0) && eval.hourly_forecast && typeof getHourlyClimateAudit === 'function') {
-                    let rawForecasts = eval.hourly_forecast;
-                    if (typeof rawForecasts === 'string') {
-                        try { rawForecasts = JSON.parse(rawForecasts); } catch (e) { rawForecasts = []; }
-                    }
-                    if (Array.isArray(rawForecasts) && rawForecasts.length > 0) {
-                        hourly_items = getHourlyClimateAudit(rawForecasts, eval.window, eval.scheduled_tasks || [], app_settings);
-                    }
-                }
-
-                const r = 120;
-                const cx = 160;
-                const cy = 145;
-                const totalHours = Math.max(1, end_limit - start_limit);
-
-                let arcSlots = [];
-                for (let i = 0; i < totalHours; i++) {
-                    let h = start_limit + i;
-
-                    let item = null;
-                    if (hourly_items && hourly_items.length > 0) {
-                        item = hourly_items.find(x => (x.forecast ? x.forecast.hour : x.hour) === h);
-                    }
-                    let f = item ? (item.forecast || item) : null;
-
-                    let isRain = f ? (f.precipitation_mm >= app_settings.min_rain_precipitation_mm) : false;
-                    let isHumid = f ? (f.relative_humidity > app_settings.max_humidity_percent) : false;
-                    let isClimateBlocked = isRain || isHumid;
-
-                    let isScheduled = false;
-                    if (item && (item.is_active_work || item.is_scheduled)) {
-                        isScheduled = true;
-                    } else if (is_viable && eval.window && h >= eval.window.start_hour && h < eval.window.end_hour) {
-                        isScheduled = true;
-                    }
-
-                    let slotState = 'free';
-                    if (isScheduled) {
-                        slotState = 'scheduled';
-                    } else if (isClimateBlocked) {
-                        slotState = 'blocked';
-                    } else {
-                        slotState = 'free';
-                    }
-
-                    let a1 = Math.PI - (i / totalHours) * Math.PI;
-                    let a2 = Math.PI - ((i + 1) / totalHours) * Math.PI;
-
-                    let x1 = (cx + r * Math.cos(a1)).toFixed(2);
-                    let y1 = (cy - r * Math.sin(a1)).toFixed(2);
-                    let x2 = (cx + r * Math.cos(a2)).toFixed(2);
-                    let y2 = (cy - r * Math.sin(a2)).toFixed(2);
-
-                    let color = 'var(--w-free)';
-                    if (slotState === 'scheduled') color = 'var(--w-amber)';
-                    else if (slotState === 'blocked') color = 'var(--w-blocked-hour)';
-
-                    arcSlots.push({
-                        h,
-                        slotState,
-                        color,
-                        d: `M ${x1} ${y1} A ${r} ${r} 0 0 1 ${x2} ${y2}`
-                    });
-                }
-
-                // Generación de marcas de graduación u horas en el arco
-                let labelStep = 2;
-                if (totalHours <= 6) labelStep = 1;
-                else if (totalHours > 12) labelStep = 3;
-
-                let ticks = [];
-                for (let i = 0; i <= totalHours; i++) {
-                    let h = start_limit + i;
-                    let angle = Math.PI - (i / totalHours) * Math.PI;
-
-                    let rIn = 114;
-                    let rOut = 124;
-                    let xIn = (cx + rIn * Math.cos(angle)).toFixed(2);
-                    let yIn = (cy - rIn * Math.sin(angle)).toFixed(2);
-                    let xOut = (cx + rOut * Math.cos(angle)).toFixed(2);
-                    let yOut = (cy - rOut * Math.sin(angle)).toFixed(2);
-
-                    let showLabel = (i === 0 || i === totalHours || (i % labelStep === 0));
-
-                    let rLbl = 98;
-                    let xLbl = (cx + rLbl * Math.cos(angle)).toFixed(2);
-                    let yLbl = (cy - rLbl * Math.sin(angle) + 3.5).toFixed(2);
-
-                    ticks.push({
-                        h,
-                        xIn, yIn, xOut, yOut,
-                        showLabel,
-                        xLbl, yLbl,
-                        labelStr: `${String(h).padStart(2, '0')}:00`
-                    });
-                }
-            %>
-
-            <!-- ARCO METEOROLÓGICO VELOCÍMETRO -->
-            <div class="px-3 pt-1 pb-3">
-                <svg class="arc block w-full max-w-[260px] sm:max-w-[280px] mx-auto overflow-visible" viewBox="0 0 320 165"
-                     data-date="<%= date_iso %>"
-                     data-shift-start="<%= start_limit %>"
-                     data-shift-end="<%= end_limit %>">
-                    <defs>
-                        <filter id="glow-amber-<%= date_iso %>" x="-20%" y="-20%" width="140%" height="140%">
-                            <feDropShadow dx="0" dy="0" stdDeviation="2.5" flood-color="#f59e0b" flood-opacity="0.6"/>
-                        </filter>
-                    </defs>
-
-                    <!-- Arc background track (fino) -->
-                    <path d="M 40 145 A 120 120 0 0 1 280 145" fill="none" stroke="var(--w-s2)" stroke-width="2.5" opacity="0.6"/>
-
-                    <!-- Arc 3-state segments (línea fina tipo velocímetro) -->
-                    <% arcSlots.forEach(function(slot) { %>
-                        <path d="<%= slot.d %>" fill="none" stroke="<%= slot.color %>" stroke-width="3.5" stroke-linecap="butt"
-                              <%- slot.slotState === 'scheduled' ? 'filter="url(#glow-amber-' + date_iso + ')"' : '' %> />
-                    <% }); %>
-
-                    <!-- Marcas de graduación y horas sobre el arco -->
-                    <g stroke="var(--w-t2)" opacity="0.35" stroke-width="1">
-                        <% ticks.forEach(function(tick) { %>
-                            <line x1="<%= tick.xIn %>" y1="<%= tick.yIn %>" x2="<%= tick.xOut %>" y2="<%= tick.yOut %>" />
-                        <% }); %>
-                    </g>
-
-                    <g fill="var(--w-t2)" font-family="JetBrains Mono, ui-monospace, monospace" font-size="9.5" font-weight="600">
-                        <% ticks.forEach(function(tick) { %>
-                            <% if (tick.showLabel) { %>
-                                <text x="<%= tick.xLbl %>" y="<%= tick.yLbl %>" text-anchor="middle"><%= tick.labelStr %></text>
-                            <% } %>
-                        <% }); %>
-                    </g>
-
-                    <!-- Marker Dot para hora actual -->
-                    <g class="sun-marker" style="display: none;">
-                        <circle class="sun-outer" cx="160" cy="25" r="10" fill="var(--w-amber)" opacity="0.35" filter="url(#glow-amber-<%= date_iso %>)"/>
-                        <circle class="sun-inner" cx="160" cy="25" r="4.5" fill="var(--w-amber-hi)"/>
-                    </g>
-                </svg>
-            </div>
-
-            <!-- UNIFICADA LISTA DE TAREAS AGENDADAS CON RANGOS HORARIOS EXACTOS -->
-            <% if (is_viable && eval.timeline && eval.timeline.length > 0) { %>
-                <div class="crono px-4 sm:px-5 pt-3 pb-3.5 border-t border-[var(--w-bd)]">
-                    <h4 class="text-[10.5px] font-semibold tracking-widest text-[var(--w-t2)] uppercase mb-2 flex items-center justify-between">
-                        <span>Tareas Agendadas</span>
-                    </h4>
-                    <% eval.timeline.forEach(function(act) { %>
-                        <% 
-                            const isSetup = act.title.includes('Setup') || act.title.includes('Preparación');
-                            const isTeardown = act.title.includes('Teardown') || act.title.includes('Guardado') || act.title.includes('Cierre');
-                            const isCuring = act.title.includes('Curado') || act.title.includes('Secado');
-                            const displayTitle = (act.title || '').replace(/^[^\p{L}\p{N}#\[]+/u, '').trim();
-                        %>
-                        <div class="agenda-task-row">
-                            <!-- Mobile Line 1: Range + Duration -->
-                            <div class="flex items-center justify-between w-full sm:hidden">
-                                <span class="time"><%= act.time_range %></span>
-                                <span class="dur"><%= isCuring ? ('+' + act.duration) : act.duration %></span>
-                            </div>
-
-                            <!-- Desktop Time Column -->
-                            <span class="time hidden sm:inline-block"><%= act.time_range %></span>
-
-                            <!-- Task Title & Project Badge (Without Icon) -->
-                            <span class="task-title flex items-center gap-1.5 min-w-0 flex-1">
-                                <% if (act.project_name) { %>
-                                    <span class="text-[var(--w-amber-hi)] font-bold text-[10px] bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/20 px-1.5 py-0.5 rounded shrink-0 max-w-[45%] sm:max-w-[40%] truncate" title="<%= act.project_name %>">[<%= act.project_name %>]</span>
-                                <% } %>
-                                <span class="truncate text-[var(--w-t1)] text-xs font-medium min-w-0 flex-1" title="<%= displayTitle %>"><%= displayTitle %></span>
-                            </span>
-
-                            <!-- Desktop Duration Column -->
-                            <span class="dur hidden sm:inline-block"><%= isCuring ? ('+' + act.duration) : act.duration %></span>
-                        </div>
-                    <% }); %>
-                </div>
-            <% } else { %>
-                <div class="note mx-4 sm:mx-5 mb-3.5 p-3 rounded-xl text-xs text-[var(--w-t2)] border border-[var(--w-bd)] bg-[var(--w-s2)]/40">
-                    <b class="text-[var(--w-sky)]">Estado de jornada — </b> 
-                    <%= eval.unassigned_reason || eval.cutoff_reason || eval.reason || 'Sin tareas agendadas para esta jornada.' %>
-                </div>
-            <% } %>
-
-            <!-- TAREAS FORZADAS (si existen) -->
-            <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
-                <div class="px-4 sm:px-5 pb-3">
-                    <p class="text-[10.5px] text-[var(--w-amber-hi)] font-semibold uppercase tracking-wider mb-2">Tareas Forzadas Manuales</p>
-                    <div class="space-y-1.5">
-                        <% eval.forced_tasks.forEach(function(ft) { %>
-                            <div class="flex items-center justify-between gap-2 bg-[var(--w-amber)]/10 border border-[var(--w-amber)]/30 rounded-xl px-3 py-2 text-xs">
-                                <span class="font-medium text-[var(--w-t1)] truncate"><%= ft.task ? ft.task.title : 'Tarea' %></span>
-                                <span class="font-mono-jb text-[var(--w-amber-hi)] shrink-0"><%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
-                            </div>
-                        <% }); %>
-                    </div>
-                </div>
-            <% } %>
-
-            <!-- PANEL DESPLEGABLE DE CLIMA 24H (Se activa al hacer clic en el ícono de clima o anillo) -->
-            <% if (hourly_items && hourly_items.length > 0) { %>
-                <% const hourly_panel_id = 'hourly-panel-' + date_iso; %>
-                <div id="<%= hourly_panel_id %>" class="hidden border-t border-[var(--w-bd)] bg-[var(--w-s2)]/90 p-3 sm:p-4 text-xs shadow-inner rounded-b-2xl">
-                    <div class="flex flex-wrap items-center justify-between gap-2 mb-2.5 pb-2 border-b border-[var(--w-bd)] text-[11px] sm:text-xs">
-                        <span class="font-semibold text-[var(--w-t1)] uppercase tracking-wider flex items-center gap-1.5">
-                            <span><%= ico_emoji %></span>
-                            Pronóstico Horario (24h) — <%= date_str %>
-                        </span>
-                        <div class="flex flex-wrap items-center gap-2 text-[10px] font-mono-jb text-[var(--w-t2)]">
-                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[var(--w-warn)] shrink-0"></span> Humedad &gt; <%= app_settings.max_humidity_percent %>%</span>
-                            <span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[var(--w-rust)] shrink-0"></span> Lluvia &ge; <%= app_settings.min_rain_precipitation_mm %>mm</span>
-                        </div>
-                    </div>
-
-                    <div class="max-h-64 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
-                        <% hourly_items.forEach(function(item) { %>
-                            <%
-                                const f = item.forecast || item;
-                                const hLabel = item.time_label || (String(f.hour).padStart(2, '0') + ':00');
-                                const isRain = f.precipitation_mm >= app_settings.min_rain_precipitation_mm;
-                                const isProbWarning = (f.precipitation_probability >= 50) && !isRain;
-                                const isHumid = f.relative_humidity > app_settings.max_humidity_percent;
-                                const isCuring = item.is_curing;
-                                const isActive = item.is_active_work;
-
-                                let rowBg = 'bg-[var(--w-s1)] border-[var(--w-bd)] text-[var(--w-t2)]';
-                                if (isRain) {
-                                    rowBg = 'bg-[var(--w-rust)]/15 border-[var(--w-rust)]/40 text-[var(--w-t1)] font-semibold';
-                                } else if (isHumid) {
-                                    rowBg = 'bg-[var(--w-warn)]/15 border-[var(--w-warn)]/40 text-[var(--w-t1)]';
-                                } else if (isProbWarning) {
-                                    rowBg = 'bg-[var(--w-warn)]/10 border-[var(--w-warn)]/30 text-[var(--w-t1)]';
-                                } else if (isActive) {
-                                    rowBg = 'bg-[var(--w-amber)]/10 border-[var(--w-amber)]/30 text-[var(--w-t1)]';
-                                } else if (isCuring) {
-                                    rowBg = 'bg-[var(--w-sky)]/10 border-[var(--w-sky)]/30 text-[var(--w-t1)]';
-                                }
-                            %>
-                            <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border text-xs transition-colors min-w-0 <%= rowBg %>">
-                                <div class="flex items-center gap-2 shrink-0">
-                                    <span class="font-mono-jb font-bold text-[var(--w-t1)]"><%= hLabel %></span>
-                                    <% if (item.phase_label) { %>
-                                        <% if (item.phase === 'WORK') { %>
-                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-amber)]/20 text-[var(--w-amber-hi)] border border-[var(--w-amber)]/30 px-1.5 py-0.5 rounded shrink-0">TRABAJO</span>
-                                        <% } else if (item.phase === 'SETUP') { %>
-                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-amber)]/20 text-[var(--w-amber-hi)] border border-[var(--w-amber)]/30 px-1.5 py-0.5 rounded shrink-0">PREP</span>
-                                        <% } else if (item.phase === 'TEARDOWN') { %>
-                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-sky)]/20 text-[var(--w-sky)] border border-[var(--w-sky)]/30 px-1.5 py-0.5 rounded shrink-0">CIERRE</span>
-                                        <% } else if (item.phase === 'CURING') { %>
-                                            <span class="text-[9px] font-mono-jb font-bold bg-[var(--w-sky)]/20 text-[var(--w-sky)] border border-[var(--w-sky)]/30 px-1.5 py-0.5 rounded shrink-0">CURADO</span>
-                                        <% } %>
-                                    <% } %>
-                                </div>
-
-                                <div class="flex items-center justify-end gap-2.5 font-mono-jb text-[11px] sm:text-xs min-w-0 shrink-0">
-                                    <span class="text-[var(--w-t2)] shrink-0"><%= (f.temperature_c != null) ? f.temperature_c.toFixed(1) : 0 %>°C</span>
-                                    <span class="shrink-0 <%= isHumid ? 'text-[var(--w-warn)] font-bold' : 'text-[var(--w-t2)]' %>">
-                                        💧 <%= f.relative_humidity %>%
-                                    </span>
-                                    <span class="shrink-0 <%= isRain ? 'text-[var(--w-rust)] font-bold' : (isProbWarning ? 'text-[var(--w-warn)]' : 'text-[var(--w-t2)]') %>">
-                                        🌧️ <%= f.precipitation_mm %>mm (<%= f.precipitation_probability %>%)
-                                    </span>
-                                </div>
-                            </div>
-                        <% }); %>
-                    </div>
-                </div>
-            <% } %>
 
         </article>
 
-        <!-- MODAL EDITOR DE DÍA -->
-        <div id="day-editor-<%= date_iso %>" class="fixed inset-0 z-[120] bg-canvas/85 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
-            <div class="bg-surface border-t sm:border border-hairline rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[85vh] sm:max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-panel relative">
-                <div class="w-12 h-1 bg-hairline rounded-full mx-auto mb-3 sm:hidden"></div>
-                <div class="flex items-center justify-between border-b border-hairline pb-4 mb-5">
-                    <h3 class="font-display text-lg font-semibold text-ink">Editar <%= date_str %></h3>
-                    <button type="button" onclick="toggleDayEditor('<%= date_iso %>')" aria-label="Cerrar" class="text-ink3 hover:text-ink w-11 h-11 sm:w-8 sm:h-8 flex items-center justify-center rounded-md bg-surface2 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0">
-                        <svg class="w-4 h-4"><use href="#i-close"/></svg>
-                    </button>
-                </div>
-
-                <form action="/day-override/<%= date_iso %>/save" method="post" onsubmit="submitDayOverrideForm(event)" class="space-y-4">
-                    <div>
-                        <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Estado del día</label>
-                        <select name="force_status" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer transition-colors">
-                            <option value="" <%= (!override || !override.force_status) ? 'selected' : '' %>>Automático (según clima)</option>
-                            <option value="VIABLE" <%= (override && override.force_status === 'VIABLE') ? 'selected' : '' %>>Forzar viable</option>
-                            <option value="BLOCKED" <%= (override && override.force_status === 'BLOCKED') ? 'selected' : '' %>>Forzar bloqueado</option>
-                        </select>
-                    </div>
-
-                    <div>
-                        <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Motivo (opcional, se muestra si está bloqueado)</label>
-                        <input type="text" name="note" value="<%= (override && override.note) ? override.note : '' %>" placeholder="Ej. Viaje, evento familiar..." class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Inicio jornada (este día)</label>
-                            <input type="number" min="0" max="23" name="custom_start_hour" value="<%= (override && override.custom_start_hour != null) ? override.custom_start_hour : '' %>" placeholder="<%= app_settings.operational_start_hour %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
-                        </div>
-                        <div>
-                            <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Fin jornada (este día)</label>
-                            <input type="number" min="0" max="23" name="custom_end_hour" value="<%= (override && override.custom_end_hour != null) ? override.custom_end_hour : '' %>" placeholder="<%= app_settings.operational_end_hour %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
-                        </div>
-                    </div>
-                    <p class="text-[11px] text-ink3 -mt-2">Vacío = usa la jornada general configurada.</p>
-
-                    <% if (eval.scheduled_tasks && eval.scheduled_tasks.length > 0) { %>
-                    <div>
-                        <label class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Tareas agendadas este día</label>
-                        <div class="space-y-2 bg-canvas/40 border border-hairline rounded-lg p-3">
-                            <% eval.scheduled_tasks.forEach(function(t) { %>
-                            <label class="flex items-center gap-2.5 cursor-pointer min-h-[44px] sm:min-h-0 py-1">
-                                <input type="checkbox" name="removed_task_ids" value="<%= t.id %>" class="w-5 h-5 sm:w-4 sm:h-4 rounded border-hairline bg-surface2 text-rust focus:ring-rust">
-                                <span class="text-xs text-ink2">Quitar <strong class="text-ink font-medium"><%= t.title %></strong> de este día</span>
-                            </label>
-                            <% }); %>
-                        </div>
-                    </div>
-                    <% } %>
-
-                    <div class="flex items-center gap-3 pt-3 border-t border-hairline">
-                        <button type="submit" class="flex-1 bg-brass hover:bg-brassdim text-canvas font-semibold py-3 sm:py-2.5 rounded-lg text-sm transition-colors min-h-[44px] sm:min-h-0">Guardar</button>
-                    </div>
-                </form>
-
-                <% if (override && override.id) { %>
-                <form action="/day-override/<%= date_iso %>/clear" method="post" onsubmit="submitClearDayOverrideForm(event)" class="mt-2">
-                    <button type="submit" class="w-full text-center text-xs text-ink3 hover:text-rust py-2.5 min-h-[44px] sm:min-h-0 flex items-center justify-center">Quitar todos los ajustes manuales de este día</button>
-                </form>
-                <% } %>
-
-                <div class="pt-4 mt-4 border-t border-hairline">
-                    <label class="block text-[11px] font-semibold text-ink3 mb-2 uppercase tracking-wide">Tareas forzadas (se saltan clima y ventana)</label>
-
-                    <% if (eval.forced_tasks && eval.forced_tasks.length > 0) { %>
-                    <div class="space-y-2 mb-3">
-                        <% eval.forced_tasks.forEach(function(ft) { %>
-                        <div class="flex items-center justify-between gap-2 bg-brass/5 border border-brassdim/30 rounded-lg px-3 py-2">
-                            <span class="text-xs text-ink2">⚡ <strong class="text-ink font-medium"><%= ft.task ? ft.task.title : 'Tarea' %></strong> a las <%= String(ft.forced_start_hour).padStart(2, '0') %>:00</span>
-                            <form action="/day-override/forced-task/<%= ft.id || ft.forced_id %>/delete" method="post" onsubmit="submitDeleteForcedTaskForm(event)">
-                                <button type="submit" aria-label="Quitar forzada" class="w-9 h-9 sm:w-6 sm:h-6 rounded-md text-rust hover:bg-rust/10 flex items-center justify-center min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0"><svg class="w-3.5 h-3.5"><use href="#i-close"/></svg></button>
-                            </form>
-                        </div>
-                        <% }); %>
-                    </div>
-                    <% } %>
-
-                    <form action="/day-override/<%= date_iso %>/force-task" method="post" onsubmit="submitForceTaskForm(event)" class="flex flex-col sm:flex-row sm:items-end gap-2">
-                        <div class="flex-1 min-w-0">
-                            <label class="block text-[10px] text-ink3 mb-1">Tarea</label>
-                            <select name="task_id" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-lg px-2 py-2 text-xs focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 cursor-pointer transition-colors">
-                                <% tasks.forEach(function(t) { %>
-                                <option value="<%= t.id %>"><%= t.title %></option>
-                                <% }); %>
-                            </select>
-                        </div>
-                        <div class="w-full sm:w-20 shrink-0">
-                            <label class="block text-[10px] text-ink3 mb-1">Hora</label>
-                            <input type="number" name="forced_start_hour" min="0" max="23" value="9" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-2 py-2 text-xs focus:outline-none focus:border-brass min-h-[44px] sm:min-h-0 transition-colors">
-                        </div>
-                        <button type="submit" class="bg-chalk hover:bg-chalk/80 text-canvas font-semibold px-4 py-2.5 rounded-lg text-xs transition-colors shrink-0 min-h-[44px] sm:min-h-0 flex items-center justify-center">Forzar</button>
-                    </form>
-                </div>
-            </div>
-        </div>
+        <%- include('agenda/_day_editor_modal', dayContext) %>
 
         <% }); %>
 

@@ -47,7 +47,10 @@ export class MockWeatherService {
         relative_humidity: humidity,
         precipitation_mm: precipMm,
         precipitation_probability: precipPop,
-        cloud_cover_percent: cloudCover
+        cloud_cover_percent: cloudCover,
+        dew_point_c: Math.round((temp - ((100 - humidity) / 5)) * 10) / 10,
+        wind_gusts_kmh: 15,
+        wind_speed_kmh: 10
       });
     }
     return forecasts;
@@ -100,7 +103,7 @@ export class OpenMeteoWeatherService {
       return new Map(cached.data);
     }
 
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${this.lat}&longitude=${this.lon}&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,cloud_cover&timezone=auto&forecast_days=${numDays}`;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${this.lat}&longitude=${this.lon}&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,cloud_cover,dew_point_2m,wind_gusts_10m,wind_speed_10m&timezone=auto&forecast_days=${numDays}`;
 
     try {
       console.log(`[OpenMeteoWeatherService] Fetching real weather forecast from Open-Meteo API (lat:${this.lat}, lon:${this.lon}, days:${numDays})...`);
@@ -115,6 +118,9 @@ export class OpenMeteoWeatherService {
       const precipPops: number[] = data.hourly?.precipitation_probability || [];
       const precipMms: number[] = data.hourly?.precipitation || [];
       const clouds: number[] = data.hourly?.cloud_cover || [];
+      const dewPoints: number[] = data.hourly?.dew_point_2m || [];
+      const windGusts: number[] = data.hourly?.wind_gusts_10m || [];
+      const windSpeeds: number[] = data.hourly?.wind_speed_10m || [];
 
       const forecastMap = new Map<string, HourlyForecast[]>();
 
@@ -127,13 +133,22 @@ export class OpenMeteoWeatherService {
           forecastMap.set(datePart, []);
         }
 
+        const tempC = temps[i] ?? 20;
+        const hum = humidities[i] ?? 50;
+        const dewPoint = dewPoints[i] ?? (tempC - Math.max(2, (100 - hum) / 5));
+        const windGust = windGusts[i] ?? 10;
+        const windSpeed = windSpeeds[i] ?? 8;
+
         forecastMap.get(datePart)!.push({
           hour,
-          temperature_c: temps[i] ?? 20,
-          relative_humidity: humidities[i] ?? 50,
+          temperature_c: tempC,
+          relative_humidity: hum,
           precipitation_mm: precipMms[i] ?? 0,
           precipitation_probability: precipPops[i] ?? 0,
-          cloud_cover_percent: clouds[i] ?? 20
+          cloud_cover_percent: clouds[i] ?? 20,
+          dew_point_c: dewPoint,
+          wind_gusts_kmh: windGust,
+          wind_speed_kmh: windSpeed
         });
       }
 

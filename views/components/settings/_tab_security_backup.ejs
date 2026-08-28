@@ -1,0 +1,35 @@
+<!-- TAB 5: SEGURIDAD Y MANTENIMIENTO -->
+<div id="tab-content-security" class="settings-tab-content hidden space-y-4">
+    <div class="flex flex-col sm:flex-row gap-2">
+        <button type="button" id="btn-toggle-change-password" onclick="toggleChangePasswordSection()" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5">
+            <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg> Cambiar Contraseña
+        </button>
+        <button type="button" id="btn-trigger-manual-backup" onclick="triggerManualBackup(this)" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5">
+            <svg class="w-3.5 h-3.5"><use href="#i-download"/></svg> Crear Backup (WAL)
+        </button>
+    </div>
+
+    <div id="backup-action-feedback" class="hidden text-xs px-3 py-2 rounded-lg bg-surface2 border border-hairline text-ink2"></div>
+
+    <!-- Panel de Cambio de Contraseña -->
+    <div id="change-password-panel" class="hidden p-3 bg-surface2 border border-hairline rounded-lg space-y-3">
+        <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-ink">Actualizar Contraseña</span>
+            <button type="button" onclick="toggleChangePasswordSection(false)" class="text-ink3 hover:text-ink text-xs">Cancelar</button>
+        </div>
+        <div>
+            <label class="block text-[10px] text-ink3 uppercase font-semibold mb-1">Nueva Contraseña</label>
+            <input type="password" id="input-new-password" placeholder="Mínimo 6 caracteres" class="w-full bg-surface border border-hairline text-ink rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brass">
+        </div>
+        <div>
+            <label class="block text-[10px] text-ink3 uppercase font-semibold mb-1">Confirmar Nueva Contraseña</label>
+            <input type="password" id="input-new-password-confirm" placeholder="Repite la nueva contraseña" class="w-full bg-surface border border-hairline text-ink rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brass">
+        </div>
+        <div id="change-password-feedback" class="hidden text-xs px-2 py-1 rounded bg-surface border border-hairline"></div>
+        <div class="flex justify-end pt-1">
+            <button type="button" id="btn-submit-change-password" onclick="submitChangePassword(this)" class="bg-brass hover:bg-brassdim text-canvas font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors">
+                Actualizar Contraseña
+            </button>
+        </div>
+    </div>
+</div>

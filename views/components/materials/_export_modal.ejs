@@ -1,0 +1,118 @@
+<!-- MODAL: EXPORTAR INVENTARIO MULTI-FORMATO -->
+<div id="ai-export-modal" class="fixed inset-0 bg-canvas/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-surface border border-hairline rounded-2xl w-full max-w-3xl p-6 shadow-2xl space-y-4 max-h-[92vh] flex flex-col">
+        <div class="flex items-center justify-between border-b border-hairline pb-3 shrink-0">
+            <div>
+                <h3 class="font-display text-lg font-bold text-ink flex items-center gap-2">
+                    <svg class="w-5 h-5 text-brass"><use href="#i-terminal"/></svg>
+                    Exportar Inventario del Taller
+                </h3>
+                <p class="text-xs text-ink2 mt-0.5">Selecciona el formato deseado, filtra categorías y copia o descarga el inventario.</p>
+            </div>
+            <button type="button" onclick="closeAiExportModal()" class="text-ink3 hover:text-ink">
+                <svg class="w-5 h-5"><use href="#i-close"/></svg>
+            </button>
+        </div>
+
+        <!-- SELECTOR DE FORMATO -->
+        <div class="flex items-center gap-1.5 p-1 bg-surface2/70 rounded-xl border border-hairline/70 shrink-0 overflow-x-auto">
+            <button type="button" onclick="switchExportFormat('prompt')" id="export-tab-prompt" class="export-format-btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all bg-brass text-canvas shadow-sm whitespace-nowrap">
+                <svg class="w-3.5 h-3.5"><use href="#i-terminal"/></svg>
+                <span>Prompt (Markdown)</span>
+            </button>
+            <button type="button" onclick="switchExportFormat('csv')" id="export-tab-csv" class="export-format-btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all text-ink2 hover:text-ink whitespace-nowrap">
+                <svg class="w-3.5 h-3.5"><use href="#i-list"/></svg>
+                <span>Tabla (CSV)</span>
+            </button>
+            <button type="button" onclick="switchExportFormat('json')" id="export-tab-json" class="export-format-btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all text-ink2 hover:text-ink whitespace-nowrap">
+                <svg class="w-3.5 h-3.5"><use href="#i-mark"/></svg>
+                <span>JSON</span>
+            </button>
+            <button type="button" onclick="switchExportFormat('text')" id="export-tab-text" class="export-format-btn flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all text-ink2 hover:text-ink whitespace-nowrap">
+                <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg>
+                <span>Texto Plano</span>
+            </button>
+        </div>
+
+        <div class="space-y-3 overflow-y-auto flex-1 pr-1">
+            <!-- FILTROS PRINCIPALES Y CHIPS DE SUB-CATEGORIAS -->
+            <div class="bg-surface2/70 p-3.5 rounded-xl border border-hairline/80 space-y-3 text-xs">
+                <!-- SECCIÓN HERRAMIENTAS -->
+                <div class="space-y-2 pb-2.5 border-b border-hairline/60">
+                    <div class="flex items-center justify-between flex-wrap gap-2">
+                        <label class="flex items-center gap-2 cursor-pointer font-bold text-ink select-none">
+                            <input type="checkbox" id="ai-opt-tools" checked onchange="toggleAiGroupMain('tools', this.checked)" class="accent-brass rounded">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-ink2"><use href="#i-wrench"/></svg>
+                                Herramientas de Taller
+                            </span>
+                        </label>
+                        <div id="ai-tools-quick-actions" class="flex items-center gap-2 text-[11px]">
+                            <button type="button" onclick="setAllChips('tools', true)" class="text-brass hover:underline">Todas</button>
+                            <span class="text-hairline">|</span>
+                            <button type="button" onclick="setAllChips('tools', false)" class="text-ink3 hover:text-ink">Ninguna</button>
+                        </div>
+                    </div>
+
+                    <!-- CHIPS HERRAMIENTAS -->
+                    <div id="ai-tool-chips-container" class="flex flex-wrap gap-1.5 pt-1">
+                        <!-- Chips renderizados dinámicamente -->
+                    </div>
+                </div>
+
+                <!-- SECCIÓN MATERIALES EN STOCK -->
+                <div class="space-y-2 pb-2.5 border-b border-hairline/60">
+                    <div class="flex items-center justify-between flex-wrap gap-2">
+                        <label class="flex items-center gap-2 cursor-pointer font-bold text-ink select-none">
+                            <input type="checkbox" id="ai-opt-stock" checked onchange="toggleAiGroupMain('stock', this.checked)" class="accent-brass rounded">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-3.5 h-3.5 text-ink2"><use href="#i-box"/></svg>
+                                Materiales en Stock / En Taller
+                            </span>
+                        </label>
+                        <div id="ai-stock-quick-actions" class="flex items-center gap-2 text-[11px]">
+                            <button type="button" onclick="setAllChips('stock', true)" class="text-brass hover:underline">Todas</button>
+                            <span class="text-hairline">|</span>
+                            <button type="button" onclick="setAllChips('stock', false)" class="text-ink3 hover:text-ink">Ninguna</button>
+                        </div>
+                    </div>
+
+                    <!-- CHIPS MATERIALES -->
+                    <div id="ai-stock-chips-container" class="flex flex-wrap gap-1.5 pt-1">
+                        <!-- Chips renderizados dinámicamente -->
+                    </div>
+                </div>
+
+                <!-- SECCIÓN POR COMPRAR -->
+                <div class="pt-0.5">
+                    <label class="flex items-center gap-2 cursor-pointer font-bold text-ink select-none">
+                        <input type="checkbox" id="ai-opt-tobuy" checked onchange="generateActiveExportContent()" class="accent-brass rounded">
+                        <span class="flex items-center gap-1.5">
+                            <span class="w-2 h-2 rounded-full bg-rust inline-block"></span>
+                            Lista Por Comprar y Materiales Agotados
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <div>
+                <textarea id="ai-export-textarea" readonly rows="10" class="w-full bg-surface2 border border-hairline font-mono text-xs text-ink rounded-xl p-3.5 focus:outline-none focus:border-brass leading-relaxed select-all"></textarea>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-2 border-t border-hairline shrink-0 flex-wrap gap-2">
+            <span id="ai-copy-toast" class="text-xs font-bold text-moss hidden flex items-center gap-1.5">
+                <svg class="w-4 h-4"><use href="#i-check"/></svg> ¡Copiado al portapapeles exitosamente!
+            </span>
+            <div class="flex items-center gap-2 ml-auto">
+                <button type="button" onclick="closeAiExportModal()" class="px-3.5 py-2 text-xs font-semibold text-ink2 hover:text-ink">Cerrar</button>
+                <button type="button" onclick="downloadExportFile()" class="bg-surface2 hover:bg-hairline border border-hairline text-ink px-4 py-2 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5 shadow-xs">
+                    <svg class="w-4 h-4 text-ink2"><use href="#i-download"/></svg> Descargar Archivo
+                </button>
+                <button type="button" onclick="copyAiExportToClipboard()" class="bg-brass hover:bg-brassdim text-canvas px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm">
+                    <svg class="w-4 h-4"><use href="#i-copy"/></svg> Copiar al Portapapeles
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

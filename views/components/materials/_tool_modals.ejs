@@ -1,0 +1,106 @@
+<!-- FORMULARIO NUEVA HERRAMIENTA (OCULTO POR DEFECTO) -->
+<div id="add-tool-form-card" class="hidden bg-surface border border-brass/40 rounded-2xl p-5 shadow-panel space-y-4">
+    <div class="flex items-center justify-between border-b border-hairline pb-3">
+        <h3 class="font-display text-base font-semibold text-ink flex items-center gap-2">
+            <svg class="w-4 h-4 text-brass"><use href="#i-plus"/></svg> Registrar Nueva Herramienta
+        </h3>
+        <button type="button" onclick="toggleAddToolForm()" class="text-ink3 hover:text-ink">
+            <svg class="w-5 h-5"><use href="#i-close"/></svg>
+        </button>
+    </div>
+
+    <div id="add-tool-error" class="hidden p-3 rounded-xl bg-rust/10 border border-rust/30 text-rust text-xs font-semibold"></div>
+
+    <form action="/tools/add" method="post" id="add-tool-form" onsubmit="submitAddToolForm(event)" class="space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="sm:col-span-1">
+                <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Nombre Herramienta</label>
+                <input type="text" name="name" required placeholder="Ej. Sierra de Inmersión Makita SP6000, Formón 18mm" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
+            </div>
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Categoría</label>
+                <select name="category" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass cursor-pointer transition-colors">
+                    <option value="Herramientas Eléctricas">Herramientas Eléctricas</option>
+                    <option value="Herramientas Manuales" selected>Herramientas Manuales</option>
+                    <option value="Medición y Trazado">Medición y Trazado</option>
+                    <option value="Prensas y Sujeción">Prensas y Sujeción</option>
+                    <option value="Accesorios y Plantillas">Accesorios y Plantillas</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Estado</label>
+                <select name="status" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass font-semibold cursor-pointer transition-colors">
+                    <option value="available" selected class="text-moss">Disponible en Taller</option>
+                    <option value="in_use" class="text-amber-500">En Uso / Mantención</option>
+                    <option value="to_buy" class="text-rust">Por Comprar (Falta en Taller)</option>
+                    <option value="broken" class="text-rust">Dañada / Reemplazar</option>
+                </select>
+            </div>
+        </div>
+
+        <div>
+            <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Notas / Ubicación / Especificaciones</label>
+            <input type="text" name="notes" placeholder="Ej. Estante A, requiere afilado de hoja, disco 56T" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brass transition-colors">
+        </div>
+
+        <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onclick="toggleAddToolForm()" class="px-4 py-2 text-xs font-semibold text-ink2 hover:text-ink bg-surface2 hover:bg-hairline border border-hairline rounded-xl transition-colors">Cancelar</button>
+            <button type="submit" class="bg-brass hover:bg-brassdim text-canvas px-5 py-2 rounded-xl text-xs font-bold transition-colors">Guardar Herramienta</button>
+        </div>
+    </form>
+</div>
+
+<!-- MODAL: EDITAR HERRAMIENTA -->
+<div id="edit-tool-modal" class="fixed inset-0 bg-canvas/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-surface border border-hairline rounded-2xl w-full max-w-lg p-6 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between border-b border-hairline pb-3">
+            <h3 class="font-display text-lg font-bold text-ink flex items-center gap-2">
+                <svg class="w-5 h-5 text-brass"><use href="#i-edit"/></svg>
+                Editar Herramienta
+            </h3>
+            <button type="button" onclick="closeEditToolModal()" class="text-ink3 hover:text-ink">
+                <svg class="w-5 h-5"><use href="#i-close"/></svg>
+            </button>
+        </div>
+
+        <form id="edit-tool-form" onsubmit="submitEditToolForm(event)" class="space-y-4">
+            <input type="hidden" id="edit-tool-id">
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Nombre Herramienta</label>
+                <input type="text" id="edit-tool-name" required class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Categoría</label>
+                    <select id="edit-tool-category" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass cursor-pointer transition-colors">
+                        <option value="Herramientas Eléctricas">Herramientas Eléctricas</option>
+                        <option value="Herramientas Manuales">Herramientas Manuales</option>
+                        <option value="Medición y Trazado">Medición y Trazado</option>
+                        <option value="Prensas y Sujeción">Prensas y Sujeción</option>
+                        <option value="Accesorios y Plantillas">Accesorios y Plantillas</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Estado</label>
+                    <select id="edit-tool-status" class="w-full bg-surface2 hover:bg-[#223041] border border-hairline hover:border-brass/50 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass font-semibold cursor-pointer transition-colors">
+                        <option value="available">Disponible</option>
+                        <option value="in_use">En Uso / Mantención</option>
+                        <option value="to_buy">Por Comprar (Falta en Taller)</option>
+                        <option value="broken">Dañada / Reemplazar</option>
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-[11px] font-semibold text-ink3 uppercase mb-1">Notas / Especificaciones</label>
+                <input type="text" id="edit-tool-notes" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brass transition-colors">
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-3 border-t border-hairline">
+                <button type="button" onclick="closeEditToolModal()" class="px-4 py-2 text-xs font-semibold text-ink2 hover:text-ink bg-surface2 hover:bg-hairline border border-hairline rounded-xl transition-colors">Cancelar</button>
+                <button type="submit" class="bg-brass hover:bg-brassdim text-canvas px-5 py-2 rounded-xl text-xs font-bold transition-colors">Guardar Cambios</button>
+            </div>
+        </form>
+    </div>
+</div>

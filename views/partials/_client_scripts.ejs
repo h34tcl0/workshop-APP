@@ -1,0 +1,306 @@
+<div id="toast"
+    class="fixed bottom-6 right-6 left-6 sm:left-auto z-[100] bg-moss text-canvas px-5 py-3 rounded-lg font-semibold text-sm shadow-2xl hidden toast-animate">
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script>
+    async function refreshWorkshopView() {
+        try {
+            const res = await fetch(window.location.href);
+            if (res.ok) {
+                const html = await res.text();
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                const newQueue = doc.getElementById('workshop-tasks-card');
+                const oldQueue = document.getElementById('workshop-tasks-card');
+                if (newQueue && oldQueue) {
+                    oldQueue.innerHTML = newQueue.innerHTML;
+                }
+                const newAgenda = doc.getElementById('agenda-container');
+                const oldAgenda = document.getElementById('agenda-container');
+                if (newAgenda && oldAgenda) {
+                    oldAgenda.innerHTML = newAgenda.innerHTML;
+                }
+                const newBacklog = doc.getElementById('backlog-container');
+                const oldBacklog = document.getElementById('backlog-container');
+                if (newBacklog && oldBacklog) {
+                    oldBacklog.innerHTML = newBacklog.innerHTML;
+                }
+            }
+        } catch (e) {
+            console.error('Error refreshing workshop view:', e);
+        }
+    }
+    window.refreshWorkshopView = refreshWorkshopView;
+</script>
+<script src="/static/js/utils.js"></script>
+<script src="/static/js/backlog/taskActions.js"></script>
+<script src="/static/js/backlog/taskModal.js"></script>
+<script src="/static/js/backlog/dragDrop.js"></script>
+<script src="/static/js/backlog/taskImport.js"></script>
+<script src="/static/js/backlog/projectTemplates.js"></script>
+<script src="/static/js/backlog.js"></script>
+<script src="/static/js/agenda.js"></script>
+<script src="/static/js/settings/tabsModal.js"></script>
+<script src="/static/js/settings/formHandler.js"></script>
+<script src="/static/js/settings/telegramIntegrations.js"></script>
+<script src="/static/js/settings/securityBackup.js"></script>
+<script src="/static/js/settings.js?v=2"></script>
+<script src="/static/js/map.js"></script>
+<script>
+    async function completeTaskInline(event, taskId) {
+        event.preventDefault();
+        try {
+            const res = await fetch(`/tasks/${taskId}/complete`, {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+            });
+            if (res.ok) {
+                await refreshWorkshopView();
+            }
+        } catch (err) {
+            console.error('Error completing task inline:', err);
+        }
+    }
+
+    function closeEvalFeedbackModal(shouldReload = true) {
+        const modal = document.getElementById('eval-feedback-modal');
+        if (modal) modal.classList.add('hidden');
+        if (shouldReload) {
+            refreshWorkshopView();
+        }
+    }
+
+    function confirmEndShift() {
+        const modal = document.getElementById('end-shift-confirm-modal');
+        if (modal) modal.classList.remove('hidden');
+    }
+
+    function closeConfirmEndShiftModal() {
+        const modal = document.getElementById('end-shift-confirm-modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    async function executeEndShift() {
+        const btn = document.getElementById('confirm-end-shift-btn');
+        const origHTML = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `<svg class="w-4 h-4 animate-spin"><use href="#i-refresh"/></svg> Procesando...`;
+        }
+
+        try {
+            const res = await fetch('/api/checkin/end_shift', { method: 'POST' });
+            const data = await res.json();
+
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = origHTML;
+            }
+
+            closeConfirmEndShiftModal();
+
+            if (!data.success) {
+                alert('Error al finalizar jornada: ' + (data.error || 'Error desconocido'));
+                return;
+            }
+
+            if (data.alreadyResolved) {
+                if (typeof showToast === 'function') {
+                    showToast('ℹ️ El check-in de la jornada de hoy ya fue registrado previamente.');
+                } else {
+                    alert('ℹ️ El check-in de la jornada de hoy ya fue registrado previamente.');
+                }
+                return;
+            }
+
+            if (data.telegramSent) {
+                if (typeof showToast === 'function') {
+                    showToast('✅ Jornada finalizada. Check-in enviado por Telegram.');
+                } else {
+                    alert('✅ Jornada finalizada. Check-in enviado por Telegram.');
+                }
+                await refreshWorkshopView();
+            } else {
+                openEndShiftModal(data);
+            }
+        } catch (err) {
+            console.error('Error al solicitar término de jornada:', err);
+            alert('Error de conexión al terminar la jornada');
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = origHTML;
+            }
+            closeConfirmEndShiftModal();
+        }
+    }
+
+    function openEndShiftModal(data) {
+        const modal = document.getElementById('end-shift-modal');
+        const logIdInput = document.getElementById('end-shift-log-id');
+        const msgDiv = document.getElementById('end-shift-msg');
+        const tasksDiv = document.getElementById('end-shift-tasks-list');
+
+        if (!modal) return;
+
+        if (logIdInput) logIdInput.value = data.dailyLogId || '';
+
+        if (msgDiv) {
+            let reason = data.telegramError || 'No se pudo enviar la notificación por Telegram.';
+            msgDiv.innerHTML = `<p class="font-semibold text-amber-400 mb-1">⚠️ Notificación por Telegram no disponible</p><p class="text-[11px] text-ink2">${reason}</p><p class="mt-1.5 font-medium text-ink">Por favor marca a continuación cuáles de las tareas programadas para hoy lograste terminar:</p>`;
+        }
+
+        if (tasksDiv) {
+            const tasks = data.tasks || [];
+            if (tasks.length === 0) {
+                tasksDiv.innerHTML = `<p class="text-xs text-ink3 py-3 text-center">No hay tareas programadas para la jornada de hoy.</p>`;
+            } else {
+                tasksDiv.innerHTML = tasks.map(t => `
+                    <label class="flex items-center gap-3 p-3 bg-surface2 border border-hairline rounded-xl cursor-pointer hover:border-brass/50 transition-colors">
+                        <input type="checkbox" name="completedTasks" value="${t.id}" ${t.completed ? 'checked' : ''} class="w-4 h-4 rounded border-hairline text-brass focus:ring-brass accent-brass">
+                        <div class="min-w-0 flex-1">
+                            <p class="text-xs font-bold text-ink truncate">${t.title}</p>
+                            ${t.project_name ? `<p class="text-[10px] text-ink3 truncate">${t.project_name}</p>` : ''}
+                        </div>
+                        <span class="text-[10px] font-mono font-semibold px-2 py-0.5 rounded bg-surface border border-hairline text-brass shrink-0">${t.estimated_hours}h</span>
+                    </label>
+                `).join('');
+            }
+        }
+
+        modal.classList.remove('hidden');
+    }
+
+    function closeEndShiftModal() {
+        const modal = document.getElementById('end-shift-modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    async function submitEndShiftCheckin(event) {
+        event.preventDefault();
+        const form = document.getElementById('end-shift-form');
+        const submitBtn = document.getElementById('end-shift-submit-btn');
+        if (!form) return;
+
+        const dailyLogId = document.getElementById('end-shift-log-id')?.value;
+        const checkedBoxes = form.querySelectorAll('input[name="completedTasks"]:checked');
+        const completedTaskIds = Array.from(checkedBoxes).map(cb => parseInt(cb.value, 10));
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Guardando...';
+        }
+
+        try {
+            const res = await fetch('/api/checkin/resolve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dailyLogId: dailyLogId ? parseInt(dailyLogId, 10) : null,
+                    completedTaskIds
+                })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                closeEndShiftModal();
+                if (typeof showToast === 'function') {
+                    showToast('✅ Check-in guardado exitosamente.');
+                }
+                await refreshWorkshopView();
+            } else {
+                alert('Error al guardar el check-in: ' + (data.error || 'Error desconocido'));
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Guardar Check-in';
+                }
+            }
+        } catch (err) {
+            console.error('Error guardando check-in manual:', err);
+            alert('Error de conexión al guardar el check-in');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Guardar Check-in';
+            }
+        }
+    }
+
+    Object.assign(window, {
+        closeEvalFeedbackModal,
+        confirmEndShift,
+        closeConfirmEndShiftModal,
+        executeEndShift,
+        openEndShiftModal,
+        closeEndShiftModal,
+        submitEndShiftCheckin
+    });
+
+    document.addEventListener('DOMContentLoaded', function () {
+        const evalForm = document.getElementById('eval-form');
+        const evalBtn = document.getElementById('eval-btn');
+
+        if (evalForm) {
+            evalForm.addEventListener('submit', function (e) {
+                e.preventDefault();
+                
+                if (evalBtn) {
+                    evalBtn.disabled = true;
+                    evalBtn.innerHTML = `
+                        <svg class="animate-spin h-3.5 w-3.5 text-canvas inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    `;
+                }
+
+                fetch('/evaluation/force_run', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (evalBtn) {
+                        evalBtn.disabled = false;
+                        evalBtn.innerText = 'Evaluar';
+                    }
+
+                    const modal = document.getElementById('eval-feedback-modal');
+                    const statusEl = document.getElementById('eval-feedback-status');
+                    const reasonEl = document.getElementById('eval-feedback-reason');
+                    const tgText = document.getElementById('eval-feedback-tg-text');
+                    const calText = document.getElementById('eval-feedback-cal-text');
+
+                    if (modal && statusEl && reasonEl && tgText && calText) {
+                        const isViable = data.status === 'DAY_VIABLE';
+                        statusEl.innerText = isViable ? 'Día Viable' : 'Día Bloqueado';
+                        statusEl.className = isViable ? 'text-xs font-bold uppercase tracking-wide text-moss' : 'text-xs font-bold uppercase tracking-wide text-rust';
+                        reasonEl.innerText = data.reason || (isViable ? 'Ventana de trabajo habilitada.' : 'No se puede trabajar al aire libre.');
+
+                        tgText.innerText = data.telegramReason || (data.telegramSent ? '✅ Mensaje enviado a Telegram' : '⚠️ Telegram no configurado / omitido');
+                        calText.innerText = data.calendarReason || (data.calendarSynced ? '📅 Eventos agendados en Google Calendar' : 'ℹ️ Google Calendar no conectado');
+
+                        modal.classList.remove('hidden');
+                    } else {
+                        refreshWorkshopView();
+                    }
+                })
+                .catch(err => {
+                    console.error('Error in evaluation:', err);
+                    if (evalBtn) {
+                        evalBtn.disabled = false;
+                        evalBtn.innerText = 'Evaluar';
+                    }
+                    evalForm.submit();
+                });
+            });
+        }
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration error:', err));
+        }
+    });
+</script>

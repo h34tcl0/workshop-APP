@@ -1,0 +1,156 @@
+<script>
+// TOOL FORMS, CRUD & VIEW REFRESH
+function toggleAddToolForm() {
+    const card = document.getElementById('add-tool-form-card');
+    const err = document.getElementById('add-tool-error');
+    if (err) { err.classList.add('hidden'); err.textContent = ''; }
+    if (card) card.classList.toggle('hidden');
+}
+
+async function submitAddToolForm(e) {
+    e.preventDefault();
+    const form = e.target;
+    const errorContainer = document.getElementById('add-tool-error');
+    if (errorContainer) {
+        errorContainer.classList.add('hidden');
+        errorContainer.textContent = '';
+    }
+
+    const formData = new FormData(form);
+    const data = {
+        name: formData.get('name'),
+        category: formData.get('category'),
+        status: formData.get('status'),
+        notes: formData.get('notes')
+    };
+
+    try {
+        const res = await fetch('/tools/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        const result = await res.json().catch(() => ({}));
+
+        if (res.ok && result.success) {
+            form.reset();
+            toggleAddToolForm();
+            localStorage.setItem('agendapp_workspace_mode', 'inventory');
+            await refreshMaterialsView();
+        } else {
+            const errorMsg = result.error || 'Error al registrar la herramienta';
+            if (errorContainer) {
+                errorContainer.textContent = '⚠️ ' + errorMsg;
+                errorContainer.classList.remove('hidden');
+            } else {
+                alert(errorMsg);
+            }
+        }
+    } catch (err) {
+        console.error('Error adding tool:', err);
+        if (errorContainer) {
+            errorContainer.textContent = '⚠️ Error de conexión al guardar la herramienta.';
+            errorContainer.classList.remove('hidden');
+        } else {
+            alert('Error de conexión al guardar la herramienta.');
+        }
+    }
+}
+
+async function updateToolStatusDirect(id, status) {
+    try {
+        const res = await fetch(`/tools/${id}/set-status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            body: JSON.stringify({ status })
+        });
+        if (res.ok) await refreshMaterialsView();
+    } catch (e) {
+        console.error('Error setting tool status:', e);
+    }
+}
+
+async function deleteTool(id) {
+    if (!confirm('¿Seguro que deseas eliminar esta herramienta del registro?')) return;
+    try {
+        const res = await fetch(`/tools/${id}/delete`, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' }
+        });
+        if (res.ok) await refreshMaterialsView();
+    } catch (e) {
+        console.error('Error deleting tool:', e);
+    }
+}
+
+function openEditToolModal(tool) {
+    document.getElementById('edit-tool-id').value = tool.id;
+    document.getElementById('edit-tool-name').value = tool.name;
+    document.getElementById('edit-tool-category').value = tool.category || 'Herramientas Manuales';
+    document.getElementById('edit-tool-status').value = tool.status || 'available';
+    document.getElementById('edit-tool-notes').value = tool.notes || '';
+    document.getElementById('edit-tool-modal')?.classList.remove('hidden');
+}
+
+function closeEditToolModal() {
+    document.getElementById('edit-tool-modal')?.classList.add('hidden');
+}
+
+async function submitEditToolForm(e) {
+    e.preventDefault();
+    const id = document.getElementById('edit-tool-id').value;
+    const data = {
+        name: document.getElementById('edit-tool-name').value,
+        category: document.getElementById('edit-tool-category').value,
+        status: document.getElementById('edit-tool-status').value,
+        notes: document.getElementById('edit-tool-notes').value
+    };
+
+    try {
+        const res = await fetch(`/tools/${id}/update`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (res.ok) {
+            closeEditToolModal();
+            await refreshMaterialsView();
+        }
+    } catch (err) {
+        console.error('Error editing tool:', err);
+    }
+}
+
+async function refreshMaterialsView() {
+    try {
+        await reloadInventoryData();
+        const res = await fetch(window.location.href);
+        if (res.ok) {
+            const html = await res.text();
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const newWrapper = doc.getElementById('materials-view-wrapper');
+            const oldWrapper = document.getElementById('materials-view-wrapper');
+            if (newWrapper && oldWrapper) {
+                oldWrapper.innerHTML = newWrapper.innerHTML;
+            } else {
+                const newContainer = doc.getElementById('materials-module-container');
+                const oldContainer = document.getElementById('materials-module-container');
+                if (newContainer && oldContainer) {
+                    oldContainer.innerHTML = newContainer.innerHTML;
+                }
+            }
+            if (typeof activeInventorySubtab !== 'undefined' && typeof switchInventoryTab === 'function') {
+                switchInventoryTab(activeInventorySubtab);
+            }
+        }
+    } catch (e) {
+        console.error('Error refreshing materials view:', e);
+    }
+}
+</script>

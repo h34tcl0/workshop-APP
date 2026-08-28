@@ -239,5 +239,89 @@ describe("NotificationDispatcher Direct Tier Unit Tests", () => {
       const log = store.getDailyLogByDate(userId, todayIso);
       expect(log?.humidity_alert_sent).toBe(true);
     });
+
+    it("NO envía alertas si la hora actual es ANTES de window_start", async () => {
+      store.saveDailyLog(userId, {
+        eval_date: todayIso,
+        status: DayStatus.DAY_VIABLE,
+        window_start: "14:00",
+        window_end: "18:00",
+        humidity_alert_sent: false,
+        intraday_alert_triggered: false
+      });
+
+      vi.spyOn(weatherSvc, "getHourlyForecast").mockResolvedValue(buildMockForecasts(16, 15));
+      const burstSpy = vi.spyOn(TelegramBotService.prototype, "sendIntradayEmergencyAlertBurst").mockResolvedValue(true);
+      const msgSpy = vi.spyOn(TelegramBotService.prototype, "sendTelegramMessage").mockResolvedValue(true);
+
+      const earlyTime = new Date("2026-08-10T10:00:00-04:00"); // 10:00 < window_start 14:00
+      await NotificationDispatcher.processWeatherAlert(userId, earlyTime);
+
+      expect(burstSpy).not.toHaveBeenCalled();
+      expect(msgSpy).not.toHaveBeenCalled();
+    });
+
+    it("NO envía alertas si la hora actual es DESPUÉS de window_end o si checkin_resolved es true", async () => {
+      store.saveDailyLog(userId, {
+        eval_date: todayIso,
+        status: DayStatus.DAY_VIABLE,
+        window_start: "09:00",
+        window_end: "17:00",
+        checkin_resolved: true
+      });
+
+      vi.spyOn(weatherSvc, "getHourlyForecast").mockResolvedValue(buildMockForecasts(16, null));
+      const burstSpy = vi.spyOn(TelegramBotService.prototype, "sendIntradayEmergencyAlertBurst").mockResolvedValue(true);
+
+      const withinWindow = new Date("2026-08-10T15:00:00-04:00");
+      await NotificationDispatcher.processWeatherAlert(userId, withinWindow);
+
+      expect(burstSpy).not.toHaveBeenCalled();
+    });
+
+    it("detiene los reintentos de ráfaga tras alcanzar el máximo de 3 ráfagas", async () => {
+      store.saveDailyLog(userId, {
+        eval_date: todayIso,
+        status: DayStatus.DAY_VIABLE,
+        window_start: "08:00",
+        window_end: "19:00",
+        intraday_alert_triggered: true,
+        intraday_alert_acknowledged: false,
+        intraday_alert_burst_count: 3, // Ya se enviaron 3 ráfagas
+        intraday_alert_last_sent_at: "2026-08-10T12:00:00.000Z",
+        last_rain_alert_hour: 16
+      });
+
+      vi.spyOn(weatherSvc, "getHourlyForecast").mockResolvedValue(buildMockForecasts(16, null));
+      const burstSpy = vi.spyOn(TelegramBotService.prototype, "sendIntradayEmergencyAlertBurst").mockResolvedValue(true);
+
+      const now = new Date("2026-08-10T12:10:00.000Z"); // 10 min después
+      await NotificationDispatcher.processWeatherAlert(userId, now);
+
+      expect(burstSpy).not.toHaveBeenCalled();
+    });
+
+    it("detiene los reintentos si el pronóstico se despeja (sin lluvia en el remanente)", async () => {
+      store.saveDailyLog(userId, {
+        eval_date: todayIso,
+        status: DayStatus.DAY_VIABLE,
+        window_start: "08:00",
+        window_end: "19:00",
+        intraday_alert_triggered: true,
+        intraday_alert_acknowledged: false,
+        intraday_alert_burst_count: 1,
+        intraday_alert_last_sent_at: "2026-08-10T12:00:00.000Z",
+        last_rain_alert_hour: 16
+      });
+
+      // Pronóstico completamente despejado (sin lluvia)
+      vi.spyOn(weatherSvc, "getHourlyForecast").mockResolvedValue(buildMockForecasts(null, null));
+      const burstSpy = vi.spyOn(TelegramBotService.prototype, "sendIntradayEmergencyAlertBurst").mockResolvedValue(true);
+
+      const now = new Date("2026-08-10T12:10:00.000Z");
+      await NotificationDispatcher.processWeatherAlert(userId, now);
+
+      expect(burstSpy).not.toHaveBeenCalled();
+    });
   });
 });

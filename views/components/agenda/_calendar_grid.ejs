@@ -1,0 +1,170 @@
+<!-- PREPARACIÓN DE AUDITORÍA HORARIA PARA LA BARRA LINEAL DE JORNADA -->
+<%
+    const eval = locals.eval || (locals.item && (locals.item.evaluation || locals.item)) || {};
+    const date_iso = locals.date_iso || (locals.item && locals.item.date_iso) || eval.eval_date || '';
+    const override = locals.override || eval.day_override || {};
+    const app_settings = locals.app_settings || {};
+    const start_limit = (typeof locals.start_limit !== 'undefined') ? locals.start_limit : ((override && override.custom_start_hour != null) ? override.custom_start_hour : (app_settings.operational_start_hour != null ? app_settings.operational_start_hour : 8));
+    const end_limit = (typeof locals.end_limit !== 'undefined') ? locals.end_limit : ((override && override.custom_end_hour != null) ? override.custom_end_hour : (app_settings.operational_end_hour != null ? app_settings.operational_end_hour : 18));
+    const is_viable = (typeof locals.is_viable !== 'undefined') ? locals.is_viable : (eval.status === 'DAY_VIABLE');
+
+    let hourly_items = locals.hourly_items || eval.hourly_audit;
+    if ((!hourly_items || hourly_items.length === 0) && eval.hourly_forecast && typeof getHourlyClimateAudit === 'function') {
+        let rawForecasts = eval.hourly_forecast;
+        if (typeof rawForecasts === 'string') {
+            try { rawForecasts = JSON.parse(rawForecasts); } catch (e) { rawForecasts = []; }
+        }
+        if (Array.isArray(rawForecasts) && rawForecasts.length > 0) {
+            hourly_items = getHourlyClimateAudit(rawForecasts, eval.window, eval.scheduled_tasks || [], app_settings);
+        }
+    }
+
+    const totalHours = Math.max(1, end_limit - start_limit);
+    
+    // Rango visual del grid: 1 hora de margen antes y después (inclusivo), seguro entre 0 y 23
+    const grid_start_hour = Math.max(0, start_limit - 1);
+    const grid_end_hour = Math.min(23, end_limit + 1);
+    const totalGridSlots = (grid_end_hour - grid_start_hour) + 1;
+
+    let hourSlots = [];
+    for (let i = 0; i < totalGridSlots; i++) {
+        let h = grid_start_hour + i;
+        let item = null;
+        if (hourly_items && hourly_items.length > 0) {
+            item = hourly_items.find(x => (x.forecast ? x.forecast.hour : x.hour) === h);
+        }
+        let f = item ? (item.forecast || item) : null;
+
+        let isRain = f ? (f.precipitation_mm >= app_settings.min_rain_precipitation_mm) : false;
+        let isHumid = f ? (f.relative_humidity > app_settings.max_humidity_percent) : false;
+
+        let isOperational = (h >= start_limit && h <= end_limit);
+        let isMargin = !isOperational;
+
+        let isScheduled = false;
+        if (isOperational) {
+            if (item && (item.is_active_work || item.is_scheduled)) {
+                isScheduled = true;
+            } else if (is_viable && eval.window && h >= eval.window.start_hour && h < eval.window.end_hour) {
+                isScheduled = true;
+            }
+        }
+
+        let slotState = 'free';
+        let color = 'bg-[var(--w-free)]';
+        let label = `${String(h).padStart(2, '0')}:00 - Apto`;
+
+        if (isRain) {
+            slotState = 'rain';
+            color = 'bg-[var(--w-rust)]';
+            label = `${String(h).padStart(2, '0')}:00 - Lluvia (${f ? f.precipitation_mm : '0.1'}mm)`;
+        } else if (isHumid) {
+            slotState = 'humid';
+            color = 'bg-[var(--w-sky)]';
+            label = `${String(h).padStart(2, '0')}:00 - Humedad elevada (${f ? f.relative_humidity : '90'}%)`;
+        } else if (isScheduled) {
+            slotState = 'scheduled';
+            color = 'bg-[var(--w-amber)]';
+            label = `${String(h).padStart(2, '0')}:00 - Trabajo agendado`;
+        }
+
+        if (isMargin) {
+            label += ' (Fuera de jornada / Margen)';
+        }
+
+        hourSlots.push({ h, slotState, color, label, f, isRain, isHumid, isScheduled, isOperational, isMargin });
+    }
+%>
+
+<!-- CALENDARIO HORARIO VISUAL EN GRID PROPORCIONAL -->
+<%
+    const hasTimeline = is_viable && eval.timeline && eval.timeline.length > 0;
+
+    // Parsing items from timeline for absolute / relative positioning
+    function parseHourFrac(str) {
+        if (!str) return 0;
+        const parts = str.trim().split(':');
+        return parseInt(parts[0], 10) + (parseInt(parts[1] || '0', 10) / 60);
+    }
+
+    // Grid height configuration
+    const HOUR_HEIGHT_PX = 44; // 44px per hour for clean proportion
+    const gridTotalHeight = totalGridSlots * HOUR_HEIGHT_PX;
+
+    // Process timeline blocks with pixel positions relative to grid_start_hour
+    let blocks = [];
+    let seenProjects = new Set();
+
+    if (hasTimeline) {
+        eval.timeline.forEach(function(act, idx) {
+            const timeParts = (act.time_range || '').split('—').map(s => s.trim());
+            if (timeParts.length === 2) {
+                const startH = parseHourFrac(timeParts[0]);
+                let endH = parseHourFrac(timeParts[1]);
+                if (endH < startH) endH = end_limit;
+
+                const isSetup = act.title.includes('Setup') || act.title.includes('Preparación');
+                const isTeardown = act.title.includes('Teardown') || act.title.includes('Guardado') || act.title.includes('Cierre');
+                const isCuring = act.title.includes('Curado') || act.title.includes('Secado');
+                const displayTitle = (act.title || '').replace(/^[^\p{L}\p{N}#\[]+/u, '').trim();
+
+                const relStart = Math.max(0, startH - grid_start_hour);
+                const topPx = Math.round(relStart * HOUR_HEIGHT_PX);
+                const durHours = Math.max(0.05, endH - startH);
+                const heightPx = Math.max(22, Math.round(durHours * HOUR_HEIGHT_PX) - 2);
+
+                let showProject = false;
+                if (act.project_name && !seenProjects.has(act.project_name)) {
+                    showProject = true;
+                    seenProjects.add(act.project_name);
+                }
+
+                blocks.push({
+                    act,
+                    startH,
+                    endH,
+                    durHours,
+                    topPx,
+                    heightPx,
+                    isSetup,
+                    isTeardown,
+                    isCuring,
+                    displayTitle,
+                    showProject,
+                    projectName: act.project_name
+                });
+            }
+        });
+    }
+%>
+
+<div class="px-3 sm:px-4 py-3 border-t border-[var(--w-bd)]/60 bg-[var(--w-s1)]">
+    <!-- Header informativo del bloque de horario -->
+    <div class="flex items-center justify-between text-[11px] font-mono-jb text-[var(--w-t2)] mb-2 px-1">
+        <span class="flex items-center gap-1.5 font-semibold text-[var(--w-t1)]">
+            <svg class="w-3.5 h-3.5 text-[var(--w-sky)]"><use href="#i-calendar"/></svg>
+            Jornada <%= String(start_limit).padStart(2, '0') %>:00 – <%= String(end_limit).padStart(2, '0') %>:00
+            <span class="text-[9.5px] font-normal text-[var(--w-t3)] bg-[var(--w-s2)] border border-[var(--w-bd)]/60 px-1.5 py-0.2 rounded">
+                Vista: <%= String(grid_start_hour).padStart(2, '0') %>:00–<%= String(grid_end_hour).padStart(2, '0') %>:00
+            </span>
+        </span>
+        <% if (hasTimeline) { %>
+            <span class="text-[10px] text-[var(--w-ok)] font-semibold flex items-center gap-1">
+                <span>● <%= eval.timeline.length %> bloques</span>
+            </span>
+        <% } %>
+    </div>
+
+    <!-- CONTENEDOR GRID CALENDARIO -->
+    <div class="calendar-grid-container relative border border-[var(--w-bd)] rounded-xl overflow-hidden bg-[var(--w-bg)] flex"
+         data-date="<%= date_iso %>" 
+         data-start-hour="<%= grid_start_hour %>" 
+         data-end-hour="<%= grid_end_hour %>"
+         data-work-start="<%= start_limit %>"
+         data-work-end="<%= end_limit %>"
+         style="height: <%= gridTotalHeight %>px;">
+
+        <%- include('_grid_weather_col', { ...locals, totalGridSlots, grid_start_hour, hourSlots, start_limit, end_limit, HOUR_HEIGHT_PX }) %>
+        <%- include('_grid_tasks_col', { ...locals, totalGridSlots, grid_start_hour, grid_end_hour, start_limit, end_limit, HOUR_HEIGHT_PX, hasTimeline, blocks, all_projects: locals.all_projects || [], eval }) %>
+    </div>
+</div>

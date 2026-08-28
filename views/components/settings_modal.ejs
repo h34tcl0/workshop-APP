@@ -1,407 +1,74 @@
 <!-- MODAL: CONFIGURACIÓN -->
 <div id="settings-modal" class="fixed inset-0 z-[110] bg-canvas/85 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4">
-    <div class="bg-surface border-t sm:border border-hairline rounded-t-2xl sm:rounded-xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-panel relative">
+    <!-- En móviles: Bottom Sheet con altura fija. En desktop: modal centrado con altura fija. -->
+    <div class="bg-surface border-t sm:border border-hairline rounded-t-2xl sm:rounded-xl w-full sm:max-w-2xl flex flex-col shadow-panel relative h-[82vh] sm:h-[580px]">
         <div class="w-12 h-1 bg-hairline rounded-full mx-auto mb-2 sm:hidden shrink-0 mt-2"></div>
-        
+
         <!-- Header del Modal -->
-        <div class="flex items-center justify-between border-b border-hairline px-5 py-4 shrink-0">
-            <h3 class="font-display text-lg font-semibold text-ink">Parámetros y configuración</h3>
+        <div class="flex items-center justify-between border-b border-hairline px-5 py-3 shrink-0">
+            <h3 class="font-display text-base font-semibold text-ink">Parámetros y configuración</h3>
             <button type="button" onclick="closeSettingsModal()" aria-label="Cerrar" class="text-ink3 hover:text-ink w-8 h-8 flex items-center justify-center rounded-md bg-surface2">
                 <svg class="w-4 h-4"><use href="#i-close"/></svg>
             </button>
         </div>
 
-        <!-- Barra de Tabs Horizontales -->
-        <div class="flex items-center gap-1 border-b border-hairline px-5 pt-2 bg-canvas/30 overflow-x-auto shrink-0 scrollbar-none">
-            <button type="button" onclick="switchSettingsTab('location')" id="tab-btn-location" class="settings-tab-btn px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors border-b-2 border-brass text-brass bg-surface flex items-center gap-1.5 whitespace-nowrap">
-                <svg class="w-3.5 h-3.5"><use href="#i-pin"/></svg> Ubicación
+        <!-- NAVEGACIÓN MÓVIL: Select dropdown (solo visible en pantallas pequeñas) -->
+        <div class="sm:hidden px-4 py-2.5 border-b border-hairline bg-canvas/20 shrink-0">
+            <div class="relative">
+                <select id="settings-tab-select" onchange="switchSettingsTab(this.value)"
+                    class="w-full appearance-none bg-surface2 border border-hairline text-ink text-sm font-semibold rounded-xl px-4 py-2.5 pr-10 focus:outline-none focus:border-brass cursor-pointer">
+                    <option value="location">Ubicación</option>
+                    <option value="workday">Jornada y Clima</option>
+                    <option value="notifications">Notificaciones</option>
+                    <option value="integrations">Integraciones</option>
+                    <option value="security">Seguridad</option>
+                </select>
+                <svg class="w-4 h-4 text-ink3 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><use href="#i-chevron-down-sm"/></svg>
+            </div>
+        </div>
+
+        <!-- NAVEGACIÓN DESKTOP: Grid de tabs (oculto en móviles) -->
+        <div class="hidden sm:grid sm:grid-cols-5 border-b border-hairline bg-canvas/20 shrink-0">
+            <button type="button" onclick="switchSettingsTab('location')" id="tab-btn-location"
+                class="settings-tab-btn flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition-colors border-b-2 border-brass text-brass bg-surface/60">
+                <svg class="w-3.5 h-3.5"><use href="#i-pin"/></svg>
+                Ubicación
             </button>
-            <button type="button" onclick="switchSettingsTab('workday')" id="tab-btn-workday" class="settings-tab-btn px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors border-b-2 border-transparent text-ink3 hover:text-ink hover:bg-surface/50 flex items-center gap-1.5 whitespace-nowrap">
-                <svg class="w-3.5 h-3.5"><use href="#i-timer"/></svg> Jornada y Clima
+            <button type="button" onclick="switchSettingsTab('workday')" id="tab-btn-workday"
+                class="settings-tab-btn flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition-colors border-b-2 border-transparent text-ink3 hover:text-ink hover:bg-surface/40">
+                <svg class="w-3.5 h-3.5"><use href="#i-timer"/></svg>
+                Jornada
             </button>
-            <button type="button" onclick="switchSettingsTab('notifications')" id="tab-btn-notifications" class="settings-tab-btn px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors border-b-2 border-transparent text-ink3 hover:text-ink hover:bg-surface/50 flex items-center gap-1.5 whitespace-nowrap">
-                <svg class="w-3.5 h-3.5"><use href="#i-bell"/></svg> Notificaciones
+            <button type="button" onclick="switchSettingsTab('notifications')" id="tab-btn-notifications"
+                class="settings-tab-btn flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition-colors border-b-2 border-transparent text-ink3 hover:text-ink hover:bg-surface/40">
+                <svg class="w-3.5 h-3.5"><use href="#i-bell"/></svg>
+                Avisos
             </button>
-            <button type="button" onclick="switchSettingsTab('integrations')" id="tab-btn-integrations" class="settings-tab-btn px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors border-b-2 border-transparent text-ink3 hover:text-ink hover:bg-surface/50 flex items-center gap-1.5 whitespace-nowrap">
-                <svg class="w-3.5 h-3.5"><use href="#i-calendar"/></svg> Integraciones
+            <button type="button" onclick="switchSettingsTab('integrations')" id="tab-btn-integrations"
+                class="settings-tab-btn flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition-colors border-b-2 border-transparent text-ink3 hover:text-ink hover:bg-surface/40">
+                <svg class="w-3.5 h-3.5"><use href="#i-calendar"/></svg>
+                Calendario
             </button>
-            <button type="button" onclick="switchSettingsTab('security')" id="tab-btn-security" class="settings-tab-btn px-3 py-2 text-xs font-semibold rounded-t-lg transition-colors border-b-2 border-transparent text-ink3 hover:text-ink hover:bg-surface/50 flex items-center gap-1.5 whitespace-nowrap">
-                <svg class="w-3.5 h-3.5"><use href="#i-settings"/></svg> Seguridad
+            <button type="button" onclick="switchSettingsTab('security')" id="tab-btn-security"
+                class="settings-tab-btn flex flex-col items-center gap-1 py-2.5 text-[10px] font-semibold transition-colors border-b-2 border-transparent text-ink3 hover:text-ink hover:bg-surface/40">
+                <svg class="w-3.5 h-3.5"><use href="#i-settings"/></svg>
+                Seguridad
             </button>
         </div>
 
         <form id="settings-form" action="/settings/update" method="post" onsubmit="saveSettings(event)" class="flex flex-col flex-1 min-h-0">
-            <!-- Contenido scrollable de las pestañas -->
-            <div class="flex-1 overflow-y-auto p-5 space-y-4">
-                
-                <!-- TAB 1: UBICACIÓN -->
-                <div id="tab-content-location" class="settings-tab-content space-y-4">
-                    <div>
-                        <div class="flex items-center justify-between mb-1.5">
-                            <div class="flex items-center gap-1.5">
-                                <label class="block text-[11px] font-semibold text-ink3 uppercase tracking-wide">Coordenadas del Taller</label>
-                                <button type="button" onclick="toggleTip('location')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Ubicación">
-                                    <svg class="w-3 h-3"><use href="#i-help"/></svg>
-                                </button>
-                            </div>
-                            <button type="button" onclick="toggleLocationMap()" class="flex items-center gap-1.5 text-[11px] font-semibold text-chalk hover:text-chalk/80">
-                                <svg class="w-3.5 h-3.5"><use href="#i-pin"/></svg> Elegir en el mapa
-                            </button>
-                        </div>
-                        <p id="tip-location" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">Ubicación del taller para consultar el pronóstico del clima y determinar automáticamente la zona horaria.</p>
-                        <div class="grid grid-cols-2 gap-3 sm:gap-4">
-                            <div>
-                                <label class="block text-[10px] text-ink3 mb-1">Latitud</label>
-                                <input type="number" step="0.0001" id="input-latitude" name="latitude" value="<%= app_settings ? app_settings.latitude : -32.99 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
-                            </div>
-                            <div>
-                                <label class="block text-[10px] text-ink3 mb-1">Longitud</label>
-                                <input type="number" step="0.0001" id="input-longitude" name="longitude" value="<%= app_settings ? app_settings.longitude : -71.27 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
-                            </div>
-                        </div>
+            <!-- Contenido scrollable de las pestañas — altura fija garantizada -->
+            <div class="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+                <%- include('settings/_tab_location') %>
 
-                        <!-- Panel de mapa (oculto por defecto) -->
-                        <div id="location-map-panel" class="hidden mt-3 space-y-2">
-                            <div class="flex items-center gap-2">
-                                <div class="relative flex-1">
-                                    <svg class="w-3.5 h-3.5 text-ink3 absolute left-3 top-1/2 -translate-y-1/2"><use href="#i-search"/></svg>
-                                    <input type="text" id="map-search-input" placeholder="Buscar dirección o ciudad..." class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-chalk transition-colors">
-                                </div>
-                                <button type="button" onclick="searchMapLocation()" class="bg-chalk/15 hover:bg-chalk/25 text-chalk px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap">Buscar</button>
-                            </div>
-                            <div id="location-map" class="w-full h-52 rounded-lg border border-hairline overflow-hidden"></div>
-                            <p class="text-[11px] text-ink3">Toca el mapa para fijar el punto. Las coordenadas se actualizan solas.</p>
-                        </div>
-
-                        <!-- Indicador de Hora Local Sincronizada -->
-                        <div class="mt-4 p-3 bg-canvas/60 border border-hairline/80 rounded-xl flex items-center justify-between gap-3">
-                            <div class="flex items-center gap-2.5">
-                                <div class="w-8 h-8 rounded-lg bg-surface2 flex items-center justify-center text-chalk shrink-0">
-                                    <svg class="w-4 h-4"><use href="#i-timer"/></svg>
-                                </div>
-                                <div>
-                                    <span class="block text-[11px] font-semibold text-ink3 uppercase tracking-wide">Hora local sincronizada</span>
-                                    <span id="local-time-display" class="text-sm font-mono font-bold text-ink">
-                                        <%= typeof local_time_info !== 'undefined' && local_time_info ? local_time_info.formattedDisplay : 'Cargando...' %>
-                                    </span>
-                                </div>
-                            </div>
-                            <span id="timezone-display" class="text-[11px] font-mono px-2.5 py-1 rounded-md bg-surface2 border border-hairline text-chalk font-semibold shrink-0">
-                                <%= app_settings && app_settings.timezone ? app_settings.timezone : 'America/Santiago' %>
-                            </span>
-                            <input type="hidden" id="input-timezone" name="timezone" value="<%= app_settings && app_settings.timezone ? app_settings.timezone : 'America/Santiago' %>">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- TAB 2: JORNADA Y CLIMA -->
                 <div id="tab-content-workday" class="settings-tab-content hidden space-y-4">
-                    <!-- Rango de Horario -->
-                    <div class="grid grid-cols-2 gap-3 sm:gap-4">
-                        <div>
-                            <div class="flex items-center gap-1.5 mb-1.5">
-                                <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3">Inicio jornada</label>
-                                <button type="button" onclick="toggleTip('start-hour')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Inicio jornada">
-                                    <svg class="w-3 h-3"><use href="#i-help"/></svg>
-                                </button>
-                            </div>
-                            <p id="tip-start-hour" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">Hora más temprana en que puede empezar a evaluarse trabajo ese día.</p>
-                            <input type="number" name="operational_start_hour" min="0" max="23" value="<%= app_settings ? app_settings.operational_start_hour : 9 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
-                        </div>
-                        <div>
-                            <div class="flex items-center gap-1.5 mb-1.5">
-                                <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3">Fin jornada</label>
-                                <button type="button" onclick="toggleTip('end-hour')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Fin jornada">
-                                    <svg class="w-3 h-3"><use href="#i-help"/></svg>
-                                </button>
-                            </div>
-                            <p id="tip-end-hour" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">Hora límite de cierre. El setup, trabajo activo y teardown deben caber antes de esta hora.</p>
-                            <input type="number" name="operational_end_hour" min="0" max="23" value="<%= app_settings ? app_settings.operational_end_hour : 18 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
-                        </div>
-                    </div>
-
-                    <!-- Tiempos Operativos en Horas y Minutos -->
-                    <div class="pt-1">
-                        <p class="text-[11px] font-semibold text-ink3 uppercase tracking-wide mb-2">Tiempos Operativos</p>
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                            <!-- Setup -->
-                            <% 
-                                const setupDec = app_settings ? app_settings.setup_hours : 0.5;
-                                const setupH = Math.floor(setupDec);
-                                const setupM = Math.round((setupDec - setupH) * 60);
-                            %>
-                            <div class="bg-surface2/40 border border-hairline rounded-lg p-2.5 space-y-1.5">
-                                <div class="flex items-center justify-between">
-                                    <label class="block text-[10px] text-ink3 font-semibold uppercase">Setup</label>
-                                    <button type="button" onclick="toggleTip('setup')" class="text-ink3 hover:text-chalk" aria-label="Ayuda: Setup">
-                                        <svg class="w-3 h-3"><use href="#i-help"/></svg>
-                                    </button>
-                                </div>
-                                <p id="tip-setup" class="hidden text-[10px] text-ink2 bg-canvas/50 border border-hairline rounded p-1.5 leading-snug">Preparación de taller antes de iniciar tareas.</p>
-                                <div class="grid grid-cols-2 gap-1.5">
-                                    <div>
-                                        <input type="number" min="0" max="12" id="setup_h" value="<%= setupH %>" class="time-hm-input w-full bg-surface border border-hairline text-ink rounded px-2 py-1 text-xs text-center" onchange="syncDurationField('setup')">
-                                        <span class="block text-[9px] text-ink3 text-center mt-0.5">horas</span>
-                                    </div>
-                                    <div>
-                                        <select id="setup_m" class="time-hm-input w-full bg-surface border border-hairline text-ink rounded px-1.5 py-1 text-xs text-center cursor-pointer" onchange="syncDurationField('setup')">
-                                            <option value="0" <%= setupM === 0 ? 'selected' : '' %>>0 min</option>
-                                            <option value="15" <%= setupM === 15 ? 'selected' : '' %>>15 min</option>
-                                            <option value="30" <%= setupM === 30 ? 'selected' : '' %>>30 min</option>
-                                            <option value="45" <%= setupM === 45 ? 'selected' : '' %>>45 min</option>
-                                        </select>
-                                        <span class="block text-[9px] text-ink3 text-center mt-0.5">minutos</span>
-                                    </div>
-                                </div>
-                                <input type="hidden" name="setup_hours" id="input_setup_hours" value="<%= setupDec %>">
-                            </div>
-
-                            <!-- Teardown -->
-                            <% 
-                                const teardownDec = app_settings ? app_settings.teardown_hours : 0.5;
-                                const teardownH = Math.floor(teardownDec);
-                                const teardownM = Math.round((teardownDec - teardownH) * 60);
-                            %>
-                            <div class="bg-surface2/40 border border-hairline rounded-lg p-2.5 space-y-1.5">
-                                <div class="flex items-center justify-between">
-                                    <label class="block text-[10px] text-ink3 font-semibold uppercase">Teardown</label>
-                                    <button type="button" onclick="toggleTip('teardown')" class="text-ink3 hover:text-chalk" aria-label="Ayuda: Teardown">
-                                        <svg class="w-3 h-3"><use href="#i-help"/></svg>
-                                    </button>
-                                </div>
-                                <p id="tip-teardown" class="hidden text-[10px] text-ink2 bg-canvas/50 border border-hairline rounded p-1.5 leading-snug">Limpieza y guardado de herramientas al final del día.</p>
-                                <div class="grid grid-cols-2 gap-1.5">
-                                    <div>
-                                        <input type="number" min="0" max="12" id="teardown_h" value="<%= teardownH %>" class="time-hm-input w-full bg-surface border border-hairline text-ink rounded px-2 py-1 text-xs text-center" onchange="syncDurationField('teardown')">
-                                        <span class="block text-[9px] text-ink3 text-center mt-0.5">horas</span>
-                                    </div>
-                                    <div>
-                                        <select id="teardown_m" class="time-hm-input w-full bg-surface border border-hairline text-ink rounded px-1.5 py-1 text-xs text-center cursor-pointer" onchange="syncDurationField('teardown')">
-                                            <option value="0" <%= teardownM === 0 ? 'selected' : '' %>>0 min</option>
-                                            <option value="15" <%= teardownM === 15 ? 'selected' : '' %>>15 min</option>
-                                            <option value="30" <%= teardownM === 30 ? 'selected' : '' %>>30 min</option>
-                                            <option value="45" <%= teardownM === 45 ? 'selected' : '' %>>45 min</option>
-                                        </select>
-                                        <span class="block text-[9px] text-ink3 text-center mt-0.5">minutos</span>
-                                    </div>
-                                </div>
-                                <input type="hidden" name="teardown_hours" id="input_teardown_hours" value="<%= teardownDec %>">
-                            </div>
-
-                            <!-- Trabajo Mínimo -->
-                            <% 
-                                const minWorkDec = app_settings ? app_settings.min_work_hours : 1.5;
-                                const minWorkH = Math.floor(minWorkDec);
-                                const minWorkM = Math.round((minWorkDec - minWorkH) * 60);
-                            %>
-                            <div class="bg-surface2/40 border border-hairline rounded-lg p-2.5 space-y-1.5">
-                                <div class="flex items-center justify-between">
-                                    <label class="block text-[10px] text-ink3 font-semibold uppercase">Trabajo Mínimo</label>
-                                    <button type="button" onclick="toggleTip('min-work')" class="text-ink3 hover:text-chalk" aria-label="Ayuda: Trabajo mínimo">
-                                        <svg class="w-3 h-3"><use href="#i-help"/></svg>
-                                    </button>
-                                </div>
-                                <p id="tip-min-work" class="hidden text-[10px] text-ink2 bg-canvas/50 border border-hairline rounded p-1.5 leading-snug">Tiempo mínimo de labor para abrir el taller en jornadas estándar (la tarea final se agenda automáticamente sin umbral).</p>
-                                <div class="grid grid-cols-2 gap-1.5">
-                                    <div>
-                                        <input type="number" min="0" max="12" id="min_work_h" value="<%= minWorkH %>" class="time-hm-input w-full bg-surface border border-hairline text-ink rounded px-2 py-1 text-xs text-center" onchange="syncDurationField('min_work')">
-                                        <span class="block text-[9px] text-ink3 text-center mt-0.5">horas</span>
-                                    </div>
-                                    <div>
-                                        <select id="min_work_m" class="time-hm-input w-full bg-surface border border-hairline text-ink rounded px-1.5 py-1 text-xs text-center cursor-pointer" onchange="syncDurationField('min_work')">
-                                            <option value="0" <%= minWorkM === 0 ? 'selected' : '' %>>0 min</option>
-                                            <option value="15" <%= minWorkM === 15 ? 'selected' : '' %>>15 min</option>
-                                            <option value="30" <%= minWorkM === 30 ? 'selected' : '' %>>30 min</option>
-                                            <option value="45" <%= minWorkM === 45 ? 'selected' : '' %>>45 min</option>
-                                        </select>
-                                        <span class="block text-[9px] text-ink3 text-center mt-0.5">minutos</span>
-                                    </div>
-                                </div>
-                                <input type="hidden" name="min_work_hours" id="input_min_work_hours" value="<%= minWorkDec %>">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Parámetros Climáticos -->
-                    <div class="grid grid-cols-2 gap-3 sm:gap-4 pt-1">
-                        <div>
-                            <div class="flex items-center gap-1.5 mb-1.5">
-                                <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3">Humedad máxima (%)</label>
-                                <button type="button" onclick="toggleTip('humidity')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Humedad máxima (%)">
-                                    <svg class="w-3 h-3"><use href="#i-help"/></svg>
-                                </button>
-                            </div>
-                            <p id="tip-humidity" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">Si la humedad del aire supera este valor, se bloquea la jornada por riesgo de fraguado/secado.</p>
-                            <input type="number" name="max_humidity_percent" min="0" max="100" value="<%= app_settings ? app_settings.max_humidity_percent : 80 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
-                        </div>
-                        <div>
-                            <div class="flex items-center gap-1.5 mb-1.5">
-                                <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3">Umbral de lluvia (mm)</label>
-                                <button type="button" onclick="toggleTip('rain-threshold')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Umbral de lluvia (mm)">
-                                    <svg class="w-3 h-3"><use href="#i-help"/></svg>
-                                </button>
-                            </div>
-                            <p id="tip-rain-threshold" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">A partir de cuántos mm/h se considera lluvia activa.</p>
-                            <input type="number" step="0.1" min="0" name="min_rain_precipitation_mm" value="<%= app_settings ? app_settings.min_rain_precipitation_mm : 0.1 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
-                        </div>
-                    </div>
-
-                    <!-- Días No Laborables -->
-                    <div class="pt-1 border-t border-hairline space-y-2.5">
-                        <p class="text-[11px] font-semibold text-ink3 uppercase tracking-wide">Días no laborables y Reglas de Cierre</p>
-                        <div class="space-y-2">
-                            <label class="flex items-center gap-2.5 cursor-pointer py-0.5">
-                                <input type="checkbox" name="exclude_saturdays" value="true" <%= (app_settings && app_settings.exclude_saturdays) ? 'checked' : '' %> class="w-4 h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
-                                <span class="text-xs text-ink2 font-medium flex-1">Excluir sábados</span>
-                            </label>
-                            <label class="flex items-center gap-2.5 cursor-pointer py-0.5">
-                                <input type="checkbox" name="exclude_sundays" value="true" <%= (app_settings && app_settings.exclude_sundays) ? 'checked' : '' %> class="w-4 h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
-                                <span class="text-xs text-ink2 font-medium flex-1">Excluir domingos</span>
-                            </label>
-                            <label class="flex items-center gap-2.5 cursor-pointer py-0.5">
-                                <input type="checkbox" name="exclude_holidays" value="true" <%= (app_settings && app_settings.exclude_holidays) ? 'checked' : '' %> class="w-4 h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
-                                <span class="text-xs text-ink2 font-medium flex-1">Excluir feriados oficiales (Chile)</span>
-                            </label>
-                            <label class="flex items-center gap-2.5 cursor-pointer py-0.5">
-                                <input type="checkbox" name="require_curing_before_cutoff" value="true" <%= (app_settings && app_settings.require_curing_before_cutoff) ? 'checked' : '' %> class="w-4 h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
-                                <span class="text-xs text-ink2 font-medium flex-1">Exigir que el curado termine antes del cierre de jornada</span>
-                            </label>
-                        </div>
-                    </div>
+                    <%- include('settings/_tab_operational') %>
+                    <%- include('settings/_tab_climate') %>
                 </div>
 
-                <!-- TAB 3: NOTIFICACIONES -->
-                <div id="tab-content-notifications" class="settings-tab-content hidden space-y-4">
-                    <div class="grid grid-cols-2 gap-3 sm:gap-4">
-                        <div>
-                            <div class="flex items-center gap-1.5 mb-1.5">
-                                <label class="block text-[11px] font-semibold text-ink3 uppercase tracking-wide">Hora de check-in</label>
-                                <button type="button" onclick="toggleTip('checkin-hour')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Hora de check-in">
-                                    <svg class="w-3 h-3"><use href="#i-help"/></svg>
-                                </button>
-                            </div>
-                            <p id="tip-checkin-hour" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">Hora fija en que se envía el mensaje nocturno por Telegram para evaluar el cumplimiento de tareas.</p>
-                            <input type="number" min="0" max="23" name="checkin_hour" value="<%= app_settings ? app_settings.checkin_hour : 19 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
-                        </div>
-                        <div>
-                            <div class="flex items-center gap-1.5 mb-1.5">
-                                <label class="block text-[11px] font-semibold text-ink3 uppercase tracking-wide">Margen evaluación matutina</label>
-                                <button type="button" onclick="toggleTip('morning-lead')" class="text-ink3 hover:text-chalk shrink-0" aria-label="Ayuda: Margen matutino">
-                                    <svg class="w-3 h-3"><use href="#i-help"/></svg>
-                                </button>
-                            </div>
-                            <p id="tip-morning-lead" class="hidden text-[11px] text-ink2 bg-canvas/50 border border-hairline rounded-md px-2.5 py-2 mb-2 leading-snug">Horas de anticipación respecto al inicio de jornada para actualizar el pronóstico meteorológico.</p>
-                            <input type="number" min="0" max="12" name="morning_eval_lead_hours" value="<%= app_settings ? app_settings.morning_eval_lead_hours : 1 %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
-                        </div>
-                    </div>
-
-                    <!-- Vinculación Telegram -->
-                    <div class="pt-2 border-t border-hairline">
-                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3 mb-2">Bot de Telegram</label>
-                        <% if (app_settings && app_settings.telegram_chat_id) { %>
-                            <div class="flex items-center justify-between gap-2 bg-surface2 border border-hairline rounded-lg px-3.5 py-2.5">
-                                <div class="flex items-center gap-2">
-                                    <span class="w-2 h-2 rounded-full bg-moss"></span>
-                                    <span class="text-xs text-ink font-medium">Vinculado (Chat ID: <%= app_settings.telegram_chat_id %>)</span>
-                                </div>
-                                <button type="button" onclick="unlinkTelegram()" class="text-xs font-semibold text-red-400 hover:text-red-300 px-2 py-1">Desvincular</button>
-                            </div>
-                            <p class="text-[10px] text-ink3 mt-1.5">Las notificaciones operativas y el check-in se envían a este chat.</p>
-                        <% } else { %>
-                            <div id="telegram-link-box">
-                                <button type="button" onclick="generateTelegramLinkCode()" class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-xs font-semibold hover:border-brass transition-colors flex items-center justify-center gap-2">
-                                    <svg class="w-4 h-4 text-chalk"><use href="#i-bell"/></svg> Generar código de vinculación
-                                </button>
-                            </div>
-                            <div id="telegram-link-result" class="hidden mt-2 bg-surface2 border border-hairline rounded-lg px-3 py-2.5 text-xs text-ink space-y-1">
-                                <p class="text-ink2">Envía este comando a tu bot de Telegram:</p>
-                                <p class="font-mono text-sm font-bold text-brass tracking-wider"><code id="telegram-link-code"></code></p>
-                                <p class="text-[10px] text-ink3"><code>/vincular <span id="telegram-link-code-inline"></span></code></p>
-                                <p class="text-[10px] text-ink3" id="telegram-link-expiry"></p>
-                            </div>
-                            <p class="text-[10px] text-ink3 mt-1.5">Genera un código temporal para enlazar tu chat de forma segura.</p>
-                        <% } %>
-                    </div>
-                </div>
-
-                <!-- TAB 4: INTEGRACIONES -->
-                <div id="tab-content-integrations" class="settings-tab-content hidden space-y-4">
-                    <div>
-                        <label class="block text-[11px] font-semibold uppercase tracking-wide text-ink3 mb-1">Google Calendar ID</label>
-                        <input type="text" name="google_calendar_id" placeholder="Ej: usuario@gmail.com o ID de calendario" value="<%= app_settings && app_settings.google_calendar_id ? app_settings.google_calendar_id : '' %>" class="w-full bg-surface2 hover:bg-surface2/80 border border-hairline hover:border-hairline/90 text-ink rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brass transition-colors">
-                        <p class="text-[10px] text-ink3 mt-1">ID del calendario de Google donde se sincronizan las ventanas de taller.</p>
-                    </div>
-
-                    <label class="flex items-center gap-2.5 cursor-pointer py-1">
-                        <input type="checkbox" name="google_calendar_enabled" value="true" <%= (app_settings && app_settings.google_calendar_enabled) ? 'checked' : '' %> class="w-4 h-4 rounded border-hairline bg-surface2 text-brass focus:ring-brass">
-                        <span class="text-xs text-ink2 font-medium flex-1">Sincronizar eventos en Google Calendar automáticamente</span>
-                    </label>
-
-                    <% if (app_settings && app_settings.google_calendar_enabled && app_settings.google_calendar_id) { %>
-                    <div class="flex flex-col sm:flex-row gap-2 pt-2">
-                        <button type="button" onclick="runCalendarReconciliation(this)" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 min-h-[36px]">
-                            <svg class="w-3.5 h-3.5"><use href="#i-refresh"/></svg> Reconciliar Eventos
-                        </button>
-                        <button type="button" onclick="previewCalendarCleanupOrphans(this)" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5 min-h-[36px]">
-                            <svg class="w-3.5 h-3.5"><use href="#i-trash"/></svg> Limpiar Huérfanos
-                        </button>
-                    </div>
-                    <div id="calendar-action-feedback" class="hidden text-xs px-3 py-2 rounded-lg bg-surface2 border border-hairline text-ink2"></div>
-                    
-                    <div id="calendar-orphan-preview-container" class="hidden flex flex-col gap-2 p-3 bg-surface2 border border-brass/40 rounded-lg text-xs">
-                        <div class="flex items-center justify-between">
-                            <span class="font-bold text-ink flex items-center gap-1">Previsualización de Eliminación</span>
-                            <button type="button" onclick="cancelCalendarCleanupPreview()" class="text-ink3 hover:text-ink text-xs">Cerrar</button>
-                        </div>
-                        <p class="text-ink2 text-[11px]" id="calendar-orphan-preview-msg"></p>
-                        <div id="calendar-orphan-list" class="max-h-32 overflow-y-auto space-y-1 py-1"></div>
-                        <div class="flex gap-2 pt-1">
-                            <button type="button" onclick="cancelCalendarCleanupPreview()" class="flex-1 bg-surface border border-hairline text-ink2 hover:text-ink text-xs font-medium py-1.5 rounded transition-colors">
-                                Cancelar
-                            </button>
-                            <button type="button" id="btn-confirm-delete-orphans" onclick="executeConfirmedCalendarCleanup(this)" class="flex-1 bg-crimson hover:bg-crimson/90 text-white text-xs font-semibold py-1.5 rounded transition-colors">
-                                Confirmar y Borrar
-                            </button>
-                        </div>
-                    </div>
-                    <% } %>
-                </div>
-
-                <!-- TAB 5: SEGURIDAD Y MANTENIMIENTO -->
-                <div id="tab-content-security" class="settings-tab-content hidden space-y-4">
-                    <div class="flex flex-col sm:flex-row gap-2">
-                        <button type="button" id="btn-toggle-change-password" onclick="toggleChangePasswordSection()" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5">
-                            <svg class="w-3.5 h-3.5"><use href="#i-edit"/></svg> Cambiar Contraseña
-                        </button>
-                        <button type="button" id="btn-trigger-manual-backup" onclick="triggerManualBackup(this)" class="flex-1 bg-surface2 hover:border-brass border border-hairline text-ink text-xs font-semibold py-2.5 px-3 rounded-lg transition-colors flex items-center justify-center gap-1.5">
-                            <svg class="w-3.5 h-3.5"><use href="#i-download"/></svg> Crear Backup (WAL)
-                        </button>
-                    </div>
-
-                    <div id="backup-action-feedback" class="hidden text-xs px-3 py-2 rounded-lg bg-surface2 border border-hairline text-ink2"></div>
-
-                    <!-- Panel de Cambio de Contraseña -->
-                    <div id="change-password-panel" class="hidden p-3 bg-surface2 border border-hairline rounded-lg space-y-3">
-                        <div class="flex items-center justify-between">
-                            <span class="text-xs font-bold text-ink">Actualizar Contraseña</span>
-                            <button type="button" onclick="toggleChangePasswordSection(false)" class="text-ink3 hover:text-ink text-xs">Cancelar</button>
-                        </div>
-                        <div>
-                            <label class="block text-[10px] text-ink3 uppercase font-semibold mb-1">Nueva Contraseña</label>
-                            <input type="password" id="input-new-password" placeholder="Mínimo 6 caracteres" class="w-full bg-surface border border-hairline text-ink rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brass">
-                        </div>
-                        <div>
-                            <label class="block text-[10px] text-ink3 uppercase font-semibold mb-1">Confirmar Nueva Contraseña</label>
-                            <input type="password" id="input-new-password-confirm" placeholder="Repite la nueva contraseña" class="w-full bg-surface border border-hairline text-ink rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brass">
-                        </div>
-                        <div id="change-password-feedback" class="hidden text-xs px-2 py-1 rounded bg-surface border border-hairline"></div>
-                        <div class="flex justify-end pt-1">
-                            <button type="button" id="btn-submit-change-password" onclick="submitChangePassword(this)" class="bg-brass hover:bg-brassdim text-canvas font-semibold py-1.5 px-3 rounded-lg text-xs transition-colors">
-                                Actualizar Contraseña
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <%- include('settings/_tab_telegram') %>
+                <%- include('settings/_tab_integrations') %>
+                <%- include('settings/_tab_security_backup') %>
             </div>
 
             <!-- Footer Fijo de Acciones -->

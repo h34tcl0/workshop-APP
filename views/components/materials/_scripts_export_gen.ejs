@@ -1,0 +1,212 @@
+<script>
+// EXPORT DATA GENERATORS (PROMPT, CSV, JSON, PLAIN TEXT)
+function getCleanStatusLabel(type, status) {
+    if (type === 'material') {
+        switch (status) {
+            case 'in_stock': return 'En Taller / Stock';
+            case 'to_buy': return 'Por Comprar';
+            case 'out_of_stock': return 'Agotado';
+            default: return status || 'Desconocido';
+        }
+    } else {
+        switch (status) {
+            case 'available': return 'Disponible en Taller';
+            case 'in_use': return 'En Uso / Mantención';
+            case 'to_buy':
+            case 'Por Comprar': return 'Por Comprar';
+            case 'broken': return 'Dañada / Reemplazar';
+            default: return status || 'Desconocido';
+        }
+    }
+}
+
+function generateActiveExportContent() {
+    const incTools = document.getElementById('ai-opt-tools')?.checked ?? false;
+    const incStock = document.getElementById('ai-opt-stock')?.checked ?? false;
+    const incToBuy = document.getElementById('ai-opt-tobuy')?.checked ?? true;
+
+    const filteredTools = incTools ? currentToolsData.filter(t => {
+        const tCat = (t.category || '').toLowerCase();
+        return Array.from(selectedToolChips).some(cat => tCat.includes(cat) || cat.includes(tCat));
+    }) : [];
+
+    const stockMats = incStock ? currentMaterialsData.filter(m => {
+        if (m.status !== 'in_stock') return false;
+        const mCat = (m.category || '').toLowerCase();
+        return Array.from(selectedStockChips).some(cat => mCat.includes(cat) || cat.includes(mCat));
+    }) : [];
+
+    const toBuyMats = incToBuy ? currentMaterialsData.filter(m => m.status === 'to_buy' || m.status === 'out_of_stock') : [];
+    const toBuyTools = incToBuy ? currentToolsData.filter(t => t.status === 'to_buy' || t.status === 'Por Comprar') : [];
+
+    let output = '';
+
+    if (currentExportFormat === 'prompt') {
+        output += `### INVENTARIO TALLER - CONTEXTO PARA PROMPTS IA (WORKSHOP OS)\n\n`;
+
+        if (incTools) {
+            output += `**HERRAMIENTAS EN TALLER (${filteredTools.length} filtradas de ${currentToolsData.length} total):**\n`;
+            if (filteredTools.length > 0) {
+                filteredTools.forEach(t => {
+                    const st = getCleanStatusLabel('tool', t.status);
+                    output += `• ${t.name} [${t.category}] - ${st}${t.notes ? ` (Notas: ${t.notes})` : ''}\n`;
+                });
+            } else {
+                output += `• Sin herramientas que coincidan con las categorías seleccionadas.\n`;
+            }
+            output += `\n`;
+        }
+
+        if (incStock) {
+            output += `**MATERIALES E INSUMOS EN STOCK (EN TALLER - ${stockMats.length}):**\n`;
+            if (stockMats.length > 0) {
+                stockMats.forEach(m => {
+                    output += `• ${m.name}: ${m.quantity} ${m.unit} [${m.category}] - En Taller (Proyecto: ${m.project_name || 'General'})\n`;
+                });
+            } else {
+                output += `• Sin materiales en stock que coincidan con las categorías seleccionadas.\n`;
+            }
+            output += `\n`;
+        }
+
+        if (incToBuy) {
+            output += `**MATERIALES Y HERRAMIENTAS POR COMPRAR / AGOTADOS (${toBuyMats.length + toBuyTools.length}):**\n`;
+            if (toBuyMats.length > 0 || toBuyTools.length > 0) {
+                toBuyMats.forEach(m => {
+                    const tag = m.status === 'out_of_stock' ? 'Agotado' : 'Por Comprar';
+                    output += `• [Material] ${m.name}: ${m.quantity} ${m.unit} [${m.category}] - ${tag}\n`;
+                });
+                toBuyTools.forEach(t => {
+                    output += `• [Herramienta] ${t.name} [${t.category}] - Por Comprar${t.notes ? ` (Notas: ${t.notes})` : ''}\n`;
+                });
+            } else {
+                output += `• Sin insumos ni herramientas pendientes por comprar.\n`;
+            }
+        }
+    } else if (currentExportFormat === 'csv') {
+        const escapeCsv = (val) => {
+            if (val === null || val === undefined) return '""';
+            const str = String(val).replace(/"/g, '""');
+            return `"${str}"`;
+        };
+
+        const rows = [
+            ['Tipo', 'Nombre', 'Categoría', 'Cantidad', 'Unidad', 'Estado', 'Proyecto / Notas']
+        ];
+
+        if (incStock) {
+            stockMats.forEach(m => {
+                rows.push(['Material', m.name, m.category, m.quantity, m.unit, getCleanStatusLabel('material', m.status), m.project_name || 'General']);
+            });
+        }
+
+        if (incTools) {
+            filteredTools.forEach(t => {
+                rows.push(['Herramienta', t.name, t.category, '1', 'unidad', getCleanStatusLabel('tool', t.status), t.notes || '']);
+            });
+        }
+
+        if (incToBuy) {
+            toBuyMats.forEach(m => {
+                rows.push(['Material (Por Comprar)', m.name, m.category, m.quantity, m.unit, getCleanStatusLabel('material', m.status), m.project_name || 'General']);
+            });
+            toBuyTools.forEach(t => {
+                rows.push(['Herramienta (Por Comprar)', t.name, t.category, '1', 'unidad', getCleanStatusLabel('tool', t.status), t.notes || '']);
+            });
+        }
+
+        output = rows.map(r => r.map(escapeCsv).join(',')).join('\n');
+    } else if (currentExportFormat === 'json') {
+        const exportObj = {
+            export_date: new Date().toISOString(),
+            workspace: "Workshop OS",
+            materials_in_stock: incStock ? stockMats.map(m => ({
+                id: m.id,
+                name: m.name,
+                category: m.category,
+                quantity: m.quantity,
+                unit: m.unit,
+                status: m.status,
+                status_label: getCleanStatusLabel('material', m.status),
+                project_name: m.project_name || null
+            })) : [],
+            tools: incTools ? filteredTools.map(t => ({
+                id: t.id,
+                name: t.name,
+                category: t.category,
+                status: t.status,
+                status_label: getCleanStatusLabel('tool', t.status),
+                notes: t.notes || null
+            })) : [],
+            to_buy_list: incToBuy ? [
+                ...toBuyMats.map(m => ({
+                    type: 'material',
+                    name: m.name,
+                    category: m.category,
+                    quantity: m.quantity,
+                    unit: m.unit,
+                    status: m.status,
+                    status_label: getCleanStatusLabel('material', m.status)
+                })),
+                ...toBuyTools.map(t => ({
+                    type: 'tool',
+                    name: t.name,
+                    category: t.category,
+                    status: t.status,
+                    status_label: getCleanStatusLabel('tool', t.status),
+                    notes: t.notes || null
+                }))
+            ] : []
+        };
+        output = JSON.stringify(exportObj, null, 2);
+    } else if (currentExportFormat === 'text') {
+        output += `INVENTARIO DE TALLER - WORKSHOP OS\n`;
+        output += `Fecha: ${new Date().toLocaleDateString()}\n`;
+        output += `========================================\n\n`;
+
+        if (incTools) {
+            output += `HERRAMIENTAS (${filteredTools.length})\n`;
+            output += `----------------------------------------\n`;
+            if (filteredTools.length > 0) {
+                filteredTools.forEach(t => {
+                    output += `- ${t.name} (${t.category}) | ${getCleanStatusLabel('tool', t.status)}${t.notes ? ` | Notas: ${t.notes}` : ''}\n`;
+                });
+            } else {
+                output += `- Sin herramientas en las categorías seleccionadas.\n`;
+            }
+            output += `\n`;
+        }
+
+        if (incStock) {
+            output += `MATERIALES E INSUMOS EN STOCK (${stockMats.length})\n`;
+            output += `----------------------------------------\n`;
+            if (stockMats.length > 0) {
+                stockMats.forEach(m => {
+                    output += `- ${m.name}: ${m.quantity} ${m.unit} (${m.category}) | En Taller | Proy: ${m.project_name || 'General'}\n`;
+                });
+            } else {
+                output += `- Sin materiales en stock en las categorías seleccionadas.\n`;
+            }
+            output += `\n`;
+        }
+
+        if (incToBuy) {
+            output += `POR COMPRAR Y AGOTADOS (${toBuyMats.length + toBuyTools.length})\n`;
+            output += `----------------------------------------\n`;
+            if (toBuyMats.length > 0 || toBuyTools.length > 0) {
+                toBuyMats.forEach(m => {
+                    output += `- [Material] ${m.name}: ${m.quantity} ${m.unit} (${m.category}) | ${getCleanStatusLabel('material', m.status)}\n`;
+                });
+                toBuyTools.forEach(t => {
+                    output += `- [Herramienta] ${t.name} (${t.category}) | Por Comprar${t.notes ? ` | Notas: ${t.notes}` : ''}\n`;
+                });
+            } else {
+                output += `- Sin insumos ni herramientas pendientes.\n`;
+            }
+        }
+    }
+
+    const textarea = document.getElementById('ai-export-textarea');
+    if (textarea) textarea.value = output;
+}
+</script>
