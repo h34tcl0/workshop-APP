@@ -1,0 +1,121 @@
+<!-- SUB-TOOL: ESCUADRA & COMPROBADOR DE DIAGONALES -->
+<div id="tool-square-view" class="space-y-6 w-full hidden">
+    <div class="bg-surface border-2 border-brass/50 rounded-3xl p-5 sm:p-7 shadow-2xl space-y-5 max-w-2xl mx-auto">
+        <!-- HEADER -->
+        <div class="flex items-center justify-between border-b border-hairline pb-4">
+            <div>
+                <h2 class="font-display text-xl sm:text-2xl font-bold text-ink flex items-center gap-2">
+                    <svg class="w-6 h-6 text-brass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 21h18"/>
+                        <path d="M3 21V3l4 4v10h10l4 4"/>
+                        <line x1="7" y1="17" x2="7" y2="15"/>
+                        <line x1="11" y1="17" x2="11" y2="15"/>
+                        <line x1="15" y1="17" x2="15" y2="15"/>
+                    </svg>
+                    Escuadra & Diagonales
+                </h2>
+                <p class="text-xs text-ink3 mt-0.5 font-sans">Comprobación de 90°, cálculo de Pitágoras y guía vectorial de prensado</p>
+            </div>
+            <span class="text-xs font-mono bg-brass/20 text-brass border border-brass/40 px-2.5 py-1 rounded-full font-bold">
+                Taller
+            </span>
+        </div>
+
+        <!-- FORMULARIO DE MEDIDAS (NOMINALES + DIAGONALES REALES) -->
+        <div class="space-y-3 bg-surface2/60 border border-hairline p-4 rounded-2xl">
+            <span class="block text-[11px] font-bold text-ink2 uppercase tracking-wide">Medidas Nominales del Mueble / Bastidor</span>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-[10px] font-bold text-ink3 uppercase mb-1">
+                        Ancho Nominal (<span class="text-brass">W</span> en mm)
+                    </label>
+                    <input type="number" id="diag-input-width" step="1" min="1" value="600" placeholder="Ej. 600" 
+                           oninput="calculateDiagonals()"
+                           class="w-full bg-surface border border-hairline hover:border-brass text-ink font-mono font-bold text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-brass transition-colors">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-bold text-ink3 uppercase mb-1">
+                        Alto Nominal (<span class="text-brass">H</span> en mm)
+                    </label>
+                    <input type="number" id="diag-input-height" step="1" min="1" value="800" placeholder="Ej. 800" 
+                           oninput="calculateDiagonals()"
+                           class="w-full bg-surface border border-hairline hover:border-brass text-ink font-mono font-bold text-sm rounded-xl px-3 py-2 focus:outline-none focus:border-brass transition-colors">
+                </div>
+            </div>
+
+            <div class="border-t border-hairline/60 pt-2.5">
+                <span class="block text-[11px] font-bold text-ink2 uppercase tracking-wide mb-2">Lectura Real de Huincha en Vértices</span>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[10px] font-bold text-ink3 uppercase mb-1">
+                            Diagonal 1 (<span class="text-brass">D1</span>: A ↔ C en mm)
+                        </label>
+                        <input type="number" id="diag-input-d1" step="0.5" min="1" value="1002" placeholder="Ej. 1002" 
+                               oninput="calculateDiagonals()"
+                               class="w-full bg-surface border border-hairline hover:border-brass text-ink font-mono font-bold text-base rounded-xl px-3 py-2 focus:outline-none focus:border-brass transition-colors">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-bold text-ink3 uppercase mb-1">
+                            Diagonal 2 (<span class="text-brass">D2</span>: B ↔ D en mm)
+                        </label>
+                        <input type="number" id="diag-input-d2" step="0.5" min="1" value="998" placeholder="Ej. 998" 
+                               oninput="calculateDiagonals()"
+                               class="w-full bg-surface border border-hairline hover:border-brass text-ink font-mono font-bold text-base rounded-xl px-3 py-2 focus:outline-none focus:border-brass transition-colors">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- RESUMEN DE DIAGNÓSTICO -->
+        <div class="grid grid-cols-3 gap-2.5 text-center font-mono">
+            <div class="bg-surface2 border border-hairline p-3 rounded-xl">
+                <span class="block text-[10px] text-ink3 uppercase font-sans font-semibold">Teórica (Pitágoras)</span>
+                <span id="diag-res-theory" class="text-lg sm:text-xl font-extrabold text-ink">1000.0 mm</span>
+            </div>
+            <div class="bg-surface2 border border-hairline p-3 rounded-xl">
+                <span class="block text-[10px] text-ink3 uppercase font-sans font-semibold">Diferencia (ΔD)</span>
+                <span id="diag-res-diff" class="text-lg sm:text-xl font-extrabold text-brass">4.0 mm</span>
+            </div>
+            <div id="diag-status-card" class="bg-surface2 border border-hairline p-3 rounded-xl flex flex-col justify-center items-center">
+                <span class="block text-[10px] text-ink3 uppercase font-sans font-semibold mb-0.5">Estado</span>
+                <span id="diag-res-status" class="text-xs sm:text-sm font-bold uppercase tracking-tight px-2 py-0.5 rounded-md bg-rust/20 text-rust border border-rust/40">Descuadrado</span>
+            </div>
+        </div>
+
+        <!-- GUÍA VECTORIAL DE PRENSADO (CANVAS SVG) -->
+        <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+                <span class="text-[11px] font-bold text-ink3 uppercase tracking-wide">Esquema de Cuadratura & Prensas</span>
+                <span class="text-[10px] font-mono text-ink3">A: Sup-Izq • B: Sup-Der • C: Inf-Der • D: Inf-Izq</span>
+            </div>
+            <div class="bg-canvas border border-hairline rounded-2xl p-3 shadow-inner overflow-hidden flex items-center justify-center min-h-[170px]">
+                <svg id="diagonals-svg-canvas" viewBox="0 0 500 240" class="w-full h-auto max-h-56 block select-none">
+                    <!-- Contenido renderizado reactivamente por diagonalsSvg.js -->
+                </svg>
+            </div>
+        </div>
+
+        <!-- INSTRUCCIÓN DE AJUSTE CON PRENSA SARGENTO -->
+        <div class="bg-surface2/80 border border-hairline rounded-2xl p-4 space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-brass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <path d="M2 15h10"/>
+                        <path d="m9 18 3-3-3-3"/>
+                    </svg>
+                    <h3 class="text-xs font-bold text-ink uppercase tracking-wide">Acción de Corrección en Banco</h3>
+                </div>
+                <button type="button" onclick="copyDiagonalsReportToClipboard()" 
+                        class="flex items-center gap-1 bg-brass hover:bg-brassdim text-canvas px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs active:scale-95">
+                    <svg class="w-3.5 h-3.5"><use href="#i-copy"/></svg>
+                    <span id="diag-copy-btn-text">Copiar Diagnóstico</span>
+                </button>
+            </div>
+            <p id="diag-clamp-instruction" class="text-xs text-ink font-medium leading-relaxed bg-surface border border-hairline p-3 rounded-xl">
+                Aplica la prensa sargento en diagonal para corregir el desajuste.
+            </p>
+        </div>
+    </div>
+</div>

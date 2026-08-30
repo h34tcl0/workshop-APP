@@ -1,0 +1,140 @@
+<!-- SUB-TOOL: CALCULADOR DE TORNILLOS & FIJACIONES (HUINCHA CORRIDA) -->
+<div id="tool-screws-view" class="space-y-6 w-full hidden">
+    <div class="bg-surface border-2 border-brass/50 rounded-3xl p-5 sm:p-7 shadow-2xl space-y-5 max-w-2xl mx-auto">
+        <!-- HEADER -->
+        <div class="flex items-center justify-between border-b border-hairline pb-4">
+            <div>
+                <h2 class="font-display text-xl sm:text-2xl font-bold text-ink flex items-center gap-2">
+                    <svg class="w-6 h-6 text-brass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M10 2h4l1 4H9l1-4z"/>
+                        <path d="M10 6v11l2 3 2-3V6"/>
+                        <line x1="10" y1="9" x2="14" y2="11"/>
+                        <line x1="10" y1="13" x2="14" y2="15"/>
+                    </svg>
+                    Tornillos & Fijaciones
+                </h2>
+                <p class="text-xs text-ink3 mt-0.5 font-sans">Distribución equidistante y marcas directas de huincha corrida</p>
+            </div>
+            <span class="text-xs font-mono bg-brass/20 text-brass border border-brass/40 px-2.5 py-1 rounded-full font-bold">
+                Taller
+            </span>
+        </div>
+
+        <!-- FORMULARIO DE PARÁMETROS -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-surface2/60 border border-hairline p-4 rounded-2xl">
+            <!-- Largo Total (L) -->
+            <div>
+                <label class="block text-[11px] font-bold text-ink2 uppercase mb-1">
+                    Largo Total (<span class="text-brass">L</span> en mm)
+                </label>
+                <input type="number" id="screw-input-length" step="1" min="1" value="1000" placeholder="Ej. 1000" 
+                       oninput="calculateScrews()"
+                       class="w-full bg-surface border border-hairline hover:border-brass text-ink font-mono font-bold text-base rounded-xl px-3 py-2.5 focus:outline-none focus:border-brass transition-colors">
+            </div>
+
+            <!-- Margen Extremos (M) -->
+            <div>
+                <label class="block text-[11px] font-bold text-ink2 uppercase mb-1">
+                    Margen Extremos (<span class="text-brass">M</span> en mm)
+                </label>
+                <input type="number" id="screw-input-margin" step="1" min="0" value="50" placeholder="Ej. 50" 
+                       oninput="calculateScrews()"
+                       class="w-full bg-surface border border-hairline hover:border-brass text-ink font-mono font-bold text-base rounded-xl px-3 py-2.5 focus:outline-none focus:border-brass transition-colors">
+            </div>
+
+            <!-- Modo de Cálculo (Separación Máxima vs Cantidad Fija) -->
+            <div>
+                <label class="block text-[11px] font-bold text-ink2 uppercase mb-1">Criterio de Cálculo</label>
+                <div class="grid grid-cols-2 gap-1 bg-surface border border-hairline p-1 rounded-xl">
+                    <button type="button" id="screw-mode-max-dist" onclick="setScrewMode('max_dist')"
+                            class="py-1.5 px-2 rounded-lg text-xs font-bold bg-brass text-canvas transition-all">
+                        Sep. Máx
+                    </button>
+                    <button type="button" id="screw-mode-fixed-qty" onclick="setScrewMode('fixed_qty')"
+                            class="py-1.5 px-2 rounded-lg text-xs font-medium text-ink2 hover:text-ink transition-all">
+                        Cant. Fija
+                    </button>
+                </div>
+            </div>
+
+            <!-- Input dinámico según Criterio -->
+            <div id="screw-target-container">
+                <label id="screw-target-label" class="block text-[11px] font-bold text-ink2 uppercase mb-1">
+                    Separación Máx (<span class="text-brass">S máx</span> mm)
+                </label>
+                <input type="number" id="screw-input-target" step="1" min="1" value="250" placeholder="Ej. 250" 
+                       oninput="calculateScrews()"
+                       class="w-full bg-surface border border-hairline hover:border-brass text-ink font-mono font-bold text-base rounded-xl px-3 py-2.5 focus:outline-none focus:border-brass transition-colors">
+            </div>
+
+            <!-- Opciones extra: Zigzag -->
+            <div class="sm:col-span-2 pt-1 flex items-center justify-between border-t border-hairline/60">
+                <label class="flex items-center gap-2 cursor-pointer select-none text-xs font-medium text-ink">
+                    <input type="checkbox" id="screw-opt-zigzag" onchange="calculateScrews()" class="w-4 h-4 rounded text-brass focus:ring-brass bg-surface border-hairline">
+                    <span>Alternar en Zigzag (arriba / abajo para no rajar la veta)</span>
+                </label>
+                <span id="screw-util-length-badge" class="text-[11px] font-mono text-ink3">L. Útil: 900 mm</span>
+            </div>
+        </div>
+
+        <!-- ALERTA / MENSAJE DE VALIDACIÓN -->
+        <div id="screw-error-banner" class="hidden p-3 rounded-xl bg-rust/20 border border-rust/40 text-rust text-xs font-semibold flex items-center gap-2">
+            <svg class="w-4 h-4 shrink-0"><use href="#i-close"/></svg>
+            <span id="screw-error-text">El margen a extremos (2 × M) no puede ser mayor o igual al largo total.</span>
+        </div>
+
+        <!-- RESUMEN DE RESULTADOS PRINCIPALES -->
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-center font-mono">
+            <div class="bg-surface2 border border-hairline p-3 rounded-xl">
+                <span class="block text-[10px] text-ink3 uppercase font-sans font-semibold">Tornillos Totales</span>
+                <span id="screw-res-count" class="text-2xl font-extrabold text-brass">5</span>
+            </div>
+            <div class="bg-surface2 border border-hairline p-3 rounded-xl">
+                <span class="block text-[10px] text-ink3 uppercase font-sans font-semibold">Distancia Centros (S)</span>
+                <span id="screw-res-spacing" class="text-2xl font-extrabold text-moss">225 mm</span>
+            </div>
+            <div class="bg-surface2 border border-hairline p-3 rounded-xl col-span-2 sm:col-span-1">
+                <span class="block text-[10px] text-ink3 uppercase font-sans font-semibold">Espacios / Vano</span>
+                <span id="screw-res-intervals" class="text-2xl font-extrabold text-ink">4</span>
+            </div>
+        </div>
+
+        <!-- VISUALIZADOR GRÁFICO SVG RESPONSIVE -->
+        <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+                <span class="text-[11px] font-bold text-ink3 uppercase tracking-wide">Plano de Fijación Dinámico</span>
+                <span class="text-[10px] font-mono text-ink3">Escala paramétrica</span>
+            </div>
+            <div class="bg-canvas border border-hairline rounded-2xl p-3 shadow-inner overflow-hidden flex items-center justify-center">
+                <svg id="screw-svg-canvas" viewBox="0 0 800 130" class="w-full h-auto max-h-36 block select-none">
+                    <!-- Contenido renderizado reactivamente por screwsCalc.js -->
+                </svg>
+            </div>
+        </div>
+
+        <!-- TIRA DE MARCAS DE HUINCHA CORRIDA (PULSAR PARA COPIAR) -->
+        <div class="bg-surface2/80 border border-hairline rounded-2xl p-4 space-y-3">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-brass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2z"/>
+                        <line x1="7" y1="5" x2="7" y2="10"/>
+                        <line x1="11" y1="5" x2="11" y2="8"/>
+                        <line x1="15" y1="5" x2="15" y2="10"/>
+                        <line x1="19" y1="5" x2="19" y2="8"/>
+                    </svg>
+                    <h3 class="text-xs font-bold text-ink uppercase tracking-wide">Marcas de Huincha Corrida</h3>
+                </div>
+                <button type="button" onclick="copyTapeMarksToClipboard()" 
+                        class="flex items-center gap-1 bg-brass hover:bg-brassdim text-canvas px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs active:scale-95">
+                    <svg class="w-3.5 h-3.5"><use href="#i-copy"/></svg>
+                    <span id="screw-copy-btn-text">Copiar Marcas</span>
+                </button>
+            </div>
+            <p class="text-[11px] text-ink3">Engancha la huincha en el extremo cero (0) y marca directamente estos puntos sin acumular error:</p>
+            <div id="screw-tape-marks-container" class="flex flex-wrap gap-1.5 font-mono text-xs max-h-36 overflow-y-auto pr-1">
+                <!-- Chips de marcas generados dinámicamente -->
+            </div>
+        </div>
+    </div>
+</div>

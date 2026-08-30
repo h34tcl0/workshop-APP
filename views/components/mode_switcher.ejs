@@ -39,6 +39,9 @@ function switchWorkspaceMode(mode) {
     const workshopContainer = document.getElementById('workshop-mode-view');
     const materialsView = document.getElementById('materials-view-wrapper');
 
+    const planningBottomNav = document.getElementById('mobile-bottom-nav');
+    const workshopBottomNav = document.getElementById('workshop-bottom-nav');
+
     if (!planningBtn || !workshopBtn || !inventoryBtn) return;
 
     // Reset de clases de todos los botones de modo
@@ -57,6 +60,8 @@ function switchWorkspaceMode(mode) {
         workshopBtn.classList.remove('text-ink2', 'font-medium');
 
         if (workshopContainer) workshopContainer.classList.remove('hidden');
+        if (planningBottomNav) planningBottomNav.classList.add('hidden');
+        if (workshopBottomNav) workshopBottomNav.classList.remove('hidden');
 
         localStorage.setItem('agendapp_workspace_mode', 'workshop');
     } else if (mode === 'inventory') {
@@ -64,6 +69,8 @@ function switchWorkspaceMode(mode) {
         inventoryBtn.classList.remove('text-ink2', 'font-medium');
 
         if (materialsView) materialsView.classList.remove('hidden');
+        if (planningBottomNav) planningBottomNav.classList.remove('hidden');
+        if (workshopBottomNav) workshopBottomNav.classList.add('hidden');
 
         localStorage.setItem('agendapp_workspace_mode', 'inventory');
     } else {
@@ -72,6 +79,8 @@ function switchWorkspaceMode(mode) {
         planningBtn.classList.remove('text-ink2', 'font-medium');
 
         if (planningContainer) planningContainer.classList.remove('hidden');
+        if (planningBottomNav) planningBottomNav.classList.remove('hidden');
+        if (workshopBottomNav) workshopBottomNav.classList.add('hidden');
 
         localStorage.setItem('agendapp_workspace_mode', 'planning');
     }

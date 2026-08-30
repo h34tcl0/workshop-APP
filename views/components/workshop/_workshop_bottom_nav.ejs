@@ -1,0 +1,81 @@
+<!-- BOTTOM NAVIGATION BAR EXCLUSIVO DE TALLER (MOBILE < 768px) -->
+<nav id="workshop-bottom-nav" class="hidden flex md:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface/95 backdrop-blur-md border-t border-hairline shadow-2xl px-1 py-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] items-center justify-around">
+
+    <!-- 1. Offsets -->
+    <button type="button" 
+            id="ws-mob-btn-offsets" 
+            onclick="switchWorkshopTool('offsets')" 
+            class="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-brass active:scale-95 transition-all">
+        <div class="w-8 h-8 rounded-lg bg-brass text-canvas flex items-center justify-center shadow-xs mb-0.5">
+            <svg class="w-4 h-4"><use href="#i-calc"/></svg>
+        </div>
+        <span class="text-[10px] font-bold tracking-tight font-sans text-ink">Offsets</span>
+    </button>
+
+    <!-- 2. Tornillos -->
+    <button type="button" 
+            id="ws-mob-btn-screws" 
+            onclick="switchWorkshopTool('screws')" 
+            class="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-ink3 hover:text-ink active:scale-95 transition-all">
+        <div class="w-8 h-8 rounded-lg bg-surface2 flex items-center justify-center mb-0.5 text-ink">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 2h4l1 4H9l1-4z"/>
+                <path d="M10 6v11l2 3 2-3V6"/>
+                <line x1="10" y1="9" x2="14" y2="11"/>
+                <line x1="10" y1="13" x2="14" y2="15"/>
+            </svg>
+        </div>
+        <span class="text-[10px] font-medium tracking-tight text-ink3 font-sans">Tornillos</span>
+    </button>
+
+    <!-- 3. Escuadra -->
+    <button type="button" 
+            id="ws-mob-btn-square" 
+            onclick="switchWorkshopTool('square')" 
+            class="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-ink3 hover:text-ink active:scale-95 transition-all">
+        <div class="w-8 h-8 rounded-lg bg-surface2 flex items-center justify-center mb-0.5 text-ink">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 21h18"/>
+                <path d="M3 21V3l4 4v10h10l4 4"/>
+                <line x1="7" y1="17" x2="7" y2="15"/>
+                <line x1="11" y1="17" x2="11" y2="15"/>
+                <line x1="15" y1="17" x2="15" y2="15"/>
+            </svg>
+        </div>
+        <span class="text-[10px] font-medium tracking-tight text-ink3 font-sans">Escuadra</span>
+    </button>
+
+    <!-- 4. Centrador -->
+    <button type="button" 
+            id="ws-mob-btn-centering" 
+            onclick="switchWorkshopTool('centering')" 
+            class="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-ink3 hover:text-ink active:scale-95 transition-all">
+        <div class="w-8 h-8 rounded-lg bg-surface2 flex items-center justify-center mb-0.5 text-ink">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="8"/>
+                <circle cx="12" cy="12" r="3"/>
+                <line x1="12" y1="2" x2="12" y2="5"/>
+                <line x1="12" y1="19" x2="12" y2="22"/>
+                <line x1="2" y1="12" x2="5" y2="12"/>
+                <line x1="19" y1="12" x2="22" y2="12"/>
+            </svg>
+        </div>
+        <span class="text-[10px] font-medium tracking-tight text-ink3 font-sans">Centrador</span>
+    </button>
+
+    <!-- 5. Visor 3D -->
+    <button type="button" 
+            id="ws-mob-btn-viewer3d" 
+            onclick="switchWorkshopTool('viewer3d')" 
+            class="flex-1 flex flex-col items-center justify-center py-1 px-1 rounded-xl text-ink3 hover:text-ink active:scale-95 transition-all">
+        <div class="w-8 h-8 rounded-lg bg-surface2 flex items-center justify-center mb-0.5 text-ink">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+        </div>
+        <span class="text-[10px] font-medium tracking-tight text-ink3 font-sans">Visor 3D</span>
+    </button>
+
+</nav>

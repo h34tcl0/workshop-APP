@@ -1,0 +1,133 @@
+<!-- SUB-TOOL: VISOR 3D DE PROYECTO & DESPIECE -->
+<div id="tool-viewer3d-view" class="space-y-6 w-full hidden">
+    <div class="bg-surface border-2 border-brass/50 rounded-3xl p-5 sm:p-7 shadow-2xl space-y-5 max-w-4xl mx-auto">
+        <!-- HEADER -->
+        <div class="flex items-center justify-between border-b border-hairline pb-4">
+            <div>
+                <h2 class="font-display text-xl sm:text-2xl font-bold text-ink flex items-center gap-2">
+                    <svg class="w-6 h-6 text-brass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                        <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                        <line x1="12" y1="22.08" x2="12" y2="12"/>
+                    </svg>
+                    Visor 3D de Proyecto
+                </h2>
+                <p class="text-xs text-ink3 mt-0.5 font-sans">Inspección orbital, visualización de ensamble y despiece explosionado</p>
+            </div>
+            <div class="flex items-center gap-2">
+                <span id="v3d-status-badge" class="text-xs font-mono bg-surface2 text-ink3 border border-hairline px-2.5 py-1 rounded-full font-bold">
+                    Sin Modelo
+                </span>
+            </div>
+        </div>
+
+        <!-- DROPZONE / ÁREA DE SUBIDA -->
+        <div id="v3d-upload-zone" class="border-2 border-dashed border-hairline hover:border-brass/70 bg-surface2/40 hover:bg-surface2/80 rounded-2xl p-6 text-center transition-all cursor-pointer group relative">
+            <input type="file" id="v3d-file-input" accept=".glb,.gltf,.obj" class="hidden">
+            <div class="space-y-2 pointer-events-none">
+                <div class="w-12 h-12 rounded-xl bg-surface border border-hairline flex items-center justify-center mx-auto text-brass group-hover:scale-105 transition-transform shadow-xs">
+                    <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </div>
+                <div>
+                    <span class="text-sm font-bold text-ink block">Arrastra tu archivo 3D (.glb, .gltf, .obj) o haz clic aquí</span>
+                    <span class="text-[11px] text-ink3">Tamaño máximo recomendado: 25 MB • Persistencia automática</span>
+                </div>
+            </div>
+            <div class="mt-3 flex items-center justify-center gap-3">
+                <button type="button" id="v3d-btn-demo" onclick="loadDemo3dModel(event)"
+                        class="text-xs font-bold text-brass bg-surface border border-brass/40 hover:bg-brass hover:text-canvas px-3 py-1.5 rounded-lg transition-all shadow-xs flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                        <polyline points="2 17 12 22 22 17"/>
+                        <polyline points="2 12 12 17 22 12"/>
+                    </svg>
+                    Cargar Modelo Demo (Mueble)
+                </button>
+            </div>
+        </div>
+
+        <!-- CONTENEDOR DEL LIENZO THREE.JS & CONTROLES -->
+        <div id="v3d-viewport-wrapper" class="relative bg-canvas border border-hairline rounded-2xl overflow-hidden shadow-inner flex flex-col items-center justify-center min-h-[380px] sm:min-h-[460px]">
+            <!-- Canvas Three.js Container -->
+            <div id="v3d-canvas-container" class="w-full h-full absolute inset-0 cursor-grab active:cursor-grabbing" style="touch-action: none;"></div>
+
+            <!-- Loader Spinner Overlay -->
+            <div id="v3d-loading-overlay" class="hidden pointer-events-none absolute inset-0 bg-canvas/80 backdrop-blur-xs flex flex-col items-center justify-center z-20 space-y-2.5">
+                <div class="w-8 h-8 border-3 border-brass/30 border-t-brass rounded-full animate-spin"></div>
+                <span id="v3d-loading-text" class="text-xs font-mono font-bold text-ink">Cargando geometría 3D...</span>
+            </div>
+
+            <!-- Empty State Placeholder dentro del canvas -->
+            <div id="v3d-empty-prompt" class="z-10 pointer-events-none text-center p-6 space-y-2">
+                <svg class="w-12 h-12 text-ink3/40 mx-auto" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                </svg>
+                <p class="text-xs text-ink3 font-mono">No hay modelo cargado en el visor</p>
+            </div>
+
+            <!-- BOTONES FLOTANTES DE CONTROL DE CÁMARA & MODO (SVG LIMPIOS) -->
+            <div id="v3d-floating-toolbar" class="hidden pointer-events-none absolute top-3 right-3 z-20 flex flex-col gap-1.5 bg-surface/90 backdrop-blur-md border border-hairline p-1.5 rounded-xl shadow-lg">
+                <button type="button" onclick="reset3dCamera()" title="Restablecer Vista Isométrica"
+                        class="pointer-events-auto w-8 h-8 rounded-lg bg-surface2 hover:bg-hairline text-ink hover:text-brass flex items-center justify-center transition-all active:scale-95">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                        <path d="M3 3v5h5"/>
+                    </svg>
+                </button>
+                <button type="button" onclick="toggle3dWireframe()" id="v3d-btn-wireframe" title="Alternar Modo Alambre / Sólido"
+                        class="pointer-events-auto w-8 h-8 rounded-lg bg-surface2 hover:bg-hairline text-ink hover:text-brass flex items-center justify-center transition-all active:scale-95">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="3" width="18" height="18" rx="2" stroke-dasharray="3 3"/>
+                        <line x1="3" y1="9" x2="21" y2="9"/>
+                        <line x1="3" y1="15" x2="21" y2="15"/>
+                        <line x1="9" y1="3" x2="9" y2="21"/>
+                        <line x1="15" y1="3" x2="15" y2="21"/>
+                    </svg>
+                </button>
+                <button type="button" onclick="trigger3dUpload()" title="Reemplazar Modelo 3D"
+                        class="pointer-events-auto w-8 h-8 rounded-lg bg-surface2 hover:bg-hairline text-ink hover:text-brass flex items-center justify-center transition-all active:scale-95">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </button>
+                <button type="button" onclick="delete3dModel()" title="Eliminar Modelo Guardado"
+                        class="pointer-events-auto w-8 h-8 rounded-lg bg-surface2 hover:bg-rust/20 text-ink hover:text-rust flex items-center justify-center transition-all active:scale-95">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- BARRA INFERIOR DE DESPIECE EXPLOSIONADO -->
+        <div id="v3d-controls-footer" class="bg-surface2/80 border border-hairline rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="w-full sm:w-2/3 space-y-1.5">
+                <div class="flex items-center justify-between text-xs">
+                    <span class="font-bold text-ink uppercase tracking-wide flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-brass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                            <polyline points="2 17 12 22 22 17"/>
+                            <polyline points="2 12 12 17 22 12"/>
+                        </svg>
+                        Despiece Explosionado
+                    </span>
+                    <span id="v3d-explode-val" class="font-mono font-bold text-brass">0%</span>
+                </div>
+                <input type="range" id="v3d-slider-explode" min="0" max="100" value="0" step="1"
+                       oninput="set3dExplode(this.value)"
+                       class="w-full h-2 bg-surface rounded-lg appearance-none cursor-pointer accent-brass">
+            </div>
+
+            <div class="w-full sm:w-auto flex items-center justify-end gap-2 text-[11px] font-mono text-ink3">
+                <span id="v3d-mesh-count">0 piezas detectadas</span>
+            </div>
+        </div>
+    </div>
+</div>

@@ -385,10 +385,35 @@ Para prevenir la degradación arquitectónica, mitigar la complejidad cognitiva 
 
 ### 3 Modos de Navegación de Primer Nivel (Header)
 1. **Planificación**: Estructura de 3 paneles (Rail de accesos directos, Lienzo central de calendario proporcional y Horizonte Climático multi-día).
-2. **Taller (Modo Enfoque)**: Vista de ejecución directa para el trabajo diario en el espacio de trabajo con checklist interactivo y widget de cuenta regresiva de curado.
+2. **Taller (Modo Enfoque & Banco de Trabajo)**: Vista de ejecución y banco técnico que integra el checklist interactivo del día, widget de cuenta regresiva de curado y la **Suite de 5 Herramientas Técnicas de Banco de Trabajo** (Offsets, Tornillos/Huincha corrida, Escuadra/Diagonales, Centrador/Tiradores y Visor 3D con Three.js).
 3. **Inventario**: Control de inventario unificado en dos pestañas:
    - **Materiales e Insumos** (`Por Comprar` / `En Taller` por proyecto).
    - **Herramientas y Accesorios** (`Por Comprar` / `En Taller`).
+
+### 🆕 Suite de Herramientas de Banco de Trabajo (Modo Taller)
+El **Modo Taller** está concebido como una estación de trabajo digital para el banco de carpintería y ebanistería. Se diseñó bajo una estricta **regla de Cero Emojis** en la interfaz operacional, empleando iconografía técnica SVG, tipografía monospace de alta legibilidad técnica (`font-mono`) y navegación ergonómica dual adaptada al entorno físico del taller:
+
+- **Navegación Dual Adaptativa**:
+  - **Desktop / Tablet (`md:` >= 768px)**: Rail lateral vertical (`_workshop_left_rail.ejs` / `workshopRail.js`) fijado a la izquierda con tooltips direccionales, selección activa en tonos latón cálido (`text-brass`, `bg-brass`) y transiciones reactivas instantáneas.
+  - **Mobile (< 768px)**: Barra de navegación inferior flotante (`_workshop_bottom_nav.ejs`) optimizada para manipulación con una sola mano y feedback táctil de 44px.
+
+- **Las 5 Herramientas de Banco Implementadas**:
+  1. **Offsets & Medidas de Corte (`_tool_offsets.ejs` / `offsetsCalc.js`)**:
+     - *Propósito*: Cálculo exacto de cortes para cajones, rebajes, ranuras, holguras de correderas telescópicas (ej. $12.7\,\text{mm} \times 2$), ingletes y solapes de puertas con desglose de medidas interiores y exteriores en milímetros.
+  2. **Tornillos & Fijaciones con Huincha Corrida (`_tool_screws.ejs` / `screwsCalc.js`)**:
+     - *Propósito*: Reparto equidistante de fijaciones a lo largo de un canto o bastidor según longitud total, margen inicial/final y cantidad de tornillos o espaciado máximo.
+     - *Innovación*: Genera la **Tira de Marcas de Medición Continua (Huincha Corrida desde el Cero)**, permitiendo al carpintero extender la cinta métrica una sola vez y marcar todos los puntos acumulados (`120 mm`, `260 mm`, `400 mm`...) sin sumar cotas mentalmente ni arrastrar errores de tolerancia. Incluye botón de copiado rápido de marcas al portapapeles.
+  3. **Escuadra & Diagonales (`_tool_diagonals.ejs` / `diagonalsCalc.js` / `diagonalsSvg.js`)**:
+     - *Propósito*: Verificación milimétrica de cuadratura en muebles y bastidores mediante el teorema de Pitágoras ($D = \sqrt{W^2 + H^2}$) y método del triángulo de escuadra 3-4-5 ($600-800-1000\,\text{mm}$).
+     - *Innovación*: Admite la entrada de diagonales reales medidas ($D_1$ y $D_2$), diagnostica la desviación de paralelogramo con semáforo técnico de tolerancia ($0\,\text{mm}$: Perfecto, $\le 1\,\text{mm}$: Aceptable, $> 1\,\text{mm}$: Descuadrado) y renderiza un **Diagrama Vectorial SVG Reactivo** que exagera visualmente la inclinación hacia el lado largo indicando exactamente hacia dónde corregir o prensar el ensamble.
+  4. **Centrador & Reparto de Luces / Tiradores (`_tool_centering.ejs` / `centeringCalc.js` / `centeringSvg.js`)**:
+     - *Propósito*: Resolución de dos desafíos críticos de ebanistería:
+       - **Reparto de Barrotes / Celosías**: Calcula la luz exacta entre piezas $\text{Luz} = \frac{W - N \cdot S_w}{N + 1}$, verificando el total de madera y generando la tira de marcas de huincha corrida `[Inicio ➔ Fin]` y `(Centros)`.
+       - **Centrado de Tiradores & Herrajes**: Admite dimensiones de frente ($W \times H$) y centros de perforación ($CC$: presets de punto único, 96, 128, 160, 192 mm). Entrega márgenes simétricos exactos $M_x = (W - CC)/2$, distancia de gramil desde el canto $M_y = H/2$ y marcas de perforación acotadas.
+     - *Innovación*: Diagrama SVG reactivo acotado con líneas de cota técnicas, flechas de ingeniería y representación gráfica a escala de barrotes y siluetas de tiradores.
+  5. **Visor 3D de Proyecto (`_tool_viewer_3d.ejs` / `viewer3dCore.js` / `viewer3dLoader.js` / `viewer3dController.js`)**:
+     - *Propósito*: Inspección espacial interactiva de despieces y ensambles 3D del proyecto cargados directamente en el navegador mediante **Three.js** (WebGL).
+     - *Características*: Carga de archivos `.glb`, `.gltf` y `.obj` por arrastrar y soltar (drag & drop) o selección de archivo, persistencia en servidor en `data/models/user_{id}_latest.glb`, renderizado PBR con iluminación de estudio, sombras suaves en suelo, bounding box con dimensiones acotadas en milímetros ($X \times Y \times Z$), modos de visualización (Sólido, Wireframe, Rayos X), botones de vistas ortogonales (Frente, Superior, Isométrica, Reset) y soporte completo para pantalla completa en el taller.
 
 ### 🆕 Rediseño de la Vista de Planificación y Experiencia Operacional
 Durante la última iteración de diseño, la vista de Planificación fue modernizada para maximizar la legibilidad visual y el control en el taller:
@@ -421,8 +446,8 @@ Durante la última iteración de diseño, la vista de Planificación fue moderni
 
 El proyecto cuenta con una exhaustiva suite de pruebas unitarias y de integración sobre **Vitest**:
 
-- **15 suites de prueba** (`tests/*.test.ts`).
-- **126 tests pasando al 100%** en verde (0 fallos, 0 regresiones).
+- **16 suites de prueba** (`tests/*.test.ts`).
+- **130 tests pasando al 100%** en verde (0 fallos, 0 regresiones).
 
 ### Cobertura Completa de Suites
 
@@ -443,6 +468,7 @@ El proyecto cuenta con una exhaustiva suite de pruebas unitarias y de integraci�
 | **Materials Flow** | `tests/materialsFlow.test.ts` | Ciclo de vida de insumos, cálculo de estado y reactividad en la agenda. |
 | **Weather Cache** | `tests/weatherCache.test.ts` | TTL en memoria (15-30 min) y reutilización de snapshots meteorológicos. |
 | **Telegram Callback Determinism** | `tests/telegramCallbackDeterminism.test.ts` | Determinismo de callbacks interactivos de Telegram, parseo de acciones, transiciones FSM y respuestas idempotentes. |
+| **Workshop 3D Model API** | `tests/workshop3dModel.test.ts` | Ciclo de vida completo del modelo 3D (consulta de estado, subida de binarios `.glb`, validación de formatos, eliminación y descarga). |
 
 ---
 
@@ -571,12 +597,16 @@ docker logs workshop-app 2>&1 | grep -iE "scheduler|weather|calendar|notificatio
 - `POST /api/checkin/end_shift`: Controlador del botón "Término de la Jornada" (Telegram o modal web).
 - `POST /api/checkin/resolve`: Procesa la resolución de tareas del check-in.
 
-### ⚙️ Configuración y Telegram
+### ⚙️ Configuración, Telegram y Persistencia 3D
 - `GET /api/timezone`: Obtiene zona horaria calculada según lat/lon.
 - `POST /settings/update`: Guarda ubicación, horarios operativos, umbrales climáticos y duraciones en horas/minutos.
 - `POST /settings/telegram/generate-code`: Genera código OTP de 6 dígitos para vincular bot.
 - `POST /settings/telegram/unlink`: Desvincula cuenta de Telegram.
 - `POST /webhook/telegram`: Webhook para mensajes y callbacks interactivos de Telegram.
+- `GET /api/workshop/model3d/status`: Consulta el estado del modelo 3D del usuario (`hasModel`, `filename`, `size`, `updatedAt`).
+- `GET /api/workshop/model3d/latest`: Descarga / stream del archivo binario 3D actual (`.glb`, `.gltf`, `.obj`).
+- `POST /api/workshop/model3d`: Subida y almacenamiento del modelo 3D con límite de 25MB (`application/octet-stream` con `x-filename`).
+- `DELETE /api/workshop/model3d`: Eliminación segura del modelo 3D persistido del usuario.
 
 ---
 
@@ -633,7 +663,8 @@ AGENDAPP/
 │   │   ├── materialsController.ts     # Gestión CRUD e importación de insumos
 │   │   ├── overrideController.ts      # Sobreescrituras manuales (`day_overrides`)
 │   │   ├── taskController.ts          # Gestión CRUD, activación y reordenamiento de tareas
-│   │   └── toolsController.ts         # Gestión CRUD e inventario de herramientas
+│   │   ├── toolsController.ts         # Gestión CRUD e inventario de herramientas
+│   │   └── workshopModelController.ts # Control de subida, streaming y estado de modelo 3D
 │   ├── db/                            # Capa de persistencia SQLite y repositorios
 │   │   ├── connection.ts              # Instancia singleton Better-SQLite3 y WAL mode
 │   │   ├── helpers.ts                 # Funciones auxiliares de mapeo y serialización SQL
@@ -713,12 +744,23 @@ AGENDAPP/
 │       │   ├── taskActions.js         # Acciones CRUD y cambios de estado de tareas
 │       │   ├── taskImport.js          # Importación masiva de tareas en JSON
 │       │   └── taskModal.js           # Control del modal superior de creación
-│       └── settings/                  # Submódulos de configuración
-│           ├── formHandler.js         # Serialización y guardado reactivo de ajustes
-│           ├── securityBackup.js      # Cambio de contraseña y descarga de backups
-│           ├── tabsModal.js           # Navegación por pestañas y sincronización H/M
-│           └── telegramIntegrations.js # Generación de código OTP y vinculación
-├── tests/                             # Suite de pruebas automatizadas (15 suites, 126 tests)
+│       ├── settings/                  # Submódulos de configuración
+│       │   ├── formHandler.js         # Serialización y guardado reactivo de ajustes
+│       │   ├── securityBackup.js      # Cambio de contraseña y descarga de backups
+│       │   ├── tabsModal.js           # Navegación por pestañas y sincronización H/M
+│       │   └── telegramIntegrations.js # Generación de código OTP y vinculación
+│       └── workshop/                  # Submódulos de Modo Taller (Herramientas de Banco)
+│           ├── centeringCalc.js       # Cálculo de celosías, barrotes y centros de tiradores
+│           ├── centeringSvg.js        # Diagramas SVG acotados para centrado y barrotes
+│           ├── diagonalsCalc.js       # Cálculo de escuadra (Pitágoras / 3-4-5) y tolerancias
+│           ├── diagonalsSvg.js        # Diagrama SVG reactivo con deformación por escuadra
+│           ├── offsetsCalc.js         # Calculadora de rebajes, ranuras y holguras
+│           ├── screwsCalc.js          # Reparto de fijaciones y marcas de huincha corrida
+│           ├── viewer3dController.js  # Control de interfaz, HUD y eventos del visor 3D
+│           ├── viewer3dCore.js        # Motor Three.js, escena, cámara, luces y renderizado
+│           ├── viewer3dLoader.js      # Parser y cargador de archivos GLB/GLTF/OBJ
+│           └── workshopRail.js        # Navegación reactiva entre herramientas de banco
+├── tests/                             # Suite de pruebas automatizadas (16 suites, 130 tests)
 │   ├── activateToBacklog.test.ts      # Reactivación de tareas y ciclo de vida limpio
 │   ├── agendaReevaluationFlow.test.ts # Re-evaluación reactiva al mutar tareas o materiales
 │   ├── alertScenarios.test.ts         # Escenarios de lluvia, ráfagas y adelanto de hora
@@ -733,7 +775,8 @@ AGENDAPP/
 │   ├── telegramCallbackDeterminism.test.ts # Determinismo de callbacks de Telegram
 │   ├── toolsToBuy.test.ts             # Pruebas de herramientas por comprar
 │   ├── validation.test.ts             # Pruebas de aislamiento multi-tenant y esquemas Zod
-│   └── weatherCache.test.ts           # Pruebas de caché de clima en memoria
+│   ├── weatherCache.test.ts           # Pruebas de caché de clima en memoria
+│   └── workshop3dModel.test.ts        # Pruebas de API y persistencia del modelo 3D del taller
 └── views/                             # Plantillas de renderizado EJS modulares
     ├── index.ejs                      # Vista principal del Dashboard (contenedor limpio)
     ├── login.ejs                      # Vista de inicio de sesión
@@ -749,7 +792,7 @@ AGENDAPP/
     │   ├── right_rail.ejs             # Rail de Horizonte Climático multi-día
     │   ├── settings_modal.ejs         # Fachada del modal de configuración
     │   ├── task_modal.ejs             # Modal superior de creación de tareas
-    │   ├── workshop_calculator.ejs    # Calculadora de taller (madera, epoxi, adhesivos)
+    │   ├── workshop_calculator.ejs    # Contenedor maestro modular de herramientas de taller
     │   ├── agenda/                    # Sub-partials de la agenda
     │   │   ├── _calendar_grid.ejs     # Grid de bloques horarios proporcionales
     │   │   ├── _card_header.ejs       # Cabecera de estado, clima y acciones del día
@@ -775,13 +818,21 @@ AGENDAPP/
     │   │   ├── _shopping_summary.ejs  # Resumen de insumos pendientes de compra
     │   │   ├── _tool_modals.ejs       # Modales de creación y edición de herramientas
     │   │   └── _tools_table.ejs       # Tabla de herramientas `Por Comprar` y `En Stock`
-    │   └── settings/                  # Sub-partials del modal de configuración
-    │       ├── _tab_climate.ejs       # Pestaña de umbrales climáticos y resinas
-    │       ├── _tab_integrations.ejs  # Pestaña de integración con Google Calendar
-    │       ├── _tab_location.ejs      # Pestaña de mapa Leaflet, coordenadas y huso
-    │       ├── _tab_operational.ejs   # Pestaña de horarios operativos y tipo de taller
-    │       ├── _tab_security_backup.ejs # Pestaña de cambio de clave y backup SQLite
-    │       └── _tab_telegram.ejs      # Pestaña de vinculación OTP con Telegram Bot
+    │   ├── settings/                  # Sub-partials del modal de configuración
+    │   │   ├── _tab_climate.ejs       # Pestaña de umbrales climáticos y resinas
+    │   │   ├── _tab_integrations.ejs  # Pestaña de integración con Google Calendar
+    │   │   ├── _tab_location.ejs      # Pestaña de mapa Leaflet, coordenadas y huso
+    │   │   ├── _tab_operational.ejs   # Pestaña de horarios operativos y tipo de taller
+    │   │   ├── _tab_security_backup.ejs # Pestaña de cambio de clave y backup SQLite
+    │   │   └── _tab_telegram.ejs      # Pestaña de vinculación OTP con Telegram Bot
+    │   └── workshop/                  # Sub-partials de herramientas de banco de taller
+    │       ├── _tool_centering.ejs    # Centrador de tiradores y reparto de barrotes
+    │       ├── _tool_diagonals.ejs    # Comprobador de escuadra y diagonales con SVG
+    │       ├── _tool_offsets.ejs      # Calculadora de rebajes, ranuras y holguras
+    │       ├── _tool_screws.ejs       # Reparto de fijaciones y marcas de huincha corrida
+    │       ├── _tool_viewer_3d.ejs    # Visor 3D interactivo Three.js (GLB/GLTF/OBJ)
+    │       ├── _workshop_bottom_nav.ejs # Barra de navegación inferior móvil para taller
+    │       └── _workshop_left_rail.ejs # Rail lateral de herramientas de banco (Desktop)
     └── partials/                      # Partials globales del layout
         ├── _client_scripts.ejs        # Scripts de inicialización global del cliente
         ├── _end_shift_modals.ejs      # Modales de término de jornada y fallback web

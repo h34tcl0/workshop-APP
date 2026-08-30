@@ -4,6 +4,12 @@ import { AuthenticatedRequest } from '../auth.js';
 import { getTimezoneByCoords, getWorkshopLocalTime, getLocalDateIso } from '../dateUtils.js';
 import { triggerSilentReevaluation, reconcileCalendarEvents } from '../scheduler.js';
 import { calendarService } from '../calendarService.js';
+import {
+  getModelStatus,
+  getLatestModel,
+  uploadModel,
+  deleteModel
+} from '../controllers/workshopModelController.js';
 
 const router = Router();
 
@@ -215,5 +221,11 @@ router.post('/api/calendar/cleanup-orphans', async (req: AuthenticatedRequest, r
     res.status(500).json({ success: false, error: err?.message || 'Error al limpiar eventos huérfanos' });
   }
 });
+
+// 3D Model Workshop Persistence Endpoints
+router.get('/api/workshop/model3d/status', getModelStatus);
+router.get('/api/workshop/model3d/latest', getLatestModel);
+router.post('/api/workshop/model3d', uploadModel);
+router.delete('/api/workshop/model3d', deleteModel);
 
 export default router;

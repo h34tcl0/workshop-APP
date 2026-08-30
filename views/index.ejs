@@ -166,7 +166,7 @@
         </div>
 
         <!-- MODO TALLER - VISTA EXCLUSIVA TALLER (OCULTA POR DEFECTO) -->
-        <div id="workshop-mode-view" class="hidden w-full space-y-8">
+        <div id="workshop-mode-view" class="hidden w-full space-y-8 pb-24 md:pb-8">
             <!-- CALCULADORA DE OFFSETS -->
             <%- include('components/workshop_calculator') %>
 
@@ -226,6 +226,7 @@
     <%- include('components/settings_modal') %>
     <%- include('components/task_modal') %>
     <%- include('components/bottom_nav') %>
+    <%- include('components/workshop/_workshop_bottom_nav') %>
 
     <%- include('partials/_eval_feedback_modal') %>
     <%- include('partials/_end_shift_modals') %>

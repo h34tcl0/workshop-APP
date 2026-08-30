@@ -20,7 +20,17 @@ export async function processCheckinNotification(
   const localTime = getLocalHoursAndMinutes(now, userTz);
 
   const dailyLog = store.getDailyLogByDate(userId, todayIso);
-  if (!dailyLog || dailyLog.status !== DayStatus.DAY_VIABLE) {
+  if (!dailyLog) {
+    return false;
+  }
+
+  let taskIds: number[] = [];
+  try {
+    taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
+  } catch (_) {}
+
+  // Si no hay tareas agendadas en absoluto y el día no fue viable, omitir
+  if (taskIds.length === 0 && dailyLog.status !== DayStatus.DAY_VIABLE) {
     return false;
   }
 
@@ -31,11 +41,6 @@ export async function processCheckinNotification(
   if (!force && localTime.hours < appSettings.checkin_hour) {
     return false;
   }
-
-  let taskIds: number[] = [];
-  try {
-    taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]");
-  } catch (_) {}
 
   const scheduledTasks = taskIds
     .map(tid => store.getTask(userId, tid))
