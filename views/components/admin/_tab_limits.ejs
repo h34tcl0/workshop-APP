@@ -1,0 +1,45 @@
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-6 shadow-xl max-w-3xl">
+  <div>
+    <h2 class="text-base font-semibold text-slate-100">Cuotas Personalizadas por Usuario</h2>
+    <p class="text-xs text-slate-400 mt-0.5">Sobrescribe los límites del sistema para cuentas específicas</p>
+  </div>
+
+  <div class="space-y-4">
+    <div>
+      <label for="limits-user-select" class="block text-xs font-medium text-slate-300 mb-1.5">Seleccionar Usuario</label>
+      <select id="limits-user-select" onchange="loadSelectedUserLimits()" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono">
+        <option value="">-- Elige un usuario para editar --</option>
+      </select>
+    </div>
+
+    <form id="user-limits-form" onsubmit="saveUserLimits(event)" class="space-y-4 pt-2 hidden">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="limit-max-projects" class="block text-xs font-medium text-slate-300 mb-1">Máximo de Proyectos</label>
+          <input type="number" id="limit-max-projects" min="1" max="10000" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono" required>
+        </div>
+        <div>
+          <label for="limit-max-tasks" class="block text-xs font-medium text-slate-300 mb-1">Tareas por Proyecto</label>
+          <input type="number" id="limit-max-tasks" min="1" max="50000" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono" required>
+        </div>
+        <div>
+          <label for="limit-max-model-size" class="block text-xs font-medium text-slate-300 mb-1">Tamaño Máximo por Modelo 3D (MB)</label>
+          <input type="number" id="limit-max-model-size" min="1" max="500" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono" required>
+        </div>
+        <div>
+          <label for="limit-max-total-storage" class="block text-xs font-medium text-slate-300 mb-1">Almacenamiento Total 3D (MB)</label>
+          <input type="number" id="limit-max-total-storage" min="1" max="10000" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono" required>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+        <button type="button" onclick="resetUserLimitsToDefault()" class="px-3.5 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-xl transition-colors">
+          Restablecer a Valores del Sistema
+        </button>
+        <button type="submit" class="px-4 py-2 text-xs font-semibold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-xl transition-colors shadow-lg shadow-amber-500/20">
+          Guardar Cuotas
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

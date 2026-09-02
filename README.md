@@ -446,8 +446,8 @@ Durante la última iteración de diseño, la vista de Planificación fue moderni
 
 El proyecto cuenta con una exhaustiva suite de pruebas unitarias y de integración sobre **Vitest**:
 
-- **16 suites de prueba** (`tests/*.test.ts`).
-- **130 tests pasando al 100%** en verde (0 fallos, 0 regresiones).
+- **17 suites de prueba** (`tests/*.test.ts`).
+- **136 tests pasando al 100%** en verde (0 fallos, 0 regresiones).
 
 ### Cobertura Completa de Suites
 
@@ -469,6 +469,7 @@ El proyecto cuenta con una exhaustiva suite de pruebas unitarias y de integraci�
 | **Weather Cache** | `tests/weatherCache.test.ts` | TTL en memoria (15-30 min) y reutilización de snapshots meteorológicos. |
 | **Telegram Callback Determinism** | `tests/telegramCallbackDeterminism.test.ts` | Determinismo de callbacks interactivos de Telegram, parseo de acciones, transiciones FSM y respuestas idempotentes. |
 | **Workshop 3D Model API** | `tests/workshop3dModel.test.ts` | Ciclo de vida completo del modelo 3D (consulta de estado, subida de binarios `.glb`, validación de formatos, eliminación y descarga). |
+| **Responsive UI & Mobile Design** | `tests/responsiveUi.test.ts` | Verificación de contratos de diseño responsive: viewport, navegación móvil fija inferior, tira horizontal táctil de días, modales con contención vertical y visor 3D adaptable. |
 
 ---
 
@@ -760,7 +761,7 @@ AGENDAPP/
 │           ├── viewer3dCore.js        # Motor Three.js, escena, cámara, luces y renderizado
 │           ├── viewer3dLoader.js      # Parser y cargador de archivos GLB/GLTF/OBJ
 │           └── workshopRail.js        # Navegación reactiva entre herramientas de banco
-├── tests/                             # Suite de pruebas automatizadas (16 suites, 130 tests)
+├── tests/                             # Suite de pruebas automatizadas (17 suites, 136 tests)
 │   ├── activateToBacklog.test.ts      # Reactivación de tareas y ciclo de vida limpio
 │   ├── agendaReevaluationFlow.test.ts # Re-evaluación reactiva al mutar tareas o materiales
 │   ├── alertScenarios.test.ts         # Escenarios de lluvia, ráfagas y adelanto de hora
@@ -772,11 +773,12 @@ AGENDAPP/
 │   ├── localDate.test.ts              # Pruebas unitarias de LocalDate
 │   ├── materialsFlow.test.ts          # Pruebas de flujo reactivo de materiales
 │   ├── notificationDispatcher.test.ts # Pruebas directas de los tiers de notificación
-│   ├── telegramCallbackDeterminism.test.ts # Determinismo de callbacks de Telegram
-│   ├── toolsToBuy.test.ts             # Pruebas de herramientas por comprar
-│   ├── validation.test.ts             # Pruebas de aislamiento multi-tenant y esquemas Zod
-│   ├── weatherCache.test.ts           # Pruebas de caché de clima en memoria
-│   └── workshop3dModel.test.ts        # Pruebas de API y persistencia del modelo 3D del taller
+│   ├── responsiveUi.test.ts           # Pruebas de contratos de diseño responsive y UI móvil
+│   ├── telegramCallbackDeterminism.test.ts # Determinismo de callbacks interactivos de Telegram
+│   ├── toolsToBuy.test.ts             # Herramientas por comprar y filtros de taller
+│   ├── validation.test.ts             # Validación con Zod y multi-tenant isolation
+│   ├── weatherCache.test.ts           # Cache de pronóstico meteorológico
+│   └── workshop3dModel.test.ts        # API y persistencia de modelos 3D (.glb)
 └── views/                             # Plantillas de renderizado EJS modulares
     ├── index.ejs                      # Vista principal del Dashboard (contenedor limpio)
     ├── login.ejs                      # Vista de inicio de sesión

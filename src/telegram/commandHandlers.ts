@@ -75,6 +75,17 @@ export async function handleIncomingMessage(
     };
   }
 
+  if (user.status !== 'active') {
+    await req("sendMessage", {
+      chat_id: chatStr,
+      text: `⚠️ Tu cuenta se encuentra suspendida o inactiva. Contacta al administrador de AGENDAPP.`
+    });
+    return {
+      status: "forbidden",
+      message: "User account is inactive or blocked"
+    };
+  }
+
   if (cleanText === "/materiales" || cleanText === "materiales" || cleanText.startsWith("/materiales")) {
     const pendingByProject = store.getPendingMaterialsGroupedByProject(user.id);
     const pendingTools = store.getPendingTools(user.id);

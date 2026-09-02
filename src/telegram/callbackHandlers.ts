@@ -46,6 +46,13 @@ export async function processCallbackQuery(
       await req("sendMessage", { chat_id: chatStr, text: responseText });
       return { status: "unauthorized", message: responseText };
     }
+
+    if (user.status !== 'active') {
+      responseText = "⚠️ Tu cuenta se encuentra suspendida o inactiva. Contacta al administrador.";
+      await answerCb(responseText, true);
+      await req("sendMessage", { chat_id: chatStr, text: responseText });
+      return { status: "forbidden", message: "User account is inactive or blocked" };
+    }
     const userId = user.id;
 
     if (data.startsWith("ack_alarm") || data.startsWith("wxack:") || data.startsWith("ack_intraday_alert:") || data.startsWith("intraday_ack:")) {

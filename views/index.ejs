@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Workshop OS — Taller al Aire Libre</title>
     <meta name="description"
         content="Sistema operativo inteligente y sensible al clima para taller de carpintería y resina epóxica al aire libre.">
@@ -95,6 +95,15 @@
                         Evaluar
                     </button>
                 </form>
+
+                <% if (locals.user && user.role === 'admin') { %>
+                <a href="/admin" aria-label="Panel de Administración"
+                    class="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 p-1.5 sm:p-2 md:px-3 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-colors shrink-0"
+                    title="Panel de Administración">
+                    <span class="text-xs">🛡️</span>
+                    <span class="hidden md:inline">Admin</span>
+                </a>
+                <% } %>
 
                 <button type="button" onclick="openSettingsModal()" aria-label="Configuración"
                     class="flex items-center gap-1.5 bg-surface2 hover:bg-hairline border border-hairline text-ink2 hover:text-ink p-1.5 sm:p-2 md:px-3 md:py-2 rounded-xl text-xs md:text-sm font-medium transition-colors shrink-0">
@@ -230,6 +239,7 @@
 
     <%- include('partials/_eval_feedback_modal') %>
     <%- include('partials/_end_shift_modals') %>
+    <%- include('components/agenda/_checkin_floating_banner') %>
     <%- include('partials/_client_scripts') %>
 
 </body>

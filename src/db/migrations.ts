@@ -266,4 +266,72 @@ export function runMigrations(db: Database.Database, defaultUserId: number): voi
     db.prepare("UPDATE tasks SET project_id = ? WHERE user_id = ? AND (project_id IS NULL OR project_id = 0)").run(projId, uId);
     db.prepare("UPDATE materials SET project_id = ? WHERE user_id = ? AND (project_id IS NULL OR project_id = 0)").run(projId, uId);
   }
+
+  // Ensure Admin & User Status columns exist on users
+  const currentUsersCols = db.prepare("PRAGMA table_info(users)").all() as any[];
+  if (!currentUsersCols.some(c => c.name === "role")) {
+    db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user';");
+  }
+  if (!currentUsersCols.some(c => c.name === "status")) {
+    db.exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active';");
+  }
+  if (!currentUsersCols.some(c => c.name === "blocked_at")) {
+    db.exec("ALTER TABLE users ADD COLUMN blocked_at TEXT;");
+  }
+  if (!currentUsersCols.some(c => c.name === "blocked_reason")) {
+    db.exec("ALTER TABLE users ADD COLUMN blocked_reason TEXT;");
+  }
+
+  // Ensure system_settings table exists and has singleton row
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      registration_open INTEGER NOT NULL DEFAULT 1,
+      default_max_projects INTEGER NOT NULL DEFAULT 10,
+      default_max_tasks INTEGER NOT NULL DEFAULT 200,
+      default_max_storage_mb INTEGER NOT NULL DEFAULT 100,
+      default_max_model_size_mb INTEGER NOT NULL DEFAULT 25,
+      absolute_max_model_size_mb INTEGER NOT NULL DEFAULT 100,
+      maintenance_mode INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.exec(`
+    INSERT OR IGNORE INTO system_settings (
+      id, registration_open, default_max_projects, default_max_tasks,
+      default_max_storage_mb, default_max_model_size_mb, absolute_max_model_size_mb,
+      maintenance_mode, updated_at
+    ) VALUES (1, 1, 10, 200, 100, 25, 100, 0, datetime('now'));
+  `);
+
+  // Ensure account_limits table exists
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS account_limits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER UNIQUE NOT NULL,
+      max_projects INTEGER NOT NULL,
+      max_tasks INTEGER NOT NULL,
+      max_storage_mb INTEGER NOT NULL,
+      max_model_size_mb INTEGER NOT NULL,
+      updated_by INTEGER,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+    );
+  `);
+
+  // Ensure admin_audit_log table exists
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_user_id INTEGER NOT NULL,
+      action TEXT NOT NULL,
+      target_user_id INTEGER,
+      details TEXT,
+      ip_address TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+  `);
 }

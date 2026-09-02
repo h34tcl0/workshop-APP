@@ -12,11 +12,11 @@ export function seedDefaultsIfEmpty(db: Database.Database): void {
     const adminHash = hashPassword(adminPassword);
     const isDefault = adminPassword === "Admin123!" || adminPassword === "password123";
     db.prepare(
-      "INSERT INTO users (email, password_hash, must_change_password, created_at) VALUES (?, ?, ?, datetime('now'))"
+      "INSERT INTO users (email, password_hash, role, status, must_change_password, created_at) VALUES (?, ?, 'admin', 'active', ?, datetime('now'))"
     ).run(adminEmail.toLowerCase(), adminHash, isDefault ? 1 : 0);
     console.log(`[AUTH] Seeded initial admin user: ${adminEmail}`);
   } else {
-    const userRow = db.prepare("SELECT id, password_hash FROM users WHERE LOWER(email) = LOWER(?)").get(adminEmail) as any;
+    const userRow = db.prepare("SELECT id, password_hash, role FROM users WHERE LOWER(email) = LOWER(?)").get(adminEmail) as any;
     if (userRow) {
       const isCurrentValid = verifyPassword(adminPassword, userRow.password_hash as string);
       if (!isCurrentValid) {
@@ -26,8 +26,15 @@ export function seedDefaultsIfEmpty(db: Database.Database): void {
       } else {
         console.log(`[AUTH] Verified admin user active: ${adminEmail}`);
       }
+      if (userRow.role !== 'admin') {
+        db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userRow.id);
+        console.log(`[AUTH] Ensured admin role for: ${adminEmail}`);
+      }
     }
   }
+
+  // Handle ADMIN_BOOTSTRAP_EMAIL if defined
+  bootstrapAdmin(db);
 
   const activeUser = db.prepare("SELECT id, password_hash FROM users WHERE LOWER(email) = LOWER(?)").get(adminEmail) as any;
   if (activeUser) {
@@ -166,6 +173,27 @@ Standard API access is restricted until password is updated.
     defaultMaterials.forEach(m => {
       insertMaterial.run(adminUserId, adminProjId, m.name, m.quantity, m.unit, m.category, m.status);
     });
+  }
+}
+
+export function bootstrapAdmin(db: Database.Database): void {
+  const bootstrapEmail = process.env.ADMIN_BOOTSTRAP_EMAIL ? process.env.ADMIN_BOOTSTRAP_EMAIL.trim().toLowerCase() : null;
+  if (!bootstrapEmail) return;
+
+  try {
+    const userRow = db.prepare("SELECT id, role FROM users WHERE LOWER(email) = LOWER(?)").get(bootstrapEmail) as any;
+    if (userRow) {
+      if (userRow.role !== 'admin') {
+        db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userRow.id);
+        console.log(`[BOOTSTRAP ADMIN] Usuario '${bootstrapEmail}' promovido automáticamente al rol 'admin'.`);
+      } else {
+        console.log(`[BOOTSTRAP ADMIN] Usuario '${bootstrapEmail}' ya posee el rol 'admin'.`);
+      }
+    } else {
+      console.warn(`[BOOTSTRAP WARNING] Usuario con email '${bootstrapEmail}' configurado en ADMIN_BOOTSTRAP_EMAIL no existe en la base de datos. Se promoverá cuando la cuenta sea creada o mediante scripts/make-admin.js.`);
+    }
+  } catch (err) {
+    console.error("[BOOTSTRAP ERROR] Error al verificar ADMIN_BOOTSTRAP_EMAIL:", err);
   }
 }
 

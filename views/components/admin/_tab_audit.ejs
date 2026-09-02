@@ -1,0 +1,61 @@
+<div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+  <!-- Audit Controls Bar -->
+  <div class="p-4 sm:p-5 border-b border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+    <div>
+      <h2 class="text-base font-semibold text-slate-100">Bitácora de Auditoría de Administración</h2>
+      <p class="text-xs text-slate-400 mt-0.5">Registro inmutable de acciones ejecutadas por administradores</p>
+    </div>
+    <div class="flex items-center gap-2 w-full sm:w-auto">
+      <select id="audit-action-filter" onchange="loadAdminAuditLogs(1)" class="px-3 py-1.5 text-xs bg-slate-950 border border-slate-800 rounded-lg text-slate-200 focus:outline-none focus:border-amber-500 font-mono">
+        <option value="">Todas las acciones</option>
+        <option value="BLOCK_USER">BLOCK_USER</option>
+        <option value="UNBLOCK_USER">UNBLOCK_USER</option>
+        <option value="PROMOTE_ADMIN">PROMOTE_ADMIN</option>
+        <option value="DEMOTE_ADMIN">DEMOTE_ADMIN</option>
+        <option value="SOFT_DELETE_USER">SOFT_DELETE_USER</option>
+        <option value="UPDATE_LIMITS">UPDATE_LIMITS</option>
+        <option value="UPDATE_SYSTEM_SETTINGS">UPDATE_SYSTEM_SETTINGS</option>
+      </select>
+      <button onclick="loadAdminAuditLogs(1)" class="px-3 py-1.5 text-xs font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg transition-colors flex items-center gap-1">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        <span>Refrescar</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Audit Table Responsive -->
+  <div class="overflow-x-auto">
+    <table class="w-full text-left text-xs text-slate-300">
+      <thead class="bg-slate-950/60 text-slate-400 font-mono border-b border-slate-800">
+        <tr>
+          <th class="px-4 py-3 font-medium">Fecha / Hora</th>
+          <th class="px-4 py-3 font-medium">Admin (ID / Email)</th>
+          <th class="px-4 py-3 font-medium">Acción</th>
+          <th class="px-4 py-3 font-medium">Usuario Afectado</th>
+          <th class="px-4 py-3 font-medium">IP</th>
+          <th class="px-4 py-3 font-medium">Detalles</th>
+        </tr>
+      </thead>
+      <tbody id="audit-table-body" class="divide-y divide-slate-800/60 font-sans">
+        <tr>
+          <td colspan="6" class="px-4 py-8 text-center text-slate-500 font-mono">
+            Cargando bitácora de auditoría...
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Audit Pagination Bar -->
+  <div class="p-3 sm:p-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+    <span id="audit-pagination-info" class="font-mono">Página 1</span>
+    <div class="flex items-center gap-2">
+      <button id="audit-btn-prev" onclick="changeAuditPage(-1)" class="px-3 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed">
+        Anterior
+      </button>
+      <button id="audit-btn-next" onclick="changeAuditPage(1)" class="px-3 py-1 bg-slate-950 hover:bg-slate-800 border border-slate-800 rounded-lg text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed">
+        Siguiente
+      </button>
+    </div>
+  </div>
+</div>

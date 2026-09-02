@@ -164,14 +164,14 @@ export class SettingsRepository {
     return updated;
   }
 
-  getUserByTelegramChatId(telegramChatId: string | number): { id: number; email: string } | undefined {
+  getUserByTelegramChatId(telegramChatId: string | number): { id: number; email: string; role: string; status: string } | undefined {
     if (telegramChatId === undefined || telegramChatId === null || telegramChatId === "") return undefined;
     const chatStr = String(telegramChatId).trim();
     if (!chatStr) return undefined;
 
     const db = getDb();
     const rows = db.prepare(`
-      SELECT u.id, u.email
+      SELECT u.id, u.email, u.role, u.status
       FROM users u
       JOIN app_settings s ON s.user_id = u.id
       WHERE CAST(s.telegram_chat_id AS TEXT) = ?
@@ -187,7 +187,12 @@ export class SettingsRepository {
         }
         console.warn(`[DB] Cleaned duplicate telegram_chat_id (${chatStr}) from duplicate user(s): ${duplicateUserIds.join(', ')}. Retained for active user #${primary.id}`);
       }
-      return { id: Number(primary.id), email: String(primary.email) };
+      return {
+        id: Number(primary.id),
+        email: String(primary.email),
+        role: String(primary.role || 'user'),
+        status: String(primary.status || 'active')
+      };
     }
 
     return undefined;

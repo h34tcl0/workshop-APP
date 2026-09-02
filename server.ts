@@ -10,6 +10,8 @@ import taskRoutes from './src/routes/taskRoutes.js';
 import inventoryRoutes from './src/routes/inventoryRoutes.js';
 import agendaRoutes from './src/routes/agendaRoutes.js';
 import settingsRoutes from './src/routes/settingsRoutes.js';
+import adminRoutes from './src/routes/adminRoutes.js';
+import { notFoundHandler } from './src/middleware/notFound.js';
 
 const app = express();
 const PORT = 3000;
@@ -33,6 +35,10 @@ app.use(taskRoutes);
 app.use(inventoryRoutes);
 app.use(agendaRoutes);
 app.use(settingsRoutes);
+app.use(adminRoutes);
+
+// Catch-all 404 handler
+app.use(notFoundHandler);
 
 // Process Error Handlers & Graceful Shutdown
 let serverInstance: any = null;

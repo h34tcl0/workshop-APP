@@ -1,12 +1,25 @@
 import { Router } from 'express';
 import { store } from '../db.js';
 import { AuthenticatedRequest } from '../auth.js';
+import { assertCanCreateProject, QuotaExceededError } from '../services/limitsService.js';
 
 const router = Router();
 
 // POST /projects/add - Create a new project
 router.post('/projects/add', (req: AuthenticatedRequest, res) => {
   const userId = req.user!.id;
+  try {
+    assertCanCreateProject(userId);
+  } catch (err: any) {
+    if (err instanceof QuotaExceededError) {
+      if (req.xhr || req.headers.accept?.includes('application/json')) {
+        return res.status(403).json({ error: err.message, code: err.code });
+      }
+      return res.status(403).send(err.message);
+    }
+    throw err;
+  }
+
   const { name, description } = req.body;
   if (!name || !String(name).trim()) {
     if (req.xhr || req.headers.accept?.includes('application/json')) {

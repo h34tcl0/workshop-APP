@@ -1,8 +1,48 @@
+export type UserRole = 'user' | 'admin';
+export type UserStatus = 'active' | 'blocked' | 'revoked';
+
 export interface User {
   id: number;
   email: string;
   password_hash: string;
+  role?: UserRole;
+  status?: UserStatus;
+  blocked_at?: string | null;
+  blocked_reason?: string | null;
   must_change_password?: boolean;
+  created_at: string;
+}
+
+export interface AccountLimits {
+  id?: number;
+  user_id: number;
+  max_projects: number;
+  max_tasks: number;
+  max_storage_mb: number;
+  max_model_size_mb: number;
+  updated_by?: number | null;
+  updated_at: string;
+}
+
+export interface SystemSettings {
+  id: number;
+  registration_open: number; // 0 or 1
+  default_max_projects: number;
+  default_max_tasks: number;
+  default_max_storage_mb: number;
+  default_max_model_size_mb: number;
+  absolute_max_model_size_mb: number;
+  maintenance_mode: number;
+  updated_at: string;
+}
+
+export interface AdminAuditLog {
+  id?: number;
+  admin_user_id: number;
+  action: string;
+  target_user_id?: number | null;
+  details?: string | null;
+  ip_address?: string | null;
   created_at: string;
 }
 

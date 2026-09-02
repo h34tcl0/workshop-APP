@@ -86,7 +86,12 @@ async function loadModelFromUrl(url, filename) {
 
 async function upload3dFile(file) {
     if (!file) return;
-    show3dLoader(true, 'Subiendo y procesando modelo 3D...');
+    if (file.size > 50 * 1024 * 1024) {
+        show3dLoader(true, 'El archivo supera el límite de 50 MB');
+        setTimeout(() => show3dLoader(false), 3000);
+        return;
+    }
+    show3dLoader(true, `Subiendo ${file.name} (${(file.size / (1024 * 1024)).toFixed(1)} MB)...`);
     try {
         const res = await fetch('/api/workshop/model3d', {
             method: 'POST',
@@ -96,17 +101,18 @@ async function upload3dFile(file) {
             },
             body: file
         });
-        const data = await res.json();
-        if (data.success) {
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && data.success) {
             loadModelFromUrl('/api/workshop/model3d/latest', file.name);
         } else {
-            alert(data.error || 'Error al subir el modelo 3D');
-            show3dLoader(false);
+            const msg = data.error || (res.status === 413 ? 'El archivo supera el límite de 50 MB' : 'Error al procesar el modelo 3D');
+            show3dLoader(true, `Error: ${msg}`);
+            setTimeout(() => show3dLoader(false), 3500);
         }
     } catch (err) {
         console.error('[3D Viewer] Error uploading file:', err);
-        alert('Error de red al subir el archivo 3D');
-        show3dLoader(false);
+        show3dLoader(true, 'Error de conexión durante la subida');
+        setTimeout(() => show3dLoader(false), 3500);
     }
 }
 

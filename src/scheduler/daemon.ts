@@ -38,11 +38,14 @@ export async function processCheckinForUser(
 
 export async function runCheckinTick(nowDate?: Date, force: boolean = false, targetUserId?: number): Promise<void> {
   if (targetUserId) {
-    await processCheckinForUser(targetUserId, nowDate, force);
+    const targetUser = store.getUserById(targetUserId);
+    if (targetUser && targetUser.status === 'active') {
+      await processCheckinForUser(targetUserId, nowDate, force);
+    }
     return;
   }
 
-  const users = store.getAllUsers();
+  const users = store.getActiveUsers();
   for (const user of users) {
     try {
       await processCheckinForUser(user.id, nowDate, force);
@@ -57,7 +60,7 @@ export async function processWeatherAlertForUser(userId: number, nowDate?: Date)
 }
 
 export async function runWeatherAlertTick(nowDate?: Date): Promise<void> {
-  const users = store.getAllUsers();
+  const users = store.getActiveUsers();
   for (const user of users) {
     try {
       await processWeatherAlertForUser(user.id, nowDate);
@@ -68,7 +71,7 @@ export async function runWeatherAlertTick(nowDate?: Date): Promise<void> {
 }
 
 export async function runWorkStartTick(nowDate?: Date): Promise<void> {
-  const users = store.getAllUsers();
+  const users = store.getActiveUsers();
   for (const user of users) {
     try {
       await processWorkStartNotificationsForUser(user.id, nowDate);
@@ -80,7 +83,7 @@ export async function runWorkStartTick(nowDate?: Date): Promise<void> {
 
 export async function runMorningEvalTick(nowDate?: Date): Promise<void> {
   const now = nowDate || new Date();
-  const users = store.getAllUsers();
+  const users = store.getActiveUsers();
 
   for (const user of users) {
     try {

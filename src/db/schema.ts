@@ -6,8 +6,49 @@ export function createTables(db: Database.Database): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      status TEXT NOT NULL DEFAULT 'active',
+      blocked_at TEXT,
+      blocked_reason TEXT,
       must_change_password INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS system_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      registration_open INTEGER NOT NULL DEFAULT 1,
+      default_max_projects INTEGER NOT NULL DEFAULT 10,
+      default_max_tasks INTEGER NOT NULL DEFAULT 200,
+      default_max_storage_mb INTEGER NOT NULL DEFAULT 100,
+      default_max_model_size_mb INTEGER NOT NULL DEFAULT 25,
+      absolute_max_model_size_mb INTEGER NOT NULL DEFAULT 100,
+      maintenance_mode INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS account_limits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER UNIQUE NOT NULL,
+      max_projects INTEGER NOT NULL,
+      max_tasks INTEGER NOT NULL,
+      max_storage_mb INTEGER NOT NULL,
+      max_model_size_mb INTEGER NOT NULL,
+      updated_by INTEGER,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      admin_user_id INTEGER NOT NULL,
+      action TEXT NOT NULL,
+      target_user_id INTEGER,
+      details TEXT,
+      ip_address TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE SET NULL
     );
 
     CREATE TABLE IF NOT EXISTS projects (

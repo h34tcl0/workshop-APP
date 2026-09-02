@@ -1,6 +1,7 @@
 import { AuthenticatedRequest } from '../auth.js';
 import fs from 'fs';
 import path from 'path';
+import { assertCanUploadModel, getUserEffectiveLimits, QuotaExceededError } from '../services/limitsService.js';
 
 const MODELS_DIR = path.join(process.cwd(), 'data', 'models');
 
@@ -84,20 +85,21 @@ export function uploadModel(req: AuthenticatedRequest, res: any) {
     const userId = req.user!.id;
     ensureModelsDir();
 
-    const contentType = req.headers['content-type'] || '';
     const rawFilename = (req.headers['x-filename'] as string) || (req.query.filename as string) || 'model.glb';
     const originalExt = path.extname(rawFilename).toLowerCase();
 
     const allowedExts = ['.glb', '.gltf', '.obj'];
     const finalExt = allowedExts.includes(originalExt) ? originalExt : '.glb';
 
+    const limits = getUserEffectiveLimits(userId);
+    const maxSizeBytes = limits.max_model_size_mb * 1024 * 1024;
+
     const chunks: Buffer[] = [];
     let totalLength = 0;
-    const MAX_SIZE = 25 * 1024 * 1024; // 25 MB
 
     req.on('data', (chunk: Buffer) => {
       totalLength += chunk.length;
-      if (totalLength > MAX_SIZE) {
+      if (totalLength > maxSizeBytes) {
         req.destroy(new Error('LIMIT_EXCEEDED'));
         return;
       }
@@ -108,6 +110,12 @@ export function uploadModel(req: AuthenticatedRequest, res: any) {
       const fileBuffer = Buffer.concat(chunks);
       if (fileBuffer.length === 0) {
         return res.status(400).json({ error: 'El archivo enviado está vacío' });
+      }
+
+      try {
+        assertCanUploadModel(userId, fileBuffer.length);
+      } catch (quotaErr: any) {
+        return res.status(413).json({ error: quotaErr.message });
       }
 
       // Eliminar modelos anteriores del usuario (estricta sobreescritura 1 solo modelo)
@@ -132,7 +140,7 @@ export function uploadModel(req: AuthenticatedRequest, res: any) {
 
     req.on('error', (err: any) => {
       if (err.message === 'LIMIT_EXCEEDED') {
-        return res.status(413).json({ error: 'El archivo excede el límite máximo de 25 MB' });
+        return res.status(413).json({ error: `El archivo excede el límite permitido de ${limits.max_model_size_mb} MB` });
       }
       console.error('[3D Model] Upload stream error:', err);
       return res.status(500).json({ error: 'Error durante la subida del modelo' });

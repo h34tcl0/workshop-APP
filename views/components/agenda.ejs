@@ -38,7 +38,12 @@
             const cond = (eval.weather_summary && eval.weather_summary.condition) ? eval.weather_summary.condition : 'sunny';
             const is_manual_block = Boolean(eval.is_manually_blocked);
             const is_closed = (!is_viable) && (eval.reason && eval.reason.includes('Jornada concluida'));
-            const is_amber = (!is_viable) && (!is_manual_block) && (!is_closed) && (eval.climate_only_status === 'clear');
+            const is_non_working = (!is_viable) && (!is_closed) && (!is_manual_block) && (
+                (eval.reason && (eval.reason.includes('Día no laborable') || eval.reason.includes('no laborable'))) ||
+                (eval.unassigned_reason && (eval.unassigned_reason.includes('Día no laborable') || eval.unassigned_reason.includes('no laborable')))
+            );
+            const is_blocked = (!is_viable) && (!is_closed) && (is_manual_block || (eval.reason && eval.reason.includes('Bloqueado')));
+            const is_amber = (!is_viable) && (!is_manual_block) && (!is_closed) && (!is_non_working) && (!is_blocked) && (eval.climate_only_status === 'clear');
             const is_blocked_or_suspended = (!is_viable) && (!is_amber);
             const date_iso = item.date_iso || eval.eval_date;
             const date_str = item.date_str || eval.date_str;

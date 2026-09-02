@@ -117,4 +117,17 @@ describe('Workshop 3D Model API & Persistence', () => {
 
     expect(statusRes.body.hasModel).toBe(false);
   });
+
+  it('retorna error 400 cuando se envía un archivo vacío', async () => {
+    const res = await request(app)
+      .post('/api/workshop/model3d')
+      .set('Origin', 'http://127.0.0.1')
+      .set('Cookie', `workshop_session=${token}`)
+      .set('Content-Type', 'application/octet-stream')
+      .set('x-filename', 'empty.glb')
+      .send(Buffer.alloc(0));
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('vacío');
+  });
 });

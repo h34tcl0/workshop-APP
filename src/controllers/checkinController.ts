@@ -233,6 +233,31 @@ export async function handleResolveCheckin(req: AuthenticatedRequest, res: any) 
       DayService.concludeDay(userId, dailyLog.eval_date, "Jornada concluida (cerrada manualmente por el usuario)", { triggerReeval: false, checkinSent: true });
     }
 
+    // Notificación espejo a Telegram al cerrar desde la Web
+    const appSettings = store.getAppSettings(userId);
+    let targetChatId = appSettings?.telegram_chat_id ? appSettings.telegram_chat_id.trim() : "";
+    if (!targetChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
+      targetChatId = process.env.TELEGRAM_CHAT_ID.trim();
+    }
+
+    if (targetChatId && process.env.TELEGRAM_BOT_TOKEN) {
+      try {
+        const completedCount = completedSet.size;
+        const totalCount = taskIds.length;
+        const dateStr = dailyLog?.eval_date || getLocalDateIso(new Date(), appSettings?.timezone || "America/Santiago");
+        
+        let msg = `📋 <b>Cierre de Jornada Registrado (Vía Web)</b>\n`;
+        msg += `📅 Fecha: <code>${dateStr}</code>\n\n`;
+        msg += `✅ Tareas marcadas como completadas: <b>${completedCount} / ${totalCount}</b>\n`;
+        msg += `✨ La agenda y el pronóstico de los próximos días han sido re-evaluados automáticamente.`;
+
+        const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, targetChatId);
+        await telegramSvc.sendTelegramMessage(targetChatId, msg);
+      } catch (tgErr) {
+        console.warn('[Telegram Mirror] Error sending web checkin mirror message:', tgErr);
+      }
+    }
+
     await triggerSilentReevaluation(userId, dailyLog?.eval_date);
     return res.json({ success: true });
   } catch (err: any) {

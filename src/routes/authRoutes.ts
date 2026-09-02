@@ -83,6 +83,18 @@ router.post('/register', (req, res) => {
     });
   }
 
+  // Check global registration_open setting
+  const sys = store.getSystemSettings();
+  if (sys.registration_open === 0) {
+    if (req.xhr || (req.headers.accept && req.headers.accept.includes('json'))) {
+      return res.status(403).json({ error: 'El registro de nuevas cuentas está temporalmente deshabilitado.' });
+    }
+    return res.status(403).render('register', {
+      error: 'El registro público de nuevas cuentas se encuentra temporalmente deshabilitado por el administrador.',
+      email: req.body?.email || ''
+    });
+  }
+
   const { email, password, password_confirm } = req.body;
   if (!email || !password) {
     recordAuthFailure(ip);
@@ -104,7 +116,12 @@ router.post('/register', (req, res) => {
 
   resetAuthRateLimit(ip);
   const hash = hashPassword(password);
-  const user = store.createUser(email, hash);
+  const bootstrapEmail = process.env.ADMIN_BOOTSTRAP_EMAIL ? process.env.ADMIN_BOOTSTRAP_EMAIL.trim().toLowerCase() : null;
+  const isBootstrapAdmin = Boolean(bootstrapEmail && email.toLowerCase().trim() === bootstrapEmail);
+  const user = store.createUser(email, hash, isBootstrapAdmin ? 'admin' : 'user');
+  if (isBootstrapAdmin) {
+    console.log(`[AUTH REGISTER] Usuario '${email}' coincide con ADMIN_BOOTSTRAP_EMAIL y fue asignado con rol 'admin'.`);
+  }
   const token = signToken({ userId: user.id, email: user.email });
   res.setHeader('Set-Cookie', createSessionCookie(token));
   res.redirect(303, '/');

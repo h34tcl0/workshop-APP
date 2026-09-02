@@ -1,0 +1,36 @@
+<!-- BANNER FLOTANTE DE AVISO DE CHECK-IN / TÉRMINO DE JORNADA -->
+<% if (locals.show_end_shift_prompt) { %>
+<div id="checkin-floating-banner" class="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 w-[92%] max-w-xl animate-fade-in">
+    <div class="bg-surface/95 backdrop-blur-md border-2 border-brass/70 rounded-2xl p-4 sm:p-5 shadow-2xl flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3.5 min-w-0">
+            <div class="w-10 h-10 rounded-xl bg-brass/15 border border-brass/40 flex items-center justify-center text-brass shrink-0 shadow-xs">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+            </div>
+            <div class="min-w-0">
+                <h4 class="font-display text-sm font-bold text-ink truncate">Jornada de Hoy Concluida</h4>
+                <p class="text-xs text-ink2 truncate">¿Terminaste las tareas programadas? Realiza el check-in diario.</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+            <button type="button" onclick="confirmEndShift()" 
+                    class="bg-brass hover:bg-brassdim text-canvas font-bold px-4 py-2.5 rounded-xl text-xs sm:text-sm transition-all shadow-sm flex items-center gap-1.5 active:scale-95 min-h-[40px]">
+                <svg class="w-4 h-4"><use href="#i-check"/></svg>
+                <span>Hacer Check-in</span>
+            </button>
+            <button type="button" onclick="dismissCheckinBanner()" 
+                    class="text-ink3 hover:text-ink p-2 rounded-lg hover:bg-surface2 transition-colors" title="Descartar aviso temporalmente">
+                <svg class="w-4 h-4"><use href="#i-close"/></svg>
+            </button>
+        </div>
+    </div>
+</div>
+<script>
+function dismissCheckinBanner() {
+    const banner = document.getElementById('checkin-floating-banner');
+    if (banner) banner.classList.add('hidden');
+}
+</script>
+<% } %>

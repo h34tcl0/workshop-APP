@@ -6,7 +6,12 @@
     const is_viable = (typeof locals.is_viable !== 'undefined') ? locals.is_viable : (eval.status === 'DAY_VIABLE');
     const is_closed = (typeof locals.is_closed !== 'undefined') ? locals.is_closed : ((!is_viable) && (eval.reason && eval.reason.includes('Jornada concluida')));
     const is_manual_block = (typeof locals.is_manual_block !== 'undefined') ? locals.is_manual_block : Boolean(eval.is_manually_blocked);
-    const is_amber = (typeof locals.is_amber !== 'undefined') ? locals.is_amber : ((!is_viable) && (!is_manual_block) && (!is_closed) && (eval.climate_only_status === 'clear'));
+    const is_non_working = (!is_viable) && (!is_closed) && (!is_manual_block) && (
+        (eval.reason && (eval.reason.includes('Día no laborable') || eval.reason.includes('no laborable'))) ||
+        (eval.unassigned_reason && (eval.unassigned_reason.includes('Día no laborable') || eval.unassigned_reason.includes('no laborable')))
+    );
+    const is_blocked = (!is_viable) && (!is_closed) && (is_manual_block || (eval.reason && eval.reason.includes('Bloqueado')));
+    const is_amber = (typeof locals.is_amber !== 'undefined') ? locals.is_amber : ((!is_viable) && (!is_manual_block) && (!is_closed) && (!is_non_working) && (!is_blocked) && (eval.climate_only_status === 'clear'));
     const ico_emoji = locals.ico_emoji || '☀️';
     const pct = (typeof locals.pct !== 'undefined') ? locals.pct : ((eval.climate_efficiency && eval.climate_efficiency.score) || 0);
     const ring_color = locals.ring_color || ((eval.climate_efficiency && eval.climate_efficiency.ring_color) || 'var(--w-ok)');
@@ -32,26 +37,32 @@
                     let badge_tooltip = eval.unassigned_reason || eval.cutoff_reason || eval.reason || '';
                     if (!badge_tooltip) {
                         if (is_viable) badge_tooltip = 'Jornada viable y planificada normalmente';
+                        else if (is_closed) badge_tooltip = 'Jornada concluida (cerrada por el usuario o fuera de horario)';
+                        else if (is_non_working) badge_tooltip = 'Día no laborable según configuración de fines de semana o feriados';
+                        else if (is_blocked) badge_tooltip = 'Bloqueado manualmente por el usuario';
                         else if (is_amber) badge_tooltip = 'Condiciones climáticas favorables, pero sin tareas agendadas';
-                        else if (is_manual_block) badge_tooltip = 'Bloqueado manualmente por el usuario';
                         else badge_tooltip = 'Jornada suspendida por condiciones climáticas no operativas';
                     }
                 %>
                 <% if (is_viable) { %>
                     <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-ok)]/15 text-[var(--w-ok)] border border-[var(--w-ok)]/30 shrink-0" title="<%= badge_tooltip %>">
-                        Viable
+                        Agendado
                     </span>
                 <% } else if (is_closed) { %>
                     <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-s2)] text-[var(--w-t2)] border border-[var(--w-bd)] shrink-0" title="<%= badge_tooltip %>">
                         Concluida
                     </span>
-                <% } else if (is_amber) { %>
-                    <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-warn)]/15 text-[var(--w-warn)] border border-[var(--w-warn)]/30 shrink-0" title="<%= badge_tooltip %>">
-                        Disponible
-                    </span>
-                <% } else if (is_manual_block) { %>
+                <% } else if (is_non_working) { %>
                     <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-s2)] text-[var(--w-t2)] border border-[var(--w-bd)] shrink-0" title="<%= badge_tooltip %>">
+                        No Laborable
+                    </span>
+                <% } else if (is_blocked) { %>
+                    <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-warn)]/15 text-[var(--w-warn)] border border-[var(--w-warn)]/30 shrink-0" title="<%= badge_tooltip %>">
                         Bloqueado
+                    </span>
+                <% } else if (is_amber) { %>
+                    <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-sky)]/15 text-[var(--w-sky)] border border-[var(--w-sky)]/30 shrink-0" title="<%= badge_tooltip %>">
+                        Disponible
                     </span>
                 <% } else { %>
                     <span class="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-[var(--w-rust)]/15 text-[var(--w-rust)] border border-[var(--w-rust)]/30 shrink-0" title="<%= badge_tooltip %>">
@@ -92,6 +103,18 @@
                 <p class="text-[11px] text-[var(--w-t1)]"><%= ring_tooltip %></p>
             </div>
         </div>
+
+        <% if (locals.show_end_shift_prompt && (dayIndex === 0 || isToday)) { %>
+            <button type="button" 
+                    id="btn-end-shift-today" 
+                    onclick="confirmEndShift()" 
+                    aria-label="Término de la jornada" 
+                    title="Registrar término de la jornada y check-in de tareas" 
+                    class="px-2 py-1 rounded-lg bg-brass hover:bg-brassdim text-canvas text-[11px] font-bold flex items-center gap-1 transition-all active:scale-95 shrink-0 shadow-xs animate-fade-in">
+                <svg class="w-3 h-3"><use href="#i-check"/></svg>
+                <span class="hidden sm:inline">Cerrar Jornada</span>
+            </button>
+        <% } %>
 
         <!-- Botón Editor de Día -->
         <button type="button" onclick="toggleDayEditor('<%= date_iso %>')" aria-label="Editar día" title="Ajustar jornada o estado" class="w-7 h-7 rounded-lg bg-[var(--w-s2)] hover:bg-[var(--w-bd)] text-[var(--w-t2)] hover:text-[var(--w-t1)] flex items-center justify-center transition-colors">

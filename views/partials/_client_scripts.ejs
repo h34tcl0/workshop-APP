@@ -218,6 +218,20 @@
             const data = await res.json();
             if (data.success) {
                 closeEndShiftModal();
+
+                // Desvanecimiento y remoción inmediata de elementos en el DOM sin esperar el refresco
+                const floatingBanner = document.getElementById('checkin-floating-banner');
+                if (floatingBanner) {
+                    floatingBanner.classList.add('transition-all', 'duration-300', 'opacity-0', 'scale-95');
+                    setTimeout(() => floatingBanner.remove(), 300);
+                }
+
+                const todayEndShiftBtn = document.getElementById('btn-end-shift-today');
+                if (todayEndShiftBtn) {
+                    todayEndShiftBtn.classList.add('transition-all', 'duration-300', 'opacity-0');
+                    setTimeout(() => todayEndShiftBtn.remove(), 300);
+                }
+
                 if (typeof showToast === 'function') {
                     showToast('✅ Check-in guardado exitosamente.');
                 }

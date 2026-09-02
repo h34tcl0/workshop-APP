@@ -4,6 +4,7 @@ import { TaskCategory, TaskStatus, Task } from '../types.js';
 import { TaskService } from '../services/taskService.js';
 import { triggerSilentReevaluation } from '../scheduler.js';
 import { reorderPayloadSchema, importPayloadSchema } from '../schemas.js';
+import { assertCanCreateTask, QuotaExceededError } from '../services/limitsService.js';
 
 export function parseFlexibleFloat(val: any): number | undefined {
   if (val === null || val === undefined || val === '') return undefined;
@@ -16,6 +17,8 @@ export function parseFlexibleFloat(val: any): number | undefined {
 export function handleAddTask(req: AuthenticatedRequest, res: any) {
   try {
     const userId = req.user!.id;
+    assertCanCreateTask(userId);
+
     const { title, description, category, estimated_hours, curing_hours, order, project_id, curing_is_blocking } = req.body;
     const parsedEst = parseFlexibleFloat(estimated_hours) ?? 1.0;
     const parsedCur = parseFlexibleFloat(curing_hours) ?? 0.0;

@@ -12,6 +12,8 @@ import { curingRepo } from "./repositories/curingRepo.js";
 import { calculatorRepo } from "./repositories/calculatorRepo.js";
 import { backupRepo } from "./repositories/backupRepo.js";
 
+import { adminRepo } from "./repositories/adminRepo.js";
+
 export class SQLiteStore {
   get db(): Database.Database { return getDb(); }
   getAppSettings = (u: number): AppSettings => settingsRepo.getAppSettings(u); updateAppSettings = (u: number, d: Partial<AppSettings>) => settingsRepo.updateAppSettings(u, d);
@@ -37,8 +39,11 @@ export class SQLiteStore {
   getDailyLogsForRange = (u: number, s: string, e: string): DailyLog[] => dailyLogRepo.getDailyLogsForRange(u, s, e); getFutureDailyLogsWithEvent = (u: number, f: string) => dailyLogRepo.getFutureDailyLogsWithEvent(u, f);
   getDailyLogByIdGlobal = (id: number) => dailyLogRepo.getDailyLogByIdGlobal(id); saveDailyLog = (u: number, d: any) => dailyLogRepo.saveDailyLog(u, d); updateDailyLog = (u: number, id: number, d: Partial<DailyLog>) => dailyLogRepo.updateDailyLog(u, id, d);
   claimCalendarSync = (u: number, id: number) => dailyLogRepo.claimCalendarSync(u, id); releaseCalendarSync = (u: number, id: number) => dailyLogRepo.releaseCalendarSync(u, id); updateDailyLogGlobal = (id: number, d: Partial<DailyLog>) => dailyLogRepo.updateDailyLogGlobal(id, d);
-  getAllUsers = (): User[] => userRepo.getAllUsers(); getUserByEmail = (e: string) => userRepo.getUserByEmail(e); getUserById = (id: number) => userRepo.getUserById(id);
-  createUser = (e: string, p: string) => userRepo.createUser(e, p); updateUserPassword = (u: number, p: string) => userRepo.updateUserPassword(u, p);
+  getAllUsers = (): User[] => userRepo.getAllUsers(); getActiveUsers = (): User[] => userRepo.getActiveUsers(); getUserByEmail = (e: string) => userRepo.getUserByEmail(e); getUserById = (id: number) => userRepo.getUserById(id);
+  createUser = (e: string, p: string, r?: any) => userRepo.createUser(e, p, r); setUserRole = (u: number, r: any) => userRepo.setUserRole(u, r); setUserStatus = (u: number, s: any, reason?: string | null) => userRepo.setUserStatus(u, s, reason); updateUserPassword = (u: number, p: string) => userRepo.updateUserPassword(u, p);
+  getSystemSettings = () => adminRepo.getSystemSettings(); updateSystemSettings = (s: any) => adminRepo.updateSystemSettings(s);
+  getAccountLimits = (u: number) => adminRepo.getAccountLimits(u); setAccountLimits = (l: any) => adminRepo.setAccountLimits(l);
+  logAdminAction = (l: any) => adminRepo.logAdminAction(l); getAuditLogs = (limit?: number, offset?: number) => adminRepo.getAuditLogs(limit, offset);
   getMaterials = (u: number, p?: number): Material[] => inventoryRepo.getMaterials(u, p); getMaterial = (u: number, id: number) => inventoryRepo.getMaterial(u, id);
   addMaterial = (u: number, d: any) => inventoryRepo.addMaterial(u, d); updateMaterial = (u: number, id: number, d: any) => inventoryRepo.updateMaterial(u, id, d);
   toggleMaterialStatus = (u: number, id: number) => inventoryRepo.toggleMaterialStatus(u, id); setMaterialStatus = (u: number, id: number, s: string) => inventoryRepo.setMaterialStatus(u, id, s); deleteMaterial = (u: number, id: number) => inventoryRepo.deleteMaterial(u, id);

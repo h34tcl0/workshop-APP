@@ -1,0 +1,59 @@
+<div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-6 space-y-6 shadow-xl max-w-3xl">
+  <div>
+    <h2 class="text-base font-semibold text-slate-100">Configuración Global del Sistema</h2>
+    <p class="text-xs text-slate-400 mt-0.5">Control de acceso público y cuotas estándar por defecto</p>
+  </div>
+
+  <form id="system-settings-form" onsubmit="saveSystemSettings(event)" class="space-y-6">
+    <!-- Public Registration Switch -->
+    <div class="flex items-center justify-between p-4 rounded-xl bg-slate-950 border border-slate-800">
+      <div>
+        <h3 class="text-xs font-semibold text-slate-200">Registro Público de Usuarios</h3>
+        <p class="text-[11px] text-slate-400 mt-0.5">Permitir que nuevos carpinteros/usuarios creen cuentas desde la página de inicio</p>
+      </div>
+      <label class="relative inline-flex items-center cursor-pointer">
+        <input type="checkbox" id="system-reg-open" class="sr-only peer">
+        <div class="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+      </label>
+    </div>
+
+    <!-- Default Limits Form -->
+    <div class="space-y-4">
+      <h3 class="text-xs font-semibold uppercase tracking-wider font-mono text-slate-400">Cuotas por Defecto (Nuevas Cuentas)</h3>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="sys-default-projects" class="block text-xs font-medium text-slate-300 mb-1">Máximo de Proyectos</label>
+          <input type="number" id="sys-default-projects" min="1" max="1000" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono" required>
+        </div>
+        <div>
+          <label for="sys-default-tasks" class="block text-xs font-medium text-slate-300 mb-1">Tareas por Proyecto</label>
+          <input type="number" id="sys-default-tasks" min="1" max="5000" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono" required>
+        </div>
+        <div>
+          <label for="sys-default-model-size" class="block text-xs font-medium text-slate-300 mb-1">Tamaño Máximo por Modelo 3D (MB)</label>
+          <input type="number" id="sys-default-model-size" min="1" max="100" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono" required>
+        </div>
+        <div>
+          <label for="sys-default-storage" class="block text-xs font-medium text-slate-300 mb-1">Almacenamiento Total 3D (MB)</label>
+          <input type="number" id="sys-default-storage" min="1" max="2000" class="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono" required>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hard Absolute Limit -->
+    <div class="space-y-2 pt-2 border-t border-slate-800">
+      <h3 class="text-xs font-semibold uppercase tracking-wider font-mono text-slate-400">Límite Absoluto del Servidor</h3>
+      <div>
+        <label for="sys-absolute-model-size" class="block text-xs font-medium text-slate-300 mb-1">Límite Absoluto Inviolable por Modelo 3D (MB)</label>
+        <input type="number" id="sys-absolute-model-size" min="5" max="500" class="w-full sm:w-1/2 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-mono" required>
+        <p class="text-[11px] text-slate-500 mt-1">Ningún usuario ni cuota personalizada podrá superar este techo de memoria.</p>
+      </div>
+    </div>
+
+    <div class="flex items-center justify-end pt-3 border-t border-slate-800">
+      <button type="submit" class="px-4 py-2 text-xs font-semibold text-slate-950 bg-amber-500 hover:bg-amber-400 rounded-xl transition-colors shadow-lg shadow-amber-500/20">
+        Guardar Configuración Global
+      </button>
+    </div>
+  </form>
+</div>

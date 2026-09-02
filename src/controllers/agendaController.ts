@@ -14,7 +14,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export const STATUS_LABELS: Record<string, string> = {
-  DAY_VIABLE: 'Viable',
+  DAY_VIABLE: 'Agendado',
   DAY_SUSPENDED: 'Suspendido',
   NO_WORK_NEEDED: 'Sin trabajo pendiente',
   WEATHER_WINDOW_CLOSED: 'Ventana cerrada por clima',
@@ -124,6 +124,31 @@ export async function renderDashboard(req: AuthenticatedRequest, res: any) {
       });
     }
 
+    const todayEval = forecastEvaluations.length > 0 ? forecastEvaluations[0].evaluation : null;
+    let scheduledTaskCount = (todayEval && Array.isArray(todayEval.scheduled_tasks)) ? todayEval.scheduled_tasks.length : 0;
+    if (todayEval && Array.isArray(todayEval.forced_tasks)) {
+      scheduledTaskCount += todayEval.forced_tasks.length;
+    }
+
+    const todayLog = store.getDailyLogByDate(userId, todayStr);
+    if (scheduledTaskCount === 0 && todayLog && todayLog.scheduled_task_ids) {
+      try {
+        const parsedIds = JSON.parse(todayLog.scheduled_task_ids || '[]');
+        if (Array.isArray(parsedIds)) scheduledTaskCount = parsedIds.length;
+      } catch (_) {}
+    }
+
+    const localHm = getLocalHoursAndMinutes(new Date(), userTz);
+    const currentDecHour = localHm.totalHours;
+    const todayOverride = store.getDayOverride(userId, todayStr);
+    const todayEndLimit = (todayOverride && todayOverride.custom_end_hour != null) ? todayOverride.custom_end_hour : appSettings.operational_end_hour;
+    const isShiftTimeEnded = currentDecHour >= todayEndLimit;
+    const isCheckinResolved = Boolean(todayLog && todayLog.checkin_resolved);
+    const hasTasksToResolve = scheduledTaskCount > 0;
+    const isCheckinTriggered = isShiftTimeEnded || Boolean(todayLog && todayLog.checkin_sent);
+
+    const showEndShiftPrompt = hasTasksToResolve && isCheckinTriggered && !isCheckinResolved;
+
     res.render('index', {
       project: activeProject,
       tasks,
@@ -143,6 +168,7 @@ export async function renderDashboard(req: AuthenticatedRequest, res: any) {
       all_projects: store.getProjects(userId),
       all_tasks: allTasks,
       active_curing_sessions: store.getActiveCuringSessions(userId),
+      show_end_shift_prompt: showEndShiftPrompt,
       getHourlyClimateAudit
     });
   } catch (err) {
