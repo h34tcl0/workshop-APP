@@ -879,3 +879,33 @@ Para continuar fortaleciendo la plataforma en futuras versiones, se sugieren las
    - Complementaría el pronóstico satelital de Open-Meteo con la medición de humedad y temperatura real dentro del cobertizo de trabajo.
 5. **Generador de Reportes PDF / Plan de Corte para Clientes**:
    - Crear un generador de fichas técnicas en PDF exportables con la cronología real de trabajo, materiales utilizados y fechas de curado para certificar la durabilidad de los muebles ante clientes exigentes.
+6. **Verificación de Email & Recuperación de Contraseña (`EMAIL_VERIFICATION_PASSWORD_RESET_SPEC.md`) [Propuesta Pendiente]**:
+   - **Objetivo y Contexto Operacional**:
+     - Implementar la verificación obligatoria de correo electrónico al registrarse (bloqueo estricto de inicio de sesión hasta confirmar la cuenta) y el flujo seguro de recuperación de contraseña vía correo.
+     - **Proveedor Transaccional**: Integración con la **API HTTP de Brevo** (`https://api.brevo.com/v3/smtp/email` con cabecera `api-key`), elegida porque permite la verificación de remitente individual sin requerir registros DNS complejos (compatible con subdominios como DuckDNS).
+     - **Resiliencia & Fallback**: Si `BREVO_API_KEY` no está configurada (entornos de desarrollo o testing local), el servicio loguea el enlace a la consola sin arrojar errores fatales.
+   - **Modelo de Datos y Regla Crítica de Migración**:
+     - Extensión idempotente de la tabla `users` con la columna `email_verified_at TEXT NULL`.
+     - **Regla Crítica Anti-Lockout**: Ejecución obligatoria en la migración de `UPDATE users SET email_verified_at = datetime('now') WHERE email_verified_at IS NULL` para evitar bloquear al administrador o cuentas preexistentes.
+     - Creación de la tabla `auth_tokens` (unificada para verificación y reseteo de claves):
+       - Columnas: `id` (PK), `user_id` (FK `users.id` CASCADE), `type` (`'email_verification'` | `'password_reset'`), `token_hash` (SHA-256), `expires_at` (24h para verificación, 1h para reset), `used_at` (NULL hasta consumo, un solo uso), `created_at`.
+       - **Criptografía**: Tokens generados mediante `crypto.randomBytes(32).toString('hex')`. Nunca se persiste el token en texto plano; sólo se almacena su hash SHA-256.
+   - **Arquitectura de Módulos (`src/email/`)**:
+     - `src/email/emailService.ts`: Wrapper cliente HTTP nativo hacia la API de Brevo con fallback de desarrollo y logging de errores de entrega.
+     - `src/email/emailTemplates.ts`: Plantillas HTML responsivas para `verificationEmail(link)`, `passwordResetEmail(link)` y `passwordChangedAlert()`.
+     - `src/email/tokenService.ts`: Generación, hash y validación criptográfica de tokens con control de caducidad.
+     - `src/db/repositories/authTokensRepo.ts`: Repositorio SQL para la gestión, consumo e invalidación de tokens en `auth_tokens`.
+   - **Flujos y Reglas de Seguridad**:
+     - **Registro (`POST /register`)**: Crea el usuario con `email_verified_at = NULL`, genera el token de verificación y despacha el correo. No efectúa login automático ni emite cookie.
+     - **Login Guard (`POST /login`)**: Si las credenciales son válidas pero `email_verified_at === null`, deniega el acceso con `401 Unauthorized` y presenta mensaje amigable con opción de reenvío antes de emitir cualquier cookie.
+     - **Confirmación (`GET /verify-email?token=...`)**: Valida el token contra `auth_tokens`, asigna `email_verified_at`, marca el token como consumido (`used_at`) y redirige a `/login` con feedback de éxito.
+     - **Reenvío Anti-Enumeración (`POST /resend-verification`)**: Respuesta siempre genérica sin revelar si el correo existe, con rate limiting (1 cada 2 min por correo/IP, máx 5 diarios).
+     - **Recuperación de Contraseña (`POST /forgot-password` & `POST /reset-password`)**: Anti-enumeración en solicitud, expiración estricta de 1 hora, actualización de contraseña reutilizando la función PBKDF2 existente, invalidación inmediata de todas las sesiones activas y alerta de seguridad post-cambio (vía email y Telegram).
+   - **Integración con Panel de Administración**:
+     - Nueva columna y badge visual en el dashboard de administración (`_tab_users.ejs`): **"Email verificado ✓"** / **"Pendiente"**.
+     - Acciones administrativas auditadas: **"Reenviar verificación"** y **"Marcar como verificado manualmente"** registradas en `admin_audit_log`.
+   - **Roadmap de 3 Hitos**:
+     - *Hito 1*: Migración de BD, módulo `src/email/`, Brevo API, adaptación de `register`/`login`, `verify-email` y `resend-verification`.
+     - *Hito 2*: Endpoints `forgot-password`, `reset-password`, invalidación de sesiones y alerta de cambio.
+     - *Hito 3*: Vistas EJS, integración en panel admin y suite completa de tests en Vitest (`emailVerification.test.ts` y `passwordReset.test.ts`).
+

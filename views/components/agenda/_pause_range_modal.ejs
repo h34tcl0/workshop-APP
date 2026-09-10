@@ -1,0 +1,60 @@
+<!-- MODAL PAUSAR AGENDA POR RANGO (VACACIONES / AUSENCIAS) -->
+<div id="pause-range-modal" class="fixed inset-0 z-[130] bg-canvas/85 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-0 sm:p-4" role="dialog" aria-labelledby="pause-range-title" aria-modal="true">
+    <div class="bg-surface border-t sm:border border-hairline rounded-t-2xl sm:rounded-xl w-full max-w-lg max-h-[85vh] sm:max-h-[90vh] overflow-y-auto p-5 sm:p-6 shadow-panel relative animate-fade-in">
+        <div class="w-12 h-1 bg-hairline rounded-full mx-auto mb-3 sm:hidden"></div>
+        
+        <div class="flex items-center justify-between border-b border-hairline pb-4 mb-5">
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                        <line x1="10" y1="14" x2="10" y2="18"></line>
+                        <line x1="14" y1="14" x2="14" y2="18"></line>
+                    </svg>
+                </div>
+                <div>
+                    <h3 id="pause-range-title" class="font-display text-lg font-semibold text-ink">Pausar Agenda</h3>
+                    <p class="text-xs text-ink3">Vacaciones, feriados o ausencias programadas</p>
+                </div>
+            </div>
+            <button type="button" onclick="closePauseRangeModal()" aria-label="Cerrar modal" class="text-ink3 hover:text-ink w-8 h-8 flex items-center justify-center rounded-md bg-surface2 transition-colors">
+                <svg class="w-4 h-4"><use href="#i-close"/></svg>
+            </button>
+        </div>
+
+        <p class="text-xs text-ink2 leading-relaxed mb-4 bg-canvas/40 border border-hairline rounded-lg p-3">
+            Al pausar la agenda, los días del rango quedarán bloqueados automáticamente. Las tareas se reagendarán de forma autónoma al primer día hábil posterior y los eventos sincronizados en Google Calendar se limpiarán para evitar falsas alertas.
+        </p>
+
+        <form id="pause-range-form" onsubmit="submitPauseRangeForm(event)" class="space-y-4">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label for="pause-start-date" class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Fecha de inicio</label>
+                    <input type="date" id="pause-start-date" name="start_date" required class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass transition-colors">
+                </div>
+                <div>
+                    <label for="pause-end-date" class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Fecha de término</label>
+                    <input type="date" id="pause-end-date" name="end_date" required class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass transition-colors">
+                </div>
+            </div>
+
+            <div>
+                <label for="pause-range-note" class="block text-[11px] font-semibold text-ink3 mb-1.5 uppercase tracking-wide">Motivo o descripción</label>
+                <input type="text" id="pause-range-note" name="note" value="Vacaciones / Ausencia" placeholder="Ej. Vacaciones de verano, Viaje, Mantenimiento..." class="w-full bg-surface2 border border-hairline text-ink rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brass transition-colors">
+            </div>
+
+            <div class="pt-2 border-t border-hairline flex flex-col sm:flex-row items-center justify-end gap-2">
+                <button type="button" onclick="submitClearRangeAction()" class="w-full sm:w-auto px-3.5 py-2.5 text-xs font-semibold text-ink3 hover:text-ink bg-surface2 hover:bg-hairline rounded-lg border border-hairline transition-colors">
+                    Desbloquear Rango
+                </button>
+                <button type="submit" id="pause-submit-btn" class="w-full sm:w-auto px-4 py-2.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-500 rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-sm">
+                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+                    <span>Pausar Agenda</span>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
