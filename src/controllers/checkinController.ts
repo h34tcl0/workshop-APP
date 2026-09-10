@@ -224,63 +224,17 @@ export async function handleResolveCheckin(req: AuthenticatedRequest, res: any) 
   const { dailyLogId, dateIso, completedTaskIds } = req.body;
 
   try {
-    const completedSet = new Set<number>(Array.isArray(completedTaskIds) ? completedTaskIds.map(Number) : []);
-    let dailyLog = dailyLogId ? store.getDailyLogById(userId, Number(dailyLogId)) : null;
-    if (!dailyLog && dateIso) {
-      dailyLog = store.getDailyLogByDate(userId, String(dateIso).trim());
-    }
+    const result = await DayService.resolveDayCheckin({
+      userId,
+      dailyLogId: dailyLogId ? Number(dailyLogId) : undefined,
+      dateIso: dateIso ? String(dateIso).trim() : undefined,
+      completedTaskIds: Array.isArray(completedTaskIds) ? completedTaskIds.map(Number) : [],
+      origin: 'user', // Acción explícita del usuario desde la web (UI principal o modal de vencidos): SIEMPRE notifica
+      reason: "Jornada concluida (cerrada manualmente por el usuario)",
+      triggerReeval: true
+    });
 
-    let taskIds: number[] = [];
-    if (dailyLog && dailyLog.scheduled_task_ids) {
-      try { taskIds = JSON.parse(dailyLog.scheduled_task_ids || "[]"); } catch (_) {}
-    }
-
-    if (taskIds.length === 0) {
-      taskIds = store.getTasks(userId).map(t => t.id);
-    }
-
-    for (const tid of taskIds) {
-      const t = store.getTask(userId, tid);
-      if (!t || t.user_id !== userId) continue;
-
-      if (completedSet.has(tid)) {
-        TaskService.completeTask(userId, t.id, { triggerReeval: false });
-      } else if (t.status === TaskStatus.COMPLETED) {
-        TaskService.reactivateToBacklog(userId, t.id, { triggerReeval: false });
-      }
-    }
-
-    if (dailyLog) {
-      DayService.concludeDay(userId, dailyLog.eval_date, "Jornada concluida (cerrada manualmente por el usuario)", { triggerReeval: false, checkinSent: true });
-    }
-
-    // Notificación espejo a Telegram al cerrar desde la Web
-    const appSettings = store.getAppSettings(userId);
-    let targetChatId = appSettings?.telegram_chat_id ? appSettings.telegram_chat_id.trim() : "";
-    if (!targetChatId && userId === 1 && process.env.TELEGRAM_CHAT_ID) {
-      targetChatId = process.env.TELEGRAM_CHAT_ID.trim();
-    }
-
-    if (targetChatId && process.env.TELEGRAM_BOT_TOKEN) {
-      try {
-        const completedCount = completedSet.size;
-        const totalCount = taskIds.length;
-        const dateStr = dailyLog?.eval_date || getLocalDateIso(new Date(), appSettings?.timezone || "America/Santiago");
-        
-        let msg = `📋 <b>Cierre de Jornada Registrado (Vía Web)</b>\n`;
-        msg += `📅 Fecha: <code>${dateStr}</code>\n\n`;
-        msg += `✅ Tareas marcadas como completadas: <b>${completedCount} / ${totalCount}</b>\n`;
-        msg += `✨ La agenda y el pronóstico de los próximos días han sido re-evaluados automáticamente.`;
-
-        const telegramSvc = new TelegramBotService(process.env.TELEGRAM_BOT_TOKEN, targetChatId);
-        await telegramSvc.sendTelegramMessage(targetChatId, msg);
-      } catch (tgErr) {
-        console.warn('[Telegram Mirror] Error sending web checkin mirror message:', tgErr);
-      }
-    }
-
-    await triggerSilentReevaluation(userId, dailyLog?.eval_date);
-    return res.json({ success: true });
+    return res.json({ success: true, result });
   } catch (err: any) {
     console.error('Error al resolver checkin:', err);
     return res.status(500).json({ success: false, error: err?.message || 'Error al guardar check-in' });
@@ -295,24 +249,16 @@ export async function handleResolveAllOverdue(req: AuthenticatedRequest, res: an
     const now = new Date();
     const todayIso = getLocalDateIso(now, userTz);
 
-    const overdueLogs = store.getOverdueUnresolvedLogs(userId, todayIso);
-    for (const log of overdueLogs) {
-      DayService.concludeDay(userId, log.eval_date, "Jornada vencida resuelta (reprogramación al backlog)", {
-        triggerReeval: false,
-        checkinSent: true
-      });
-    }
-
-    // DISPARAR triggerSilentReevaluation al terminar
-    await triggerSilentReevaluation(userId, todayIso);
+    const resolvedCount = await DayService.autoCloseOverdueDays(userId, todayIso);
 
     return res.json({
       success: true,
-      resolvedCount: overdueLogs.length,
-      message: `${overdueLogs.length} jornada(s) vencida(s) resueltas y tareas reprogramadas al backlog.`
+      resolvedCount,
+      message: `${resolvedCount} jornada(s) vencida(s) resueltas y tareas reprogramadas al backlog.`
     });
   } catch (err: any) {
     console.error('Error al resolver jornadas vencidas:', err);
     return res.status(500).json({ success: false, error: err?.message || 'Error al resolver jornadas vencidas' });
   }
 }
+

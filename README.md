@@ -303,7 +303,8 @@ El sistema de notificaciones está completamente desacoplado del scheduler y cen
        v                    v                     v                    v                    v
   [ Tier 1: Matutino ] [ Tier 2: Inicio ]    [ Tier 3: Check-in ] [ Tier 4A: Humedad ] [ Tier 4B: Lluvia ]
   Evaluación 7 días    Al empezar bloque     Prompt nocturno      1 aviso diario      Ráfagas cada 5 min
-  Sync Google Cal      telegram_notified=1   checkin_sent=1       humidity_sent=1     Alerta re-adelanto
+   Sync Google Cal      telegram_notified=1   checkin_sent=1       humidity_sent=1     Alerta re-adelanto
+   (Catch-up silencioso)
 ```
 
 ### Detalle de los 4 Tiers de Notificación
@@ -315,6 +316,13 @@ El sistema de notificaciones está completamente desacoplado del scheduler y cen
 | **Tier 3** | **Check-in Nocturno** | `processCheckinNotification` | Al alcanzar la hora de cierre (`now >= checkin_hour`). Arranca con **desfase de 2 minutos** respecto a Tier 1 y reintenta con backoff (hasta 3 intentos cada 3 segundos si el lock de evaluación está ocupado). | Envía un teclado interactivo inline a Telegram para marcar tareas completadas/postergadas. Marca `checkin_sent = true`. |
 | **Tier 4A** | **Aviso de Humedad** | `processWeatherAlert` | Humedad `> max_humidity_percent` dentro del horario laboral. | **Informativo**: Envía 1 único mensaje al día sin ráfagas. Marca `humidity_alert_sent = true`. |
 | **Tier 4B** | **Emergencia de Lluvia** | `processWeatherAlert` | Lluvia detectada en la ventana de trabajo o curado. | **Emergencia**: Dispara ráfaga de mensajes cada 5 min (hasta 3 veces) hasta que el operario confirme (`intraday_alert_acknowledged`). |
+| **Catch-up** | **Auto-cierre Silencioso** | `DayService.autoCloseOverdueDays` | Al arrancar el daemon y antes de Tier 1 (`origin: 'auto_midnight' \| 'auto_catchup'`). | **100% Silencioso**: Reprograma tareas no resueltas al backlog (`status='pending'`, `checkin_resolved=1`) y re-evalúa la agenda sin invocar Telegram bajo ninguna circunstancia. |
+
+### 🔕 Notificación Espejo de Cierre vs. Silencio por Flag de Origen (`origin`)
+El despachador `NotificationDispatcher.sendCheckinResolutionNotification` gobierna las notificaciones según el parámetro obligatorio `origin`:
+- **`origin: 'user'`**: Acción deliberada y manual del usuario (vía web o modal). SÍ emite confirmación a Telegram.
+- **`origin: 'auto_midnight'` / `'auto_catchup'`**: Auto-cierre del sistema por vencimiento o catch-up de inicio. NUNCA envía mensajes externos.
+*Queda estrictamente prohibido discriminar por fechas (`date < today`); la supresión se rige únicamente por el flag de procedencia.*
 
 ### 🚨 Lógica Crítica de Adelanto de Lluvia (`last_rain_alert_hour`)
 Si una lluvia prevista para las 18:00 hrs ya había sido confirmada por el operario, pero una nueva lectura climática detecta que la lluvia **se adelantó** a las 16:00 hrs:
@@ -366,6 +374,12 @@ Si por cualquier motivo (servidor apagado, corte de energía o inactividad del u
 2. **Modal de Rescate y Acciones**:
    - **Resolución Día a Día**: Permite desplegar cada jornada atrasada de forma individual, marcar qué tareas se terminaron y concluirlas con `DayService.concludeDay`.
    - **Acción Masiva ("Reprogramar todas las tareas pendientes al backlog")**: Invocada vía `POST /api/checkin/resolve-all-overdue`, marca en lote todos los días atrasados como resueltos (`checkin_resolved = 1`), retorna sus tareas no completadas al backlog con estado `pending`, y finaliza disparando una única `triggerSilentReevaluation(userId, todayIso)` consolidada.
+
+### 4. Principio Conservador y Auto-cierre Silencioso de Jornadas
+El sistema aplica la regla de dominio: *"Si no hubo check-in explícito del usuario, el trabajo no se realizó"*.
+- Las jornadas vencidas no resueltas son cerradas automáticamente a la medianoche o en el arranque del servidor (`origin: 'auto_midnight'` / `'auto_catchup'`).
+- Sus tareas se devuelven al backlog (`pending`) para ser reprogramadas en la siguiente jornada viable.
+- Este proceso es completamente silencioso hacia canales externos (Telegram).
 
 ### 3. Tolerancia a Rollover de Medianoche en `handleEndShift`
 `POST /api/checkin/end_shift` ya no asume ciegamente que la jornada a cerrar coincide con la fecha de hoy (`todayIso`):
@@ -461,6 +475,70 @@ Durante la última iteración de diseño, la vista de Planificación fue moderni
   - Se introduce una **Barra de Navegación Inferior Fija (Bottom Nav)** con 4 accesos directos táctiles (`+ Nueva`, `Backlog`, `Proyectos`, `Historial`).
   - El rail derecho de días se transforma en una **Tira Horizontal Deslizable** de píldoras compactas e interactivas con indicador de viabilidad por color.
 
+### 🎴 Anatomía de la Tarjeta del Día (`_card_header.ejs`)
+
+Cada tarjeta en la grilla multi-día de planificación (`agenda-days-grid`) condensa el estado meteorológico, operativo y de sincronización en su cabecera mediante una arquitectura visual estandarizada de 9 componentes ergonómicos:
+
+```
++-------------------------------------------------------------------------+
+| [☀️]  Lun 10 ago   [Agendado]   [📅 Sync]          ( 84 )    [ ✏️ ]     |
+|       14°–24°C · 💧 45%–68% · 🌧️ 0.0mm              Donut     Editar    |
+| [========= Barra Segmentada de Perfil de Jornada (4px) ===============] |
++-------------------------------------------------------------------------+
+```
+
+1. **Botón de Condición Climática (Emoji)**: Icono meteorológico general (☀️, ⛅, ☁️, 🌧️) contenido en un botón interactivo redondeado (`bg-[var(--w-s2)]`). Al pulsarlo, conmuta el despliegue del panel de auditoría horaria de 24 horas (`toggleHourlyPanel`).
+2. **Fecha de la Jornada**: Tipografía Fraunces seminegrilla (`text-xs`). Muestra `"Hoy"` para el día actual o la fecha abreviada en español (`date_str`, ej. `"Lun 10 ago"`).
+3. **Píldora de Taxonomía de Estado**: Badge cromático semántico que describe la viabilidad operativa según la evaluación:
+   - `Agendado` (Verde `var(--w-ok)`): Día viable (`DAY_VIABLE`) con tareas asignadas dentro de la ventana de trabajo.
+   - `Disponible` (Celeste `var(--w-sky)`): Día viable con clima apto pero sin tareas pendientes en el backlog.
+   - `Concluida` (Gris `var(--w-t2)` sobre `var(--w-s2)`): Jornada finalizada con check-in resuelto (`checkin_resolved = 1`).
+   - `No Laborable` (Gris `var(--w-t2)` sobre `var(--w-s2)`): Fin de semana o día no laborable según configuración de taller (`work_days`).
+   - `Bloqueado` (Ámbar `var(--w-warn)`): Pausado manualmente mediante sobreescritura (`day_overrides`), ya sea de forma individual o por pausa de agenda por rango (vacaciones).
+   - `Suspendido` (Rojo óxido `var(--w-rust)`): Jornada inviable por condiciones meteorológicas adversas (lluvia, humedad excesiva, frío crítico o ráfagas).
+4. **Badge de Sincronización Google Calendar (Condicionado a `google_calendar_enabled = 1`)**:
+   - **Regla de Activación**: Si la integración está deshabilitada en la configuración del taller (`google_calendar_enabled = 0`), **no se renderiza ningún badge** (permanece oculto), eliminando falsos pendientes cuando el usuario no utiliza Google Calendar.
+   - **Verde Esmeralda (`📅 Sync`)**: Se renderiza si `google_calendar_enabled = 1`, `calendar_created = 1` y existe `google_event_id`. Confirma que el evento macro de taller existe y está sincronizado en el calendario del usuario.
+   - **Ámbar (`📅 Pendiente`)**: Se renderiza si `google_calendar_enabled = 1`, la jornada es viable (`DAY_VIABLE`), contiene tareas agendadas (`scheduled_tasks.length > 0`), pero aún no ha sido sincronizada con Google Calendar (`!calendar_created || !google_event_id`).
+   - **Oculto / Sin badge**: Días sin tareas, días suspendidos o bloqueados, y cualquier día si `google_calendar_enabled = 0`.
+5. **Cintillo de Métricas Meteorológicas**: Desglose monoespaciado (`font-mono-jb`) que detalla:
+   - Rango de temperatura: `min°–max°C`.
+   - Rango de humedad relativa: `💧 min%–max%`.
+   - Precipitación acumulada: `🌧️ X.X mm` (destacada en color rojo óxido si es superior a 0 mm).
+6. **Chip de Alerta de Check-in Pendiente (`⚠️ Check-in pendiente`)**: Botón interactivo de alerta ámbar exclusivo para jornadas anteriores a hoy (`eval_date < today_iso`) con tareas no resueltas; abre el modal de resolución de jornadas vencidas (`openOverdueCheckinsModal`).
+7. **Donut de Eficiencia Climática (Círculo Numérico)**: Indicador visual y porcentual de benignidad ambiental (ver detalle algorítmico abajo).
+8. **Botón de Edición Rápida (Lápiz ✏️)**: Botón de acceso directo que despliega el modal de sobreescritura manual (`openDayEditorModal`) para forzar jornadas, cambiar horarios de inicio/cierre o pausar el día.
+9. **Micro-barra de Perfil de la Jornada (4px)**: Indicador horizontal segmentado a todo el ancho que refleja la proporción de horas aptas (verde `var(--w-ok)`), horas de advertencia por humedad (celeste `var(--w-sky)`) y horas con corte por lluvia (rojo `var(--w-rust)`).
+
+---
+
+#### 🧮 Índice de Eficiencia Climática: Definición, Variables y Algoritmo de Cálculo
+
+El círculo numérico situado en la esquina superior derecha de la tarjeta (`src/climate/metricsCalculator.ts`, función `calculateClimateEfficiency`) cuantifica qué tan aprovechable es el día para operar en el taller:
+
+* **Qué representa**: Un score integral de benignidad meteorológica (0 a 100) que evalúa hora por hora la ausencia de lluvia y el cumplimiento de los límites de humedad relativa, otorgando mayor peso a la ventana laboral activa que al resto de las 24 horas del día.
+* **Rango**: Escala entera normalizada de **`0 a 100`** (%).
+* **Variables Climáticas que lo Componen**:
+  1. **Precipitación**: `precipitation_mm` evaluado contra el umbral `min_rain_mm` (defecto 0.1 mm) y `precipitation_probability` contra `max_rain_probability` (defecto 30%).
+  2. **Humedad Relativa**: `relative_humidity` evaluado contra el límite de humedad `max_humidity_percent` (defecto 80%).
+  3. **Franja Operativa**: Horas dentro de la jornada (`start_limit` a `end_limit`, defecto 08:00 a 18:00) frente a las horas fuera de jornada (las 24 horas del pronóstico para protección de secado pasivo).
+* **Fórmula de Cálculo Completa (Ponderación 80/20)**:
+  Para cada hora $h \in [0, 23]$ del pronóstico se determina si es óptima (`isOk`):
+  $$\text{isOk}(h) = (\text{precipitation\_mm} \le \text{min\_rain\_mm}) \land (\text{precipitation\_probability} \le \text{max\_rain\_probability}) \land (\text{relative\_humidity} \le \text{max\_humidity\_percent})$$
+
+  Se calculan las proporciones de horas aptas dentro de la jornada ($P_{\text{jornada}}$) y fuera de ella ($P_{\text{fuera}}$):
+  $$P_{\text{jornada}} = \frac{\text{horas óptimas en jornada}}{\text{total horas en jornada}}$$
+  $$P_{\text{fuera}} = \frac{\text{horas óptimas fuera de jornada}}{\text{total horas fuera de jornada}}$$
+
+  El score final se obtiene asignando un **80% de peso a la jornada laboral activa** y un **20% de peso a las horas restantes del día**:
+  $$\text{Score} = \text{round}\Big(\big(P_{\text{jornada}} \times 0.80 + P_{\text{fuera}} \times 0.20\big) \times 100\Big)$$
+
+* **Semáforo Cromático del Anillo SVG (Donut de 38px)**:
+  - **Verde (`var(--w-ok)`)**: $\text{Score} \ge 70\%$. Condiciones óptimas de trabajo y secado.
+  - **Ámbar (`var(--w-warn)`)**: $30\% \le \text{Score} < 70\%$. Ventana operativa reducida o humedad limitante.
+  - **Rojo óxido (`var(--w-rust)`)**: $\text{Score} < 30\%$. Condiciones meteorológicas adversas o lluvia predominante.
+* **Interactividad**: Al pulsar el donut se abre o cierra el desglose horario de 24 horas (`hourly_forecast`), y su tooltip expone el desglose exacto (ej. `Jornada: 8/10h óptimas (80%) · Resto del día: 12/14h despejadas (86%) · Índice: 81%`).
+
 ### Componentes Modulares de la Interfaz
 - **Modal de Nueva Tarea e Importación (`task_modal.ejs`)**: Formulario flotante en capa superior (`z-[200]`) con selector de proyectos, cálculo de curado y autocompletado inteligente desde el historial de tareas.
 - **Barra de Navegación Móvil (`bottom_nav.ejs`)**: Menú inferior fijo para dispositivos móviles con contadores en tiempo real.
@@ -494,8 +572,8 @@ El proyecto cuenta con una exhaustiva suite de pruebas unitarias y de integraci�
 | **Activate to Backlog** | `tests/activateToBacklog.test.ts` | Restauración de tareas con reseteo de ciclo de vida completo. |
 | **End Shift Edge Cases** | `tests/endShiftEdgeCases.test.ts` | 6 casos límite: fin de turno con Telegram offline, modal fallback, día bloqueado, doble clic y re-apriete idempotente. |
 | **Day Override Range** | `tests/dayOverrideRange.test.ts` | Pausa de agenda por rango, preservación y restauración de overrides individuales en `previous_state_json`, y validación cronológica. |
-| **Overdue Checkins** | `tests/overdueCheckins.test.ts` | Detección de múltiples jornadas vencidas acumuladas (`eval_date < today_iso`), visibilidad del chip de alerta y acción masiva con `triggerSilentReevaluation`. |
-| **Planning View Render** | `tests/planningViewRender.test.ts` | Smoke & render E2E de `views/index.ejs` y `components/agenda.ejs`, validando la propagación estricta de variables de contexto (`isToday`, `today_iso`, `dayIndex`, `overdue_dates`). |
+| **Overdue Checkins** | `tests/overdueCheckins.test.ts` | Detección de jornadas vencidas acumuladas, auto-cierre silencioso (0 notificaciones Telegram), resolución manual (`origin: 'user'`) y discriminación estricta por flag de origen. |
+| **Planning View Render** | `tests/planningViewRender.test.ts` | Smoke & render E2E de `views/index.ejs` y `components/agenda.ejs`, validando la propagación estricta de variables de contexto (`isToday`, `today_iso`, `dayIndex`, `overdue_dates`) y la máquina de 3 estados del badge de Google Calendar con guard de `google_calendar_enabled`. |
 | **Local Date** | `tests/localDate.test.ts` | Aritmética de fechas inmutables con anclaje al mediodía UTC (`LocalDate`). |
 | **Require Admin & Auth** | `tests/requireAdmin.test.ts` | Autorización RBAC, denegación 401/404 sigiloso y prevención de bloqueo del último administrador (Hito 2). |
 | **Admin APIs & Limits** | `tests/adminApiAndLimits.test.ts` | Cuotas y límites por usuario, soft-delete, configuración global del sistema y bitácora de auditoría (Hito 2). |
@@ -575,6 +653,9 @@ docker logs workshop-app 2>&1 | grep -iE "scheduler|weather|calendar|notificatio
 11. **Rollover de Medianoche en `handleEndShift`**:
     - *Causa*: Al presionar el cierre de jornada pasada la medianoche (ej. a las 00:15 hrs tras extender el trabajo en el taller), el controlador calculaba un nuevo `todayIso` e intentaba cerrar la jornada del nuevo día que recién comenzaba, dejando la jornada real sin resolver.
     - *Lección*: Nunca asumir que "ahora" y "el día que se está cerrando" son lo mismo en las proximidades de la medianoche. El endpoint debe recibir `target_date_iso` y contemplar una ventana de gracia para las horas de madrugada previas a `operational_start_hour`.
+12. **Notificaciones Acumuladas a Telegram por Auto-cierre de Jornadas Vencidas**:
+    - *Causa*: El proceso de catch-up al arrancar el servidor o el auto-cierre de medianoche procesaba días vencidos acumulados invocando la misma rutina de resolución de check-in sin discriminar la procedencia de la acción, despachando un mensaje espejo a Telegram por cada día cerrado.
+    - *Lección*: Toda notificación transaccional debe gobernarse por un discriminador explícito de origen (`origin: 'user' | 'auto_midnight' | 'auto_catchup'`) en el contrato de dominio. Las resoluciones automáticas o de catch-up del sistema deben ser 100% silenciosas; solo las acciones explícitas del usuario generan mensajes externos. Queda prohibido filtrar por fechas (`date < today_iso`) para decidir si notificar.
 
 ---
 
@@ -645,7 +726,7 @@ docker logs workshop-app 2>&1 | grep -iE "scheduler|weather|calendar|notificatio
 - `POST /evaluation/force_checkin`: Emite prompt de check-in en Telegram (pruebas/desarrollo).
 - `POST /api/checkin/end_shift`: Cierre de jornada contextual (admite `target_date_iso` y soporta cierre en madrugada previa).
 - `POST /api/checkin/resolve-all-overdue`: Acción masiva para resolver todas las jornadas vencidas acumuladas y reprogramar tareas al backlog.
-- `POST /api/checkin/resolve`: Procesa la resolución de tareas del check-in.
+- `POST /api/checkin/resolve`: Procesa la resolución manual de tareas del check-in (`origin: 'user'`), marcando las tareas seleccionadas como completadas, reprogramando el resto y despachando notificación espejo a Telegram si está vinculado.
 
 ### ⚙️ Configuración, Telegram y Persistencia 3D
 - `GET /api/timezone`: Obtiene zona horaria calculada según lat/lon.
@@ -811,7 +892,7 @@ AGENDAPP/
 │           ├── viewer3dCore.js        # Motor Three.js, escena, cámara, luces y renderizado
 │           ├── viewer3dLoader.js      # Parser y cargador de archivos GLB/GLTF/OBJ
 │           └── workshopRail.js        # Navegación reactiva entre herramientas de banco
-├── tests/                             # Suite de pruebas automatizadas (23 suites, 184 tests)
+├── tests/                             # Suite de pruebas automatizadas (23 suites, 181 tests)
 │   ├── activateToBacklog.test.ts      # Reactivación de tareas y ciclo de vida limpio
 │   ├── adminApiAndLimits.test.ts      # Cuotas de usuario, almacenamiento 3D y auditoría
 │   ├── adminUiAndSecurity.test.ts     # Vistas y componentes del panel de administración
@@ -1000,6 +1081,9 @@ Para evitar navegar por múltiples archivos innecesariamente, consulta esta matr
    - La jornada laboral puede extenderse a la madrugada del día siguiente. Si la hora actual es inferior a `operational_start_hour`, el sistema debe contemplar la resolución de la jornada anterior y no la del día nuevo.
 6. **Idempotencia de Estados de Cierre**:
    - Un día con `checkin_resolved = 1` es inmutable respecto a nuevas asignaciones de tareas para esa fecha. Toda tarea no completada debe ser devuelta al backlog con estado `pending`.
+7. **Visibilidad del Badge de Google Calendar Condicionada a `google_calendar_enabled`**:
+   - El badge de Google Calendar (verde esmeralda o ámbar) **SOLO** debe renderizarse si `google_calendar_enabled = 1`.
+   - Si la integración está deshabilitada (`google_calendar_enabled = 0`), no debe mostrarse ningún badge bajo ninguna circunstancia, incluso si la jornada es viable y tiene tareas agendadas, evitando ruido visual y falsos pendientes.
 
 ### 16.3 Checklist Obligatorio para Nuevos Endpoints de Mutación
 Cualquier endpoint REST que modifique el estado del backlog, inventario, proyectos, plantillas o configuraciones **DEBE** invocar al finalizar:
@@ -1042,6 +1126,8 @@ triggerSilentReevaluation(userId, todayIso);
 - **Curado No Vinculante (`curing_is_blocking = 0`)**: Curado que no requiere supervisión ni bloquea el banco de trabajo, permitiendo agendar tareas adicionales en simultáneo.
 - **Check-in**: Protocolo nocturno de confirmación interactiva para reportar tareas completadas o postergadas.
 - **Horizonte**: Secuencia de 7 a 14 días futuros evaluados continuamente frente al pronóstico meteorológico.
-- **Day Override**: Sobreescritura manual de estado (`VIABLE` o `BLOCKED`) u horarios para un día específico, con prioridad sobre el pronóstico del clima.
+- **Day Override**: Sobreescritura manual de estado (`VIABLE` o `BLOCKED`) u horarios para un día específico, con prioridad sobre el pronóstico del clima. La designación `BLOCKED` se aplica tanto por pausa manual de día individual como por el modal de pausa de agenda por rango (vacaciones). La indisponibilidad de insumos posterga tareas individuales al backlog, pero no bloquea el día completo.
+- **Eficiencia Climática**: Índice porcentual (0 a 100) calculado por `calculateClimateEfficiency` que pondera la aptitud meteorológica (sin lluvia y con humedad bajo umbral) de la jornada laboral activa (80%) y del resto de las 24 horas del día (20%) para planificar y proteger el secado pasivo.
+- **Badge de Google Calendar**: Indicador visual compacto en la cabecera de la tarjeta del día con 3 estados condicionados a `google_calendar_enabled = 1`: verde esmeralda (`📅 Sync`), ámbar (`📅 Pendiente`) u oculto (sin integración, día inviable o sin tareas agendadas).
 - **Jornada Vencida**: Día pasado con tareas que quedaron agendadas pero cuyo check-in nunca fue resuelto (`checkin_resolved = 0`).
 

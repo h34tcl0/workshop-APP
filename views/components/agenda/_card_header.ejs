@@ -74,13 +74,35 @@
                 <% } %>
 
                 <% 
-                    const has_cal = Boolean(locals.has_calendar_event || (locals.item && locals.item.has_calendar_event) || (eval && eval.google_event_id));
-                    if (has_cal) { 
+                    const settings = locals.app_settings || {};
+                    const cal_enabled = Boolean(settings.google_calendar_enabled);
+                    if (cal_enabled) { 
+                        const cal_created = Boolean(locals.calendar_created || (locals.item && locals.item.calendar_created) || (eval && eval.calendar_created));
+                        const cal_event_id = locals.google_event_id || (locals.item && locals.item.google_event_id) || (eval && eval.google_event_id) || null;
+                        const is_synced = Boolean(cal_created && cal_event_id);
+                        const task_count = ((eval && eval.scheduled_tasks) ? eval.scheduled_tasks.length : 0) + ((eval && eval.forced_tasks) ? eval.forced_tasks.length : 0);
+                        const is_pending_sync = Boolean(is_viable && task_count > 0 && !is_synced);
+
+                        if (is_synced) { 
                 %>
-                    <span class="inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-[9.5px] bg-chalk/10 text-chalk border border-chalk/30 shrink-0" title="Sincronizado con Google Calendar" aria-label="Sincronizado con Google Calendar">
-                        <span>📅</span>
+                    <span class="inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0" 
+                          title="Sincronizado con Google Calendar" 
+                          aria-label="Sincronizado con Google Calendar"
+                          id="calendar-badge-synced-<%= date_iso %>">
+                        <span class="mr-0.5">📅</span>
+                        <span>Sync</span>
                     </span>
-                <% } %>
+                <%      } else if (is_pending_sync) { %>
+                    <span class="inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-[9.5px] font-semibold bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0" 
+                          title="Jornada con tareas pendiente de sincronizar con Google Calendar" 
+                          aria-label="Jornada con tareas pendiente de sincronizar con Google Calendar"
+                          id="calendar-badge-pending-<%= date_iso %>">
+                        <span class="mr-0.5">📅</span>
+                        <span>Pendiente</span>
+                    </span>
+                <%      } 
+                    } 
+                %>
             </div>
             <div class="font-mono-jb text-[10px] text-[var(--w-t2)] flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-0.5">
                 <span class="text-[var(--w-t1)]"><%= eval.weather_summary ? eval.weather_summary.min_temp : 0 %>°–<%= eval.weather_summary ? eval.weather_summary.max_temp : 0 %>°C</span>

@@ -27,6 +27,7 @@ import {
   runWeatherAlertTick,
   runWorkStartTick,
   runMorningEvalTick,
+  runCatchupOverdueDaysTick,
   startDaemon,
   stopDaemon
 } from "./scheduler/daemon.js";
@@ -62,6 +63,7 @@ export {
   runWeatherAlertTick,
   runWorkStartTick,
   runMorningEvalTick,
+  runCatchupOverdueDaysTick,
   startDaemon,
   stopDaemon
 };

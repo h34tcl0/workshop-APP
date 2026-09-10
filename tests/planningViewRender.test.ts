@@ -80,4 +80,66 @@ describe("Smoke & E2E Render: Planning View (views/index.ejs y components/agenda
     // El botón redundante de la tarjeta ya no debe existir
     expect(res.text).not.toContain("btn-end-shift-today");
   });
+
+  it("no renderiza badge de Google Calendar si google_calendar_enabled es 0, incluso con tareas agendadas en día viable", async () => {
+    store.updateAppSettings(user.id, {
+      google_calendar_enabled: false
+    });
+
+    const res = await request(app)
+      .get("/?scenario=sunny")
+      .set("Cookie", `workshop_session=${token}`)
+      .set("Origin", "http://127.0.0.1");
+
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain("calendar-badge-synced");
+    expect(res.text).not.toContain("calendar-badge-pending");
+    expect(res.text).not.toContain("Sincronizado con Google Calendar");
+    expect(res.text).not.toContain("pendiente de sincronizar con Google Calendar");
+  });
+
+  it("renderiza badge ámbar 'Pendiente' cuando google_calendar_enabled es 1 pero el día viable con tareas aún no está sincronizado", async () => {
+    store.updateAppSettings(user.id, {
+      google_calendar_enabled: true,
+      google_calendar_id: "workshop_calendar_id@group.calendar.google.com"
+    });
+
+    const res = await request(app)
+      .get("/?scenario=sunny")
+      .set("Cookie", `workshop_session=${token}`)
+      .set("Origin", "http://127.0.0.1");
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("calendar-badge-pending");
+    expect(res.text).toContain("Pendiente");
+    expect(res.text).toContain("pendiente de sincronizar con Google Calendar");
+    expect(res.text).not.toContain("calendar-badge-synced");
+  });
+
+  it("renderiza badge verde esmeralda 'Sync' cuando google_calendar_enabled es 1 y el día está sincronizado (calendar_created=1 y google_event_id)", async () => {
+    const todayIso = getLocalDateIso(new Date(), "America/Santiago");
+
+    store.updateAppSettings(user.id, {
+      google_calendar_enabled: true,
+      google_calendar_id: "workshop_calendar_id@group.calendar.google.com"
+    });
+
+    store.saveDailyLog(user.id, {
+      eval_date: todayIso,
+      status: "DAY_VIABLE",
+      scheduled_task_ids: JSON.stringify([1]),
+      calendar_created: true,
+      google_event_id: "google_cal_event_mock_123"
+    });
+
+    const res = await request(app)
+      .get("/?scenario=sunny")
+      .set("Cookie", `workshop_session=${token}`)
+      .set("Origin", "http://127.0.0.1");
+
+    expect(res.status).toBe(200);
+    expect(res.text).toContain("calendar-badge-synced");
+    expect(res.text).toContain("Sync");
+    expect(res.text).toContain("Sincronizado con Google Calendar");
+  });
 });

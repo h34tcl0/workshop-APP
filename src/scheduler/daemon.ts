@@ -4,6 +4,7 @@ import { NotificationDispatcher } from "../notificationDispatcher.js";
 import { getLocalDateIso, getLocalHoursAndMinutes } from "../dateUtils.js";
 import { acquireEvaluationLock, releaseEvaluationLock } from "./locks.js";
 import { runMorningEvaluation } from "./horizonRunner.js";
+import { DayService } from "../services/dayService.js";
 
 export async function processWorkStartNotificationsForUser(
   userId: number,
@@ -12,6 +13,30 @@ export async function processWorkStartNotificationsForUser(
 ): Promise<{ sent: boolean; reason: string }> {
   return NotificationDispatcher.processWorkStartNotification(userId, nowDate, force);
 }
+
+/**
+ * Proceso silencioso de catch-up al arrancar el servidor o ciclo para auto-cerrar
+ * jornadas vencidas acumuladas sin check-in resuelto.
+ */
+export async function runCatchupOverdueDaysTick(nowDate?: Date): Promise<void> {
+  const now = nowDate || new Date();
+  const users = store.getActiveUsers();
+
+  for (const user of users) {
+    try {
+      const appSettings = store.getAppSettings(user.id);
+      const userTz = (appSettings as any)?.timezone || process.env.TIMEZONE || "America/Santiago";
+      const todayIso = getLocalDateIso(now, userTz);
+      const count = await DayService.autoCloseOverdueDays(user.id, todayIso);
+      if (count > 0) {
+        console.log(`[Scheduler] Auto-cerradas silenciosamente ${count} jornada(s) vencida(s) acumuladas para Usuario #${user.id}.`);
+      }
+    } catch (err) {
+      console.error(`[Scheduler] Error in catchup overdue days for User #${user.id}:`, err);
+    }
+  }
+}
+
 
 export async function processCheckinForUser(
   userId: number,
@@ -111,6 +136,9 @@ export async function runMorningEvalTick(nowDate?: Date): Promise<void> {
 
       if (localTime.hours < triggerHour) continue;
 
+      // Auto-cierre silencioso de días atrasados antes de evaluar la nueva jornada
+      await DayService.autoCloseOverdueDays(user.id, todayIso);
+
       await runMorningEvaluation(user.id, todayIso);
     } catch (err) {
       console.error(`[Scheduler] Error in morning eval tick for User #${user.id}:`, err);
@@ -127,10 +155,14 @@ export function startDaemon(): void {
   console.log("  • Tier 2 (Work Start Telegram Notification): Triggered at the beginning of active work block (every 5 min)");
   console.log("  • Tier 3 (Night Check-in): Fixed trigger at configured check-in hour (every 15 min, offset by 2 min from Tier 1)");
   console.log("  • Tier 4 (Urgent Weather Monitor): Active work window scan with 5-min 3-message alert bursts");
+  console.log("  • Silent Catch-up (Overdue Auto-close): Resolves accumulated past days without user interaction/notifications");
 
   stopDaemon();
 
   TelegramBotService.startPolling();
+
+  // Catch-up silencioso de arranque: resuelve días vencidos acumulados sin notificar
+  runCatchupOverdueDaysTick().catch(err => console.error("[Daemon Catchup Error]:", err));
 
   // Tier 1 immediately and every 15 min
   runMorningEvalTick().catch(err => console.error("[Daemon Tier 1 Error]:", err));

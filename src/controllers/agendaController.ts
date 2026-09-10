@@ -122,7 +122,9 @@ export async function renderDashboard(req: AuthenticatedRequest, res: any) {
         evaluation: evalRes,
         day_override: dayOverride,
         status_label: STATUS_LABELS[evalRes.status] || evalRes.status,
-        has_calendar_event: Boolean(dayLog?.google_event_id)
+        has_calendar_event: Boolean(dayLog?.google_event_id),
+        calendar_created: Boolean(dayLog?.calendar_created),
+        google_event_id: dayLog?.google_event_id || null
       });
     }
 

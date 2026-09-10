@@ -3,10 +3,15 @@ import { processWorkStartNotification } from "./notifications/workStartNotifier.
 import { processCheckinNotification } from "./notifications/checkinNotifier.js";
 import { processWeatherAlert } from "./notifications/weatherAlertNotifier.js";
 import { sanitizeMarkdown } from "./notifications/markdownUtils.js";
+import {
+  sendCheckinResolutionNotification,
+  type CheckinResolutionOrigin,
+  type SendCheckinResolutionNotificationParams
+} from "./notifications/checkinResolutionNotifier.js";
 
 /**
  * NotificationDispatcher: Fachada central para la gestión y orquestación
- * de notificaciones multicanal (Tier 2, Tier 3, Tier 4).
+ * de notificaciones multicanal (Tier 2, Tier 3, Tier 4) y resolución de check-in.
  */
 export class NotificationDispatcher {
   public static getTargetChatId(userId: number, telegramChatIdFromSettings?: string | null): string {
@@ -35,6 +40,12 @@ export class NotificationDispatcher {
   ): Promise<void> {
     return processWeatherAlert(userId, nowDate);
   }
+
+  public static async sendCheckinResolutionNotification(
+    params: SendCheckinResolutionNotificationParams
+  ): Promise<boolean> {
+    return sendCheckinResolutionNotification(params);
+  }
 }
 
 export {
@@ -42,5 +53,12 @@ export {
   processWorkStartNotification,
   processCheckinNotification,
   processWeatherAlert,
-  sanitizeMarkdown
+  sanitizeMarkdown,
+  sendCheckinResolutionNotification
 };
+
+export type {
+  CheckinResolutionOrigin,
+  SendCheckinResolutionNotificationParams
+};
+
