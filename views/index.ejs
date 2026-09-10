@@ -87,15 +87,6 @@
                 <!-- SEGMENTED MODE SWITCHER (Modo Enfoque | Planificación | Taller | Inventario) -->
                 <%- include('components/mode_switcher') %>
 
-                <form id="eval-form" action="/evaluation/force_run" method="post"
-                    class="flex items-center gap-1 bg-surface2 border border-hairline rounded-xl p-1 sm:px-2 sm:py-1.5 shrink-0 max-w-full">
-                    <button type="submit" id="eval-btn"
-                        class="bg-brass hover:bg-brassdim text-canvas text-[11px] sm:text-xs font-semibold px-2 py-1 rounded-lg transition-colors whitespace-nowrap"
-                        title="Ejecutar re-evaluación del clima y agenda">
-                        Evaluar
-                    </button>
-                </form>
-
                 <% if (locals.user && user.role === 'admin') { %>
                 <a href="/admin" aria-label="Panel de Administración"
                     class="flex items-center gap-1.5 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 p-1.5 sm:p-2 md:px-3 md:py-2 rounded-xl text-xs md:text-sm font-semibold transition-colors shrink-0"

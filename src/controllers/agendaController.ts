@@ -115,12 +115,14 @@ export async function renderDashboard(req: AuthenticatedRequest, res: any) {
         simulatedPendingTasks = simulatedPendingTasks.filter(t => !forcedIds.has(t.id));
       }
 
+      const dayLog = store.getDailyLogByDate(userId, evalDate);
       forecastEvaluations.push({
         date_iso: evalDate,
         date_str: formatDateShortEs(evalDate),
         evaluation: evalRes,
         day_override: dayOverride,
-        status_label: STATUS_LABELS[evalRes.status] || evalRes.status
+        status_label: STATUS_LABELS[evalRes.status] || evalRes.status,
+        has_calendar_event: Boolean(dayLog?.google_event_id)
       });
     }
 
@@ -142,12 +144,30 @@ export async function renderDashboard(req: AuthenticatedRequest, res: any) {
     const currentDecHour = localHm.totalHours;
     const todayOverride = store.getDayOverride(userId, todayStr);
     const todayEndLimit = (todayOverride && todayOverride.custom_end_hour != null) ? todayOverride.custom_end_hour : appSettings.operational_end_hour;
-    const isShiftTimeEnded = currentDecHour >= todayEndLimit;
+    
+    // El banner solo debe aparecer entre el fin de la jornada operativa del día y las 23:59:59 de ESE MISMO día calendario.
+    const isWithinTodayEndWindow = currentDecHour >= todayEndLimit && currentDecHour < 24.0;
     const isCheckinResolved = Boolean(todayLog && todayLog.checkin_resolved);
     const hasTasksToResolve = scheduledTaskCount > 0;
-    const isCheckinTriggered = isShiftTimeEnded || Boolean(todayLog && todayLog.checkin_sent);
+    const isCheckinTriggered = isWithinTodayEndWindow || (Boolean(todayLog && todayLog.checkin_sent) && currentDecHour >= todayEndLimit && currentDecHour < 24.0);
 
     const showEndShiftPrompt = hasTasksToResolve && isCheckinTriggered && !isCheckinResolved;
+
+    // Obtener todas las jornadas anteriores con tareas agendadas que quedaron sin resolver
+    const rawOverdueLogs = store.getOverdueUnresolvedLogs(userId, todayStr);
+    const overdueCheckins = rawOverdueLogs.map(log => {
+      let taskIds: number[] = [];
+      try {
+        taskIds = JSON.parse(log.scheduled_task_ids || '[]');
+      } catch (_) {}
+      const scheduledTasks = allTasks.filter(t => taskIds.includes(t.id));
+      return {
+        ...log,
+        task_count: taskIds.length,
+        tasks: scheduledTasks
+      };
+    });
+    const overdueDates = overdueCheckins.map(o => o.eval_date);
 
     res.render('index', {
       project: activeProject,
@@ -168,7 +188,10 @@ export async function renderDashboard(req: AuthenticatedRequest, res: any) {
       all_projects: store.getProjects(userId),
       all_tasks: allTasks,
       active_curing_sessions: store.getActiveCuringSessions(userId),
+      today_iso: todayStr,
       show_end_shift_prompt: showEndShiftPrompt,
+      overdue_checkins: overdueCheckins,
+      overdue_dates: overdueDates,
       getHourlyClimateAudit
     });
   } catch (err) {

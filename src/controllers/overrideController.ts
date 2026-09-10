@@ -1,5 +1,6 @@
 import { store } from '../db.js';
 import { AuthenticatedRequest } from '../auth.js';
+import { triggerSilentReevaluation } from '../scheduler.js';
 
 export function handleSaveDayOverride(req: AuthenticatedRequest, res: any) {
   const userId = req.user!.id;
@@ -22,11 +23,23 @@ export function handleSaveDayOverride(req: AuthenticatedRequest, res: any) {
     note: note || ''
   });
 
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error in silent reevaluation after saveDayOverride:', err));
+
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ success: true });
+  }
   res.redirect(303, '/');
 }
 
 export function handleClearDayOverride(req: AuthenticatedRequest, res: any) {
-  store.clearDayOverride(req.user!.id, req.params.override_date);
+  const userId = req.user!.id;
+  store.clearDayOverride(userId, req.params.override_date);
+
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error in silent reevaluation after clearDayOverride:', err));
+
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ success: true });
+  }
   res.redirect(303, '/');
 }
 
@@ -38,11 +51,77 @@ export function handleForceTask(req: AuthenticatedRequest, res: any) {
   const task = store.getTask(userId, parsedTaskId);
   if (task) {
     store.addForcedTask(userId, override_date, parsedTaskId, parseFloat(forced_start_hour) || 9.0);
+    triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error in silent reevaluation after forceTask:', err));
+  }
+
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ success: true });
   }
   res.redirect(303, '/');
 }
 
 export function handleDeleteForcedTask(req: AuthenticatedRequest, res: any) {
-  store.deleteForcedTask(req.user!.id, parseInt(req.params.forced_id, 10));
+  const userId = req.user!.id;
+  store.deleteForcedTask(userId, parseInt(req.params.forced_id, 10));
+
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error in silent reevaluation after deleteForcedTask:', err));
+
+  if (req.xhr || req.headers.accept?.includes('application/json')) {
+    return res.json({ success: true });
+  }
   res.redirect(303, '/');
+}
+
+export function handleSaveDayOverrideRange(req: AuthenticatedRequest, res: any) {
+  const userId = req.user!.id;
+  const { start_date, end_date, note } = req.body;
+
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!start_date || !end_date || !dateRegex.test(start_date) || !dateRegex.test(end_date)) {
+    return res.status(400).json({ success: false, error: 'Formato de fecha inválido. Se espera YYYY-MM-DD.' });
+  }
+
+  if (start_date > end_date) {
+    return res.status(400).json({ success: false, error: 'La fecha de inicio no puede ser posterior a la fecha de término.' });
+  }
+
+  try {
+    const result = store.saveDayOverrideRange(userId, start_date, end_date, note);
+    triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error in silent reevaluation after saveDayOverrideRange:', err));
+
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, affectedDates: result.affectedDates });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('[OverrideController] Error saving range:', err);
+    res.status(500).json({ success: false, error: err.message || 'Error al guardar el rango de pausa.' });
+  }
+}
+
+export function handleClearDayOverrideRange(req: AuthenticatedRequest, res: any) {
+  const userId = req.user!.id;
+  const { start_date, end_date } = req.body;
+
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!start_date || !end_date || !dateRegex.test(start_date) || !dateRegex.test(end_date)) {
+    return res.status(400).json({ success: false, error: 'Formato de fecha inválido. Se espera YYYY-MM-DD.' });
+  }
+
+  if (start_date > end_date) {
+    return res.status(400).json({ success: false, error: 'La fecha de inicio no puede ser posterior a la fecha de término.' });
+  }
+
+  try {
+    const result = store.clearDayOverrideRange(userId, start_date, end_date);
+    triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error in silent reevaluation after clearDayOverrideRange:', err));
+
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
+      return res.json({ success: true, ...result });
+    }
+    res.redirect(303, '/');
+  } catch (err: any) {
+    console.error('[OverrideController] Error clearing range:', err);
+    res.status(500).json({ success: false, error: err.message || 'Error al limpiar el rango de pausa.' });
+  }
 }

@@ -13,7 +13,7 @@ El sistema funciona como un **bucle de decisión continuo**: ingiere pronóstico
 3. [Motor de Evaluación Meteorológica, Curado Pasivo y Auditoría Horaria](#-3-motor-de-evaluación-meteorológica-curado-pasivo-y-auditoría-horaria)
 4. [Sistema de Notificaciones y Alertas por Tiers (`NotificationDispatcher`)](#-4-sistema-de-notificaciones-y-alertas-por-tiers-notificationdispatcher)
 5. [Concurrencia, Locks en Memoria y Re-evaluación Automática Silenciosa](#-5-concurrencia-locks-en-memoria-y-re-evaluación-automática-silenciosa)
-6. [Botón "Término de la Jornada" (Check-in Manual y Fallback)](#-6-botón-término-de-la-jornada-check-in-manual-y-fallback)
+6. [Cierre de Jornada (Check-in Flotante, Jornadas Vencidas y Fallback)](#-6-cierre-de-jornada-check-in-flotante-jornadas-vencidas-y-fallback)
 7. [Sincronización Espejo Multi-Día (Google Calendar API v3)](#-7-sincronización-espejo-multi-día-google-calendar-api-v3)
 8. [Seguridad, CSRF, Rate Limiting y Administración (Backups y Contraseñas)](#-8-seguridad-csrf-rate-limiting-y-administración-backups-y-contraseñas)
 9. [Frontend, UI, Modos de Navegación, Componentes y Patrón AJAX](#-9-frontend-ui-modos-de-navegación-componentes-y-patrón-ajax)
@@ -23,6 +23,7 @@ El sistema funciona como un **bucle de decisión continuo**: ingiere pronóstico
 13. [Especificación de Endpoints REST (API Reference)](#-13-especificación-de-endpoints-rest-api-reference)
 14. [Árbol de Archivos del Proyecto y Matriz Técnica por Archivo](#-14-árbol-de-archivos-del-proyecto-y-matriz-técnica-por-archivo)
 15. [💡 Sugerencias y Roadmap para Futuras Iteraciones](#-15--sugerencias-y-roadmap-para-futuras-iteraciones)
+16. [🧠 Invariantes del Sistema, Convenciones y Guía Rápida de Onboarding](#-16-invariantes-del-sistema-convenciones-y-guía-rápida-de-onboarding)
 
 ---
 
@@ -149,6 +150,8 @@ Cualquier modificación o adición de columna futura **DEBE** seguir este mismo 
 | `custom_end_hour` | INTEGER | NULL | Hora fin personalizada de la jornada. |
 | `removed_task_ids` | TEXT | NULL | JSON con IDs de tareas excluidas manualmente para este día. |
 | `note` | TEXT | NULL | Nota justificativa del usuario. |
+| `range_origin` | TEXT | NULL | Marca de origen si el override fue generado por una pausa por rango (`'vacation_range'`). |
+| `previous_state_json` | TEXT | NULL | Snapshot JSON del override individual preexistente para restaurarlo fielmente al cancelar el rango. |
 | `updated_at` | TEXT | NULL | Fecha ISO de actualización. |
 
 #### Tabla `daily_logs`
@@ -251,8 +254,14 @@ Jornada Operativa (09:00 - 18:00)             Extensión de Curado Pasivo Noctur
    - Las sobreescrituras manuales tienen **prioridad absoluta** sobre cualquier regla de exclusión (`exclude_saturdays`, `exclude_sundays`, `exclude_holidays`).
    - Si un día tiene `force_status === "BLOCKED"`, el evaluador retorna `DAY_BLOCKED` inmediatamente con la nota del usuario.
    - Si un día tiene `force_status === "VIABLE"` u horas personalizadas (`custom_start_hour` / `custom_end_hour`), anula el bloqueo de calendario y evalúa el clima en esa ventana horaria específica.
+   - **Pausa de Agenda por Rango de Fechas (Vacaciones / Ausencias)**:
+     - Permite bloquear masivamente un intervalo (`start_date` a `end_date`) mediante `POST /day-overrides/range`.
+     - El sistema itera cada fecha aplicando `force_status = 'BLOCKED'` y `range_origin = 'vacation_range'`.
+     - **Preservación de Overrides Individuales Preexistentes**: Si un día dentro del rango ya contaba con un override previo del usuario, su estado íntegro (`force_status`, `custom_start_hour`, `custom_end_hour`, `note`) se congela en la columna `previous_state_json`.
+     - **Restauración al Cancelar el Rango (`POST /day-overrides/clear-range`)**: Al levantar la pausa, los días que tenían un override previo recuperan su estado original restaurando los valores desde `previous_state_json` (limpiando los campos de rango). Los días que fueron creados únicamente por la pausa y no tenían estado previo (`previous_state_json IS NULL`) se eliminan por completo de la tabla, retornando a su evaluación climática normal.
+     - Toda aplicación o cancelación de rango dispara automáticamente una re-evaluación silenciosa del horizonte (`triggerSilentReevaluation`).
 2. **Jornada Concluida y Exclusión del Día de Hoy**:
-   - Si para el día de hoy `checkin_resolved === true` (cerrado manualmente vía check-in o el botón "Término de la Jornada"), o si la hora actual ya no permite completar el mínimo de horas de trabajo antes del cierre operativo (`operational_end_hour`), el día de hoy se marca como `DAY_BLOCKED` ("Jornada concluida").
+   - Si para el día de hoy `checkin_resolved === true` (cerrado mediante el check-in nocturno o el banner flotante de cierre), o si la hora actual ya no permite completar el mínimo de horas de trabajo antes del cierre operativo (`operational_end_hour`), el día de hoy se marca como `DAY_BLOCKED` ("Jornada concluida").
    - Las tareas pendientes se agendan automáticamente a partir de **MAÑANA**.
 3. **Fases de la Jornada Evaluada**:
    - **PREP (Setup)**: Preparación del taller (duración `setup_hours`, ej. 1.0h o 30m).
@@ -303,7 +312,7 @@ El sistema de notificaciones está completamente desacoplado del scheduler y cen
 | :--- | :--- | :--- | :--- | :--- |
 | **Tier 1** | **Evaluación Matutina** | `runMorningEvaluation` | Horas antes de la jornada (`operational_start_hour - morning_eval_lead_hours`). | Evalúa los 7-14 días con Open-Meteo, persiste `daily_logs` y sincroniza eventos espejo en Google Calendar. |
 | **Tier 2** | **Inicio de Jornada** | `processWorkStartNotification` | Al inicio exacto de la ventana viable (`now >= window_start`). | Envía a Telegram el resumen de tareas a ejecutar hoy. Marca `telegram_notified = true`. |
-| **Tier 3** | **Check-in Nocturno** | `processCheckinNotification` | Al alcanzar la hora de cierre (`now >= checkin_hour`). | Envía un teclado interactivo inline a Telegram para marcar tareas completadas/postergadas. Marca `checkin_sent = true`. |
+| **Tier 3** | **Check-in Nocturno** | `processCheckinNotification` | Al alcanzar la hora de cierre (`now >= checkin_hour`). Arranca con **desfase de 2 minutos** respecto a Tier 1 y reintenta con backoff (hasta 3 intentos cada 3 segundos si el lock de evaluación está ocupado). | Envía un teclado interactivo inline a Telegram para marcar tareas completadas/postergadas. Marca `checkin_sent = true`. |
 | **Tier 4A** | **Aviso de Humedad** | `processWeatherAlert` | Humedad `> max_humidity_percent` dentro del horario laboral. | **Informativo**: Envía 1 único mensaje al día sin ráfagas. Marca `humidity_alert_sent = true`. |
 | **Tier 4B** | **Emergencia de Lluvia** | `processWeatherAlert` | Lluvia detectada en la ventana de trabajo o curado. | **Emergencia**: Dispara ráfaga de mensajes cada 5 min (hasta 3 veces) hasta que el operario confirme (`intraday_alert_acknowledged`). |
 
@@ -329,22 +338,40 @@ Cualquier mutación en el sistema (agregar/editar tareas, mover prioridades, alt
 
 ---
 
-## 🔘 6. Botón "Término de la Jornada" (Check-in Manual y Fallback)
+## 🔘 6. Cierre de Jornada (Check-in Flotante, Jornadas Vencidas y Fallback)
 
-En la cabecera de la vista de Planificación, el operario cuenta con el botón **"Término de la Jornada"**:
+Para eliminar la ambigüedad visual de contar con múltiples botones de cierre simultáneos, el antiguo botón manual "Cerrar Jornada" de la tarjeta del día fue **eliminado**. El sistema unifica el cierre a través de dos mecanismos complementarios y estrictamente contextuales:
+
+### 1. Banner Flotante de Cierre de Hoy (`#floating-checkin-banner`)
+Aparece discretamente en el extremo inferior de la pantalla de Planificación bajo tres condiciones estrictas:
+1. **Ventana Horaria Específica**: La hora actual se encuentra entre `operational_end_hour` y las 23:59:59 del mismo día.
+2. **Tareas Programadas**: Existen tareas agendadas para la jornada de hoy (`scheduled_task_ids.length > 0`).
+3. **Estado Pendiente**: La jornada no ha sido cerrada previamente (`checkin_resolved = 0`).
 
 ```
-                 [ Botón: Término de la Jornada ]
+                 [ Banner Flotante: "Hacer Check-in" ]
                                 │
                                 ▼
                  ¿Telegram vinculado y responsivo?
-                       ├── SÍ  ──> Envía prompt interactivo a Telegram + Notificación web.
-                       └── NO  ──> Abre Modal Fallback directamente en pantalla para marcar tareas.
+                       ├── SÍ  ──> Envía prompt interactivo a Telegram + Toast web de confirmación.
+                       └── NO  ──> Abre directamente el Modal Web de Check-in para marcar tareas.
 ```
 
-- **Idempotencia**: Si el check-in de hoy ya fue resuelto, informa amablemente sin duplicar acciones.
-- **Doble Clic Prematuro**: El botón se deshabilita instantáneamente (`disabled = true`) y muestra spinner para evitar llamadas dobles concurrentes.
-- **Modal Fallback Web**: Permite al operario marcar cada tarea como completada o postergada directamente en el navegador si no tiene su teléfono a mano.
+### 2. Sistema de "Jornadas Vencidas" Acumuladas (`_overdue_checkins_modal.ejs`)
+Si por cualquier motivo (servidor apagado, corte de energía o inactividad del usuario durante varios días) existen una o más jornadas pasadas con tareas programadas cuyo check-in nunca se completó (`eval_date < today_iso AND checkin_resolved = 0`):
+
+1. **Visibilidad Inmediata**:
+   - **Chip de Alerta Ámbar en el Header del Horizonte**: Un botón `#btn-overdue-checkins-alert` con icono de alerta y contador explícito (*"X jornadas pendientes"*).
+   - **Badge Contextual en Tarjetas Anteriores**: Cada tarjeta de un día pasado con tareas no resueltas muestra el badge *"Check-in pendiente"*.
+2. **Modal de Rescate y Acciones**:
+   - **Resolución Día a Día**: Permite desplegar cada jornada atrasada de forma individual, marcar qué tareas se terminaron y concluirlas con `DayService.concludeDay`.
+   - **Acción Masiva ("Reprogramar todas las tareas pendientes al backlog")**: Invocada vía `POST /api/checkin/resolve-all-overdue`, marca en lote todos los días atrasados como resueltos (`checkin_resolved = 1`), retorna sus tareas no completadas al backlog con estado `pending`, y finaliza disparando una única `triggerSilentReevaluation(userId, todayIso)` consolidada.
+
+### 3. Tolerancia a Rollover de Medianoche en `handleEndShift`
+`POST /api/checkin/end_shift` ya no asume ciegamente que la jornada a cerrar coincide con la fecha de hoy (`todayIso`):
+- Admite explícitamente `target_date_iso` en el payload para cerrar cualquier jornada específica.
+- **Ventana de Gracia en Madrugada**: Si la petición no incluye fecha y se ejecuta durante la madrugada previa al inicio operacional (`currentHour < operational_start_hour`, ej. 01:30 AM), el controlador detecta automáticamente la jornada vencida pendiente más reciente (típicamente el día de ayer) y la cierra, evitando marcar erróneamente el día que recién comienza.
+- **Idempotencia Absoluta**: Si la jornada consultada ya estaba resuelta, retorna un estado `{ alreadyResolved: true }` diferenciando dinámicamente si corresponde a la jornada *"de hoy"* o a una fecha histórica específica, sin alterar la base de datos ni duplicar notificaciones.
 
 ---
 
@@ -418,6 +445,10 @@ El **Modo Taller** está concebido como una estación de trabajo digital para el
 ### 🆕 Rediseño de la Vista de Planificación y Experiencia Operacional
 Durante la última iteración de diseño, la vista de Planificación fue modernizada para maximizar la legibilidad visual y el control en el taller:
 
+- **Eliminación del Botón Manual "Evaluar"**:
+  - **Re-evaluación Silenciosa Universal**: Cada mutación en el sistema (reordenamiento masivo de tareas, mover arriba/abajo, importación JSON, aplicación de plantillas, alternar proyecto activo, sobreescrituras individuales/de rango y cambios de estado en materiales) ejecuta en segundo plano `triggerSilentReevaluation(userId, todayIso)`.
+  - **Badge de Google Calendar por Día**: Icono visual compacto en la cabecera de cada día (`_card_header.ejs`) que indica si la jornada está sincronizada con Google Calendar (`calendar_created = 1`), eliminando el ruido textual.
+  - **Feedback Inmediato**: Notificaciones flotantes tipo Toast confirman que los cambios fueron guardados y que la agenda se optimizó automáticamente.
 - **Lienzo de Calendario Continuo y Proporcional**: Las tareas ya no se presentan como listas de texto estáticas; ahora se posicionan y dimensionan en bloques temporales de altura exacta proporcional a su duración (44px por hora), con una hora de margen atenuada previa y posterior a la jornada operativa configurada.
 - **Auditoría Climática Horaria Granular**: Se reemplazó la antigua línea divisoria fija de lluvia por un indicador vertical continuo en cada ranura horaria del grid, señalizando con precisión de color el estado ambiental (verde: apto; celeste: advertencia por humedad elevada; rojo: precipitación o corte).
 - **Protección Climática Integral de Fases (Setup y Teardown)**: El motor de agendamiento evalúa y garantiza que ni la preparación del taller (setup) ni el guardado de herramientas (teardown) se programen bajo lluvia o humedad crítica.
@@ -446,8 +477,8 @@ Durante la última iteración de diseño, la vista de Planificación fue moderni
 
 El proyecto cuenta con una exhaustiva suite de pruebas unitarias y de integración sobre **Vitest**:
 
-- **17 suites de prueba** (`tests/*.test.ts`).
-- **136 tests pasando al 100%** en verde (0 fallos, 0 regresiones).
+- **23 suites de prueba** (`tests/*.test.ts`).
+- **184 tests pasando al 100%** en verde (0 fallos, 0 regresiones).
 
 ### Cobertura Completa de Suites
 
@@ -458,11 +489,17 @@ El proyecto cuenta con una exhaustiva suite de pruebas unitarias y de integraci�
 | **Evaluator & Climate Boundaries** | `tests/evaluator.test.ts` | 46 pruebas: umbrales climáticos, epoxi, curado pasivo, tareas finales, precedencia de `day_overrides` y tipos de taller. |
 | **FSM Domain Services** | `tests/fsm.test.ts` | Máquinas de estado finito de tareas (`TaskService`) y días (`DayService`). |
 | **Curing & Admin** | `tests/curingAndAdmin.test.ts` | Curado no vinculante en paralelo (`curing_is_blocking = false`) y credenciales admin seguras. |
-| **Concurrency Locks** | `tests/concurrency.test.ts` | Locks en memoria, timeouts de 2 min y reevaluación silenciosa sin colisiones. |
-| **Agenda Reevaluation Flow** | `tests/agendaReevaluationFlow.test.ts` | Disparo reactivo de re-evaluación al mutar backlog o materiales. |
+| **Concurrency Locks** | `tests/concurrency.test.ts` | Locks en memoria, timeouts de 2 min, desfase de timers e inmunidad a colisiones simultáneas Tier 1 vs Tier 3. |
+| **Agenda Reevaluation Flow** | `tests/agendaReevaluationFlow.test.ts` | Cobertura integral de los 7 endpoints reactivos que disparan silenciosamente la re-evaluación de agenda. |
 | **Activate to Backlog** | `tests/activateToBacklog.test.ts` | Restauración de tareas con reseteo de ciclo de vida completo. |
-| **End Shift Edge Cases** | `tests/endShiftEdgeCases.test.ts` | Manejo de fin de turno con Telegram no disponible y resolución web idempotente. |
+| **End Shift Edge Cases** | `tests/endShiftEdgeCases.test.ts` | 6 casos límite: fin de turno con Telegram offline, modal fallback, día bloqueado, doble clic y re-apriete idempotente. |
+| **Day Override Range** | `tests/dayOverrideRange.test.ts` | Pausa de agenda por rango, preservación y restauración de overrides individuales en `previous_state_json`, y validación cronológica. |
+| **Overdue Checkins** | `tests/overdueCheckins.test.ts` | Detección de múltiples jornadas vencidas acumuladas (`eval_date < today_iso`), visibilidad del chip de alerta y acción masiva con `triggerSilentReevaluation`. |
+| **Planning View Render** | `tests/planningViewRender.test.ts` | Smoke & render E2E de `views/index.ejs` y `components/agenda.ejs`, validando la propagación estricta de variables de contexto (`isToday`, `today_iso`, `dayIndex`, `overdue_dates`). |
 | **Local Date** | `tests/localDate.test.ts` | Aritmética de fechas inmutables con anclaje al mediodía UTC (`LocalDate`). |
+| **Require Admin & Auth** | `tests/requireAdmin.test.ts` | Autorización RBAC, denegación 401/404 sigiloso y prevención de bloqueo del último administrador (Hito 2). |
+| **Admin APIs & Limits** | `tests/adminApiAndLimits.test.ts` | Cuotas y límites por usuario, soft-delete, configuración global del sistema y bitácora de auditoría (Hito 2). |
+| **Admin UI & Security** | `tests/adminUiAndSecurity.test.ts` | Vistas administrativas EJS, tabs de gestión de usuarios y controles de seguridad (Hito 2). |
 | **Multi-Tenant Validation** | `tests/validation.test.ts` | Esquemas Zod y prevención de cruce de proyectos/materiales entre usuarios. |
 | **Tools to Buy** | `tests/toolsToBuy.test.ts` | Gestión de herramientas, reporte consolidado y filtros `to_buy` / `in_stock`. |
 | **Materials Flow** | `tests/materialsFlow.test.ts` | Ciclo de vida de insumos, cálculo de estado y reactividad en la agenda. |
@@ -529,6 +566,15 @@ docker logs workshop-app 2>&1 | grep -iE "scheduler|weather|calendar|notificatio
 8. **Bug de `Lluvia_Hour` y Re-Alerta por Adelanto de Lluvia**:
    - *Causa*: No se persistía la hora de la lluvia alertada previamente, por lo que si una lluvia confirmada para las 18:00 se adelantaba a las 16:00, el sistema no volvía a alertar.
    - *Lección*: Se introdujo la columna `last_rain_alert_hour` en `daily_logs` y `NotificationDispatcher` detecta adelantos para relanzar la alarma de emergencia.
+9. **Colisión Sistemática de Locks entre Evaluación Matutina (Tier 1) y Check-in (Tier 3)**:
+   - *Causa*: Ambos bucles corrían con intervalos periódicos de 15 minutos instanciados en el mismo milisegundo de arranque en `server.ts`. Como Tier 1 corría en el tick exacto y demoraba cientos de milisegundos adquiriendo el cerrojo de evaluación, el tick de Tier 3 perdía sistemáticamente la carrera por el lock y arrojaba `EVALUATION_IN_PROGRESS`.
+   - *Lección*: Nunca programar dos intervalos recurrentes del mismo período sin desfase temporal cuando compiten por el mismo recurso crítico. Tier 3 ahora arranca con un retraso inicial de 2 minutos (`setTimeout`) y cuenta con reintentos con backoff (hasta 3 intentos cada 3 segundos).
+10. **ReferenceError de `isToday` no Definida en Sub-plantillas EJS**:
+    - *Causa*: Al incluir `_card_header.ejs` mediante `include('agenda/_card_header', dayContext)`, se asumió erróneamente que las variables locales del archivo padre (`agenda.ejs`) se heredarían automáticamente. La falta de `isToday` en el objeto de contexto provocó una ruptura fatal del renderizado.
+    - *Lección*: Las llamadas a `include(path, data)` en EJS aíslan el contexto del hijo. Toda variable requerida debe pasarse explícitamente en el objeto o consumirse defensivamente usando `typeof variable !== 'undefined' ? variable : (locals.variable || default)`.
+11. **Rollover de Medianoche en `handleEndShift`**:
+    - *Causa*: Al presionar el cierre de jornada pasada la medianoche (ej. a las 00:15 hrs tras extender el trabajo en el taller), el controlador calculaba un nuevo `todayIso` e intentaba cerrar la jornada del nuevo día que recién comenzaba, dejando la jornada real sin resolver.
+    - *Lección*: Nunca asumir que "ahora" y "el día que se está cerrando" son lo mismo en las proximidades de la medianoche. El endpoint debe recibir `target_date_iso` y contemplar una ventana de gracia para las horas de madrugada previas a `operational_start_hour`.
 
 ---
 
@@ -589,13 +635,16 @@ docker logs workshop-app 2>&1 | grep -iE "scheduler|weather|calendar|notificatio
 ### 📆 Sobreescrituras Manuales (`day_overrides`)
 - `POST /day-override/:override_date/save`: Fija estado forzado (`VIABLE`/`BLOCKED`), horas personalizadas y notas.
 - `POST /day-override/:override_date/clear`: Elimina sobreescritura retornando a evaluación climática automática.
+- `POST /day-overrides/range`: Bloquea masivamente un intervalo de fechas (vacaciones/pausa), preservando overrides individuales en `previous_state_json`.
+- `POST /day-overrides/clear-range`: Cancela el bloqueo del rango, restaurando overrides individuales preexistentes o eliminándolos.
 - `POST /day-override/:override_date/force-task`: Fuerza una tarea a una fecha específica.
 - `POST /day-override/forced-task/:forced_id/delete`: Elimina asignación forzada de tarea.
 
 ### ☀️ Evaluación Climática y Check-in
 - `POST /evaluation/force_run`: Fuerza la re-evaluación del horizonte multi-día.
 - `POST /evaluation/force_checkin`: Emite prompt de check-in en Telegram (pruebas/desarrollo).
-- `POST /api/checkin/end_shift`: Controlador del botón "Término de la Jornada" (Telegram o modal web).
+- `POST /api/checkin/end_shift`: Cierre de jornada contextual (admite `target_date_iso` y soporta cierre en madrugada previa).
+- `POST /api/checkin/resolve-all-overdue`: Acción masiva para resolver todas las jornadas vencidas acumuladas y reprogramar tareas al backlog.
 - `POST /api/checkin/resolve`: Procesa la resolución de tareas del check-in.
 
 ### ⚙️ Configuración, Telegram y Persistencia 3D
@@ -628,6 +677,7 @@ AGENDAPP/
 ├── data/                              # Directorio de persistencia SQLite
 │   └── workshop.db                    # Base de datos SQLite en runtime (WAL mode)
 ├── scripts/                           # Herramientas de automatización y CI/CD local
+│   ├── check-day-overrides-schema.js  # Diagnóstico e inspección de columnas en day_overrides
 │   └── check-lines.js                 # Script de auditoría de líneas y zonas de modularidad
 ├── src/                               # Código fuente backend en TypeScript
 │   ├── LocalDate.ts                   # Value Object inmutable para aritmética de fechas (mediodía UTC)
@@ -761,18 +811,24 @@ AGENDAPP/
 │           ├── viewer3dCore.js        # Motor Three.js, escena, cámara, luces y renderizado
 │           ├── viewer3dLoader.js      # Parser y cargador de archivos GLB/GLTF/OBJ
 │           └── workshopRail.js        # Navegación reactiva entre herramientas de banco
-├── tests/                             # Suite de pruebas automatizadas (17 suites, 136 tests)
+├── tests/                             # Suite de pruebas automatizadas (23 suites, 184 tests)
 │   ├── activateToBacklog.test.ts      # Reactivación de tareas y ciclo de vida limpio
+│   ├── adminApiAndLimits.test.ts      # Cuotas de usuario, almacenamiento 3D y auditoría
+│   ├── adminUiAndSecurity.test.ts     # Vistas y componentes del panel de administración
 │   ├── agendaReevaluationFlow.test.ts # Re-evaluación reactiva al mutar tareas o materiales
 │   ├── alertScenarios.test.ts         # Escenarios de lluvia, ráfagas y adelanto de hora
 │   ├── concurrency.test.ts            # Locks de concurrencia y timeouts de liberación
 │   ├── curingAndAdmin.test.ts         # Curado en paralelo y permisos de administrador
+│   ├── dayOverrideRange.test.ts       # Pausa de agenda por rango y preservación de estado
 │   ├── endShiftEdgeCases.test.ts      # Fin de turno con Telegram offline y modal fallback
 │   ├── evaluator.test.ts              # Pruebas del motor evaluador y umbrales climáticos
 │   ├── fsm.test.ts                    # Pruebas de máquinas de estado de tareas y días
 │   ├── localDate.test.ts              # Pruebas unitarias de LocalDate
 │   ├── materialsFlow.test.ts          # Pruebas de flujo reactivo de materiales
 │   ├── notificationDispatcher.test.ts # Pruebas directas de los tiers de notificación
+│   ├── overdueCheckins.test.ts        # Rescate masivo de jornadas vencidas acumuladas
+│   ├── planningViewRender.test.ts     # Smoke y contrato de renderizado E2E de la agenda
+│   ├── requireAdmin.test.ts           # Middleware RBAC y sigilo (404) en rutas protegidas
 │   ├── responsiveUi.test.ts           # Pruebas de contratos de diseño responsive y UI móvil
 │   ├── telegramCallbackDeterminism.test.ts # Determinismo de callbacks interactivos de Telegram
 │   ├── toolsToBuy.test.ts             # Herramientas por comprar y filtros de taller
@@ -799,6 +855,8 @@ AGENDAPP/
     │   │   ├── _calendar_grid.ejs     # Grid de bloques horarios proporcionales
     │   │   ├── _card_header.ejs       # Cabecera de estado, clima y acciones del día
     │   │   ├── _day_editor_modal.ejs  # Modal de sobreescritura manual (`day_overrides`)
+    │   │   ├── _overdue_checkins_modal.ejs # Modal de resolución y rescate de jornadas vencidas
+    │   │   ├── _pause_range_modal.ejs # Modal de pausa de agenda por rango de fechas (vacaciones)
     │   │   ├── _forced_tasks.ejs      # Asignación y gestión de tareas forzadas
     │   │   ├── _grid_tasks_col.ejs    # Columna de renderizado de tareas activas
     │   │   ├── _grid_weather_col.ejs  # Columna de auditoría climática horaria
@@ -908,4 +966,82 @@ Para continuar fortaleciendo la plataforma en futuras versiones, se sugieren las
      - *Hito 1*: Migración de BD, módulo `src/email/`, Brevo API, adaptación de `register`/`login`, `verify-email` y `resend-verification`.
      - *Hito 2*: Endpoints `forgot-password`, `reset-password`, invalidación de sesiones y alerta de cambio.
      - *Hito 3*: Vistas EJS, integración en panel admin y suite completa de tests en Vitest (`emailVerification.test.ts` y `passwordReset.test.ts`).
+
+---
+
+## 🧠 16. Invariantes del Sistema, Convenciones y Guía Rápida de Onboarding
+
+> ⚠️ **LECTURA OBLIGATORIA PARA DESARROLLADORES Y MODELOS DE IA**: Antes de modificar código o crear archivos nuevos en este repositorio, revisa esta sección. Estos invariantes representan las reglas fundamentales del dominio y las lecciones aprendidas para no reintroducir fallos arquitectónicos o de concurrencia.
+
+### 16.1 Mapa de Fachadas vs. Lógica Real de Negocio
+Para evitar navegar por múltiples archivos innecesariamente, consulta esta matriz de re-exports y sus ubicaciones reales:
+
+| Archivo Fachada (Barrel / API Pública) | Ubicación de la Lógica Real | Responsabilidad Concreta |
+| :--- | :--- | :--- |
+| `src/scheduler.ts` | `src/scheduler/daemon.ts` <br> `src/scheduler/locks.ts` <br> `src/scheduler/horizonRunner.ts` <br> `src/scheduler/calendarReconciler.ts` | Daemon periódico (ticks de 5 y 15 min), gestión de cerrojos (`activeEvaluationLocks`), ejecución de horizontes y sincronización de calendario. |
+| `src/notificationDispatcher.ts` | `src/notifications/checkinNotifier.ts` <br> `src/notifications/workStartNotifier.ts` <br> `src/notifications/weatherAlertNotifier.ts` <br> `src/notifications/targetChat.ts` <br> `src/notifications/markdownUtils.ts` | Despacho multicanal de Tiers 2, 3 y 4, formateo MarkdownV2, sanitización de caracteres y resolución del chat de destino. |
+| `src/evaluator.ts` | `src/climate/segments.js` <br> `src/climate/audit.js` <br> `src/climate/rules.js` <br> `src/scheduling/packageSelection.js` <br> `src/scheduling/timeline.js` <br> `src/scheduling/diagnostics.js` <br> `src/scheduling/orchestrator.js` | Motor de evaluación climática, cálculo de ventanas útiles, reglas de curado por categoría, selección de backlog y ensamblado de timeline. |
+| `src/db.ts` | `src/db/index.js` (`src/db/connection.js`, `src/db/schema.js`, `src/db/migrations.js`, `src/db/store.js`, `src/db/seeds.js`) | Repositorio SQLite central en WAL mode, pool de declaraciones preparadas, migraciones idempotentes y consultas multi-tenant. |
+| `src/calendarService.ts` | `src/calendar/client.js` <br> `src/calendar/eventFormatter.js` <br> `src/calendar/syncService.js` <br> `src/calendar/orphanManager.js` | Inicialización de Google Calendar API v3, formateo de bloques macro de taller, sincronización y limpieza de eventos huérfanos. |
+| `src/telegramBot.ts` | `src/telegram/pollingEngine.js` <br> `src/telegram/apiClient.js` <br> `src/telegram/keyboards.js` <br> `src/telegram/notifications.js` <br> `src/telegram/callbackHandlers.js` <br> `src/telegram/commandHandlers.js` <br> `src/telegram/state.js` | Motor de polling de Telegram, construcción de teclados inline deterministas, despacho HTTP a la API de bots y persistencia de offset. |
+
+### 16.2 Invariantes Fundamentales del Sistema
+1. **Cálculo del Día de Hoy**:
+   - **Regla**: El día de hoy **SIEMPRE** se evalúa mediante `date_iso === today_iso`.
+   - **Prohibición**: Está estrictamente prohibido asumir una posición fija en el array del horizonte (ej. `dayIndex === 0`), ya que los filtros de rango, vistas históricas o desfases de zona horaria alteran los índices.
+2. **Unicidad de Locks de Evaluación por `user_id`**:
+   - Todos los procesos de evaluación (`runMorningEvaluation`, `processCheckinNotification`, `triggerSilentReevaluation` y peticiones HTTP) comparten el cerrojo `acquireEvaluationLock(userId)`.
+   - Cualquier nuevo daemon o intervalo recurrente **DEBE** considerar la contención del cerrojo e incorporar desfases de arranque y reintentos con backoff.
+3. **Aislamiento Multi-Tenant Estricto**:
+   - Ninguna consulta SQL debe carecer del filtro `WHERE user_id = ?`. El cruce de tareas, insumos o calendarios entre cuentas es considerado un fallo crítico de seguridad.
+4. **Aritmética de Fechas Inmutable con Mediodía UTC**:
+   - Todo cálculo de calendario debe instanciar `LocalDate` y usar el anclaje al mediodía UTC (`T12:00:00Z`). Jamás utilizar `new Date().toISOString()` para extraer la fecha local del taller.
+5. **Separación entre Hora Calendario y Jornada Operativa**:
+   - La jornada laboral puede extenderse a la madrugada del día siguiente. Si la hora actual es inferior a `operational_start_hour`, el sistema debe contemplar la resolución de la jornada anterior y no la del día nuevo.
+6. **Idempotencia de Estados de Cierre**:
+   - Un día con `checkin_resolved = 1` es inmutable respecto a nuevas asignaciones de tareas para esa fecha. Toda tarea no completada debe ser devuelta al backlog con estado `pending`.
+
+### 16.3 Checklist Obligatorio para Nuevos Endpoints de Mutación
+Cualquier endpoint REST que modifique el estado del backlog, inventario, proyectos, plantillas o configuraciones **DEBE** invocar al finalizar:
+```typescript
+triggerSilentReevaluation(userId, todayIso);
+```
+
+**Lista de Endpoints que Disparan Re-evaluación Hoy**:
+- `POST /tasks/add`
+- `POST /tasks/:id/update`
+- `POST /tasks/:id/update_status`
+- `POST /tasks/:id/delete`
+- `POST /tasks/:id/activate-to-backlog`
+- `POST /tasks/:id/toggle-active`
+- `POST /tasks/:id/move-up` y `POST /tasks/:id/move-down`
+- `POST /tasks/reorder`
+- `POST /tasks/import`
+- `POST /project-templates/:id/apply`
+- `POST /projects/:id/toggle`
+- `POST /day-override/:override_date/save` y `POST /day-override/:override_date/clear`
+- `POST /day-overrides/range` y `POST /day-overrides/clear-range`
+- `POST /materials/add`, `toggle`, `update`, `set-status`, `delete` e `import`
+- `POST /api/checkin/resolve` y `POST /api/checkin/resolve-all-overdue`
+
+> ⚠️ **Test Obligatorio**: Todo nuevo endpoint agregado a esta lista debe contar con su correspondiente prueba automatizada en `tests/agendaReevaluationFlow.test.ts`.
+
+### 16.4 Trampas Conocidas del Stack Tecnológico
+1. **Motor de Plantillas EJS**:
+   - `include(subtemplate, data)` crea un contexto aislado. Las variables locales del archivo contenedor **no se heredan**. Pasa siempre todas las variables requeridas en el objeto `data` o utiliza `typeof var !== "undefined" ? var : (locals.var || default)`.
+2. **Better-SQLite3 y Concurrencia**:
+   - Aunque SQLite opera en modo WAL (`journal_mode = WAL`), las escrituras siguen requiriendo cerrojos exclusivos a nivel de archivo. Los locks en memoria (`activeEvaluationLocks`) son imprescindibles para evitar excepciones `SqliteError: cannot start a transaction within a transaction`.
+3. **Migraciones Idempotentes**:
+   - En SQLite no existe `ALTER TABLE ADD COLUMN IF NOT EXISTS`. Toda migración en `src/db/migrations.ts` debe consultar previamente `PRAGMA table_info(nombre_tabla)`.
+4. **Timers Recurrentes en Node.js**:
+   - No iniciar dos `setInterval` de igual período en el mismo tick de arranque si ambos compiten por un recurso común. Desfasa siempre el inicio del segundo proceso con `setTimeout`.
+
+### 16.5 Glosario Breve de Términos de Dominio
+- **Jornada**: Ventana laboral diaria delimitada entre `operational_start_hour` y `operational_end_hour`, compuesta por preparación (`setup_hours`), trabajo activo y limpieza (`teardown_hours`).
+- **Curado (Curing)**: Proceso pasivo de secado de adhesivos, barnices o resinas posterior al trabajo activo. Puede extenderse fuera de la jornada laboral hasta el corte nocturno configurado.
+- **Curado No Vinculante (`curing_is_blocking = 0`)**: Curado que no requiere supervisión ni bloquea el banco de trabajo, permitiendo agendar tareas adicionales en simultáneo.
+- **Check-in**: Protocolo nocturno de confirmación interactiva para reportar tareas completadas o postergadas.
+- **Horizonte**: Secuencia de 7 a 14 días futuros evaluados continuamente frente al pronóstico meteorológico.
+- **Day Override**: Sobreescritura manual de estado (`VIABLE` o `BLOCKED`) u horarios para un día específico, con prioridad sobre el pronóstico del clima.
+- **Jornada Vencida**: Día pasado con tareas que quedaron agendadas pero cuyo check-in nunca fue resuelto (`checkin_resolved = 0`).
 

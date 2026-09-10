@@ -68,6 +68,7 @@ export function toggleMaterial(req: AuthenticatedRequest, res: any) {
       }
       return res.status(404).send('Material no encontrado');
     }
+    triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after toggleMaterial:', err));
     if (req.xhr || req.headers.accept?.includes('application/json')) {
       return res.json({ success: true, material: updated });
     }
@@ -147,7 +148,9 @@ export function setMaterialStatus(req: AuthenticatedRequest, res: any) {
 
 export function deleteMaterial(req: AuthenticatedRequest, res: any) {
   try {
-    store.deleteMaterial(req.user!.id, parseInt(req.params.id, 10));
+    const userId = req.user!.id;
+    store.deleteMaterial(userId, parseInt(req.params.id, 10));
+    triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after deleteMaterial:', err));
     if (req.xhr || req.headers.accept?.includes('application/json')) {
       return res.json({ success: true });
     }

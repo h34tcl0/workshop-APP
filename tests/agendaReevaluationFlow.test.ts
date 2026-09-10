@@ -263,4 +263,91 @@ describe("Agenda Silent Re-evaluation Flow Post Check-in & Data Mutations", () =
     expect(todayLog?.status).toBe("DAY_VIABLE");
     expect(todayLog?.tasks_summary).toContain("Lijado Matutino");
   });
+
+  it("ejecuta reordenamiento y movimientos de tareas respondiendo exitosamente con trigger de reevaluación", async () => {
+    const user = getOrCreateUser("task_moves_test@workshop.os");
+    const token = signToken({ userId: user.id, email: user.email });
+
+    const project = store.addProject(user.id, "Proyecto Movimientos", "Desc");
+    const t1 = store.addTask(user.id, {
+      project_id: project.id,
+      title: "Tarea 1",
+      category: "carpentry",
+      estimated_hours: 1,
+      curing_hours: 0,
+      status: TaskStatus.PENDING,
+      order: 1
+    });
+    const t2 = store.addTask(user.id, {
+      project_id: project.id,
+      title: "Tarea 2",
+      category: "carpentry",
+      estimated_hours: 1,
+      curing_hours: 0,
+      status: TaskStatus.PENDING,
+      order: 2
+    });
+
+    // POST /tasks/reorder
+    const reorderRes = await request(app)
+      .post("/tasks/reorder")
+      .set("Origin", "http://127.0.0.1")
+      .set("Cookie", `workshop_session=${token}`)
+      .send({ task_ids: [t2.id, t1.id] });
+
+    expect(reorderRes.status).toBe(200);
+    expect(reorderRes.body.status).toBe("ok");
+
+    // POST /tasks/:id/move-up
+    const moveUpRes = await request(app)
+      .post(`/tasks/${t1.id}/move-up`)
+      .set("Origin", "http://127.0.0.1")
+      .set("Cookie", `workshop_session=${token}`);
+    expect([302, 303]).toContain(moveUpRes.status);
+
+    // POST /tasks/:id/move-down
+    const moveDownRes = await request(app)
+      .post(`/tasks/${t1.id}/move-down`)
+      .set("Origin", "http://127.0.0.1")
+      .set("Cookie", `workshop_session=${token}`);
+    expect([302, 303]).toContain(moveDownRes.status);
+  });
+
+  it("ejecuta toggle de proyectos y mutación de materiales con triggers de reevaluación", async () => {
+    const user = getOrCreateUser("proj_mat_test@workshop.os");
+    const token = signToken({ userId: user.id, email: user.email });
+
+    const project = store.addProject(user.id, "Proyecto Alternable", "Desc");
+    
+    // Toggle active project
+    const toggleProjRes = await request(app)
+      .post(`/projects/${project.id}/toggle`)
+      .set("Origin", "http://127.0.0.1")
+      .set("Cookie", `workshop_session=${token}`)
+      .set("Accept", "application/json")
+      .send({ is_active: false });
+
+    expect(toggleProjRes.status).toBe(200);
+    expect(toggleProjRes.body.success).toBe(true);
+
+    // Add material and set status
+    const mat = store.addMaterial(user.id, {
+      name: "Cola PVA 1kg",
+      category: "glue",
+      quantity: 2,
+      unit: "kg",
+      status: "in_stock"
+    });
+
+    const setMatRes = await request(app)
+      .post(`/materials/${mat.id}/set-status`)
+      .set("Origin", "http://127.0.0.1")
+      .set("Cookie", `workshop_session=${token}`)
+      .set("Accept", "application/json")
+      .send({ status: "out_of_stock" });
+
+    expect(setMatRes.status).toBe(200);
+    expect(setMatRes.body.success).toBe(true);
+    expect(setMatRes.body.material.status).toBe("out_of_stock");
+  });
 });

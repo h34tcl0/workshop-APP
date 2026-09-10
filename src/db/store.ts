@@ -33,10 +33,13 @@ export class SQLiteStore {
   deleteTask = (u: number, id: number) => taskRepo.deleteTask(u, id); moveTaskUp = (u: number, id: number) => taskRepo.moveTaskUp(u, id); moveTaskDown = (u: number, id: number) => taskRepo.moveTaskDown(u, id);
   reorderTasks = (u: number, ids: number[]) => taskRepo.reorderTasks(u, ids); getRecentCompletedHistory = (u: number) => taskRepo.getRecentCompletedHistory(u); getTaskHistory = (u: number) => taskRepo.getTaskHistory(u);
   getDayOverride = (u: number, d: string): DayOverride | null => dayOverrideRepo.getDayOverride(u, d); saveDayOverride = (u: number, d: string, data: any) => dayOverrideRepo.saveDayOverride(u, d, data);
+  saveDayOverrideRange = (u: number, s: string, e: string, note?: string | null) => dayOverrideRepo.saveDayOverrideRange(u, s, e, note);
+  clearDayOverrideRange = (u: number, s: string, e: string) => dayOverrideRepo.clearDayOverrideRange(u, s, e);
   clearDayOverride = (u: number, d: string) => dayOverrideRepo.clearDayOverride(u, d); getForcedTasksForDate = (u: number, d: string) => dayOverrideRepo.getForcedTasksForDate(u, d);
   addForcedTask = (u: number, d: string, t: number, h: number) => dayOverrideRepo.addForcedTask(u, d, t, h); deleteForcedTask = (u: number, id: number) => dayOverrideRepo.deleteForcedTask(u, id);
   getDailyLogByDate = (u: number, d: string): DailyLog | null => dailyLogRepo.getDailyLogByDate(u, d); getDailyLogById = (u: number, id: number) => dailyLogRepo.getDailyLogById(u, id);
   getDailyLogsForRange = (u: number, s: string, e: string): DailyLog[] => dailyLogRepo.getDailyLogsForRange(u, s, e); getFutureDailyLogsWithEvent = (u: number, f: string) => dailyLogRepo.getFutureDailyLogsWithEvent(u, f);
+  getOverdueUnresolvedLogs = (u: number, b: string): DailyLog[] => dailyLogRepo.getOverdueUnresolvedLogs(u, b);
   getDailyLogByIdGlobal = (id: number) => dailyLogRepo.getDailyLogByIdGlobal(id); saveDailyLog = (u: number, d: any) => dailyLogRepo.saveDailyLog(u, d); updateDailyLog = (u: number, id: number, d: Partial<DailyLog>) => dailyLogRepo.updateDailyLog(u, id, d);
   claimCalendarSync = (u: number, id: number) => dailyLogRepo.claimCalendarSync(u, id); releaseCalendarSync = (u: number, id: number) => dailyLogRepo.releaseCalendarSync(u, id); updateDailyLogGlobal = (id: number, d: Partial<DailyLog>) => dailyLogRepo.updateDailyLogGlobal(id, d);
   getAllUsers = (): User[] => userRepo.getAllUsers(); getActiveUsers = (): User[] => userRepo.getActiveUsers(); getUserByEmail = (e: string) => userRepo.getUserByEmail(e); getUserById = (id: number) => userRepo.getUserById(id);

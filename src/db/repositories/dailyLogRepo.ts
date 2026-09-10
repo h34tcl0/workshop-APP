@@ -59,6 +59,20 @@ export class DailyLogRepository {
     return rows.map(r => this.rowToDailyLog(r));
   }
 
+  getOverdueUnresolvedLogs(userId: number, beforeDateIso: string): DailyLog[] {
+    const db = getDb();
+    const rows = db.prepare(
+      `SELECT * FROM daily_logs 
+       WHERE user_id = ? 
+         AND eval_date < ? 
+         AND (checkin_resolved = 0 OR checkin_resolved IS NULL)
+         AND scheduled_task_ids IS NOT NULL 
+         AND scheduled_task_ids != '[]'
+       ORDER BY eval_date ASC`
+    ).all(userId, beforeDateIso);
+    return rows.map(r => this.rowToDailyLog(r));
+  }
+
   getFutureDailyLogsWithEvent(userId: number, fromDate: string): DailyLog[] {
     const db = getDb();
     const rows = db.prepare(

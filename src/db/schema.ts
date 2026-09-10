@@ -139,6 +139,8 @@ export function createTables(db: Database.Database): void {
       custom_end_hour INTEGER,
       removed_task_ids TEXT,
       note TEXT,
+      range_origin TEXT,
+      previous_state_json TEXT,
       updated_at TEXT,
       UNIQUE(user_id, override_date),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

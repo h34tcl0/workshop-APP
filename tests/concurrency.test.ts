@@ -154,4 +154,41 @@ describe("Evaluation Concurrency & Locking Unit Tests", () => {
     expect(isEvaluationInProgress(userId)).toBe(false);
     warnSpy.mockRestore();
   });
+
+  it("7. Tier 3 processCheckinForUser retries with backoff when lock is busy and succeeds once lock is released", async () => {
+    expect(isEvaluationInProgress(userId)).toBe(false);
+
+    // Acquire lock simulating Tier 1 in progress
+    const locked = acquireEvaluationLock(userId);
+    expect(locked).toBe(true);
+    expect(isEvaluationInProgress(userId)).toBe(true);
+
+    // Release lock after 30ms so that the retry acquires it
+    setTimeout(() => {
+      releaseEvaluationLock(userId);
+    }, 30);
+
+    const warnSpy = vi.spyOn(console, "warn");
+
+    // Call processCheckinForUser with fast test delay (20ms) and 3 retries
+    await processCheckinForUser(userId, new Date("2026-08-10T22:00:00Z"), true, {
+      maxRetries: 3,
+      retryDelayMs: 20
+    });
+
+    // Check-in should have logged the retry warning but NOT the final omitted warning
+    const retryLogged = warnSpy.mock.calls.some(call =>
+      call[0] && typeof call[0] === "string" && call[0].includes("Reintentando en")
+    );
+    const finalOmissionLogged = warnSpy.mock.calls.some(call =>
+      call[0] && typeof call[0] === "string" && call[0].includes("tras 3 intentos")
+    );
+
+    expect(retryLogged).toBe(true);
+    expect(finalOmissionLogged).toBe(false);
+
+    // Lock must be cleanly released at the end
+    expect(isEvaluationInProgress(userId)).toBe(false);
+    warnSpy.mockRestore();
+  });
 });

@@ -17,12 +17,27 @@ export async function processCheckinForUser(
   userId: number,
   nowDate?: Date,
   force: boolean = false,
-  options?: { skipLock?: boolean }
+  options?: { skipLock?: boolean; maxRetries?: number; retryDelayMs?: number }
 ): Promise<void> {
   const needsLock = !options?.skipLock;
   if (needsLock) {
-    if (!acquireEvaluationLock(userId)) {
-      console.warn(`[Scheduler] Se omitió el check-in para el Usuario #${userId}: evaluación/check-in en curso.`);
+    const maxRetries = options?.maxRetries ?? 3;
+    const retryDelayMs = options?.retryDelayMs ?? 3000;
+    let acquired = false;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      if (acquireEvaluationLock(userId)) {
+        acquired = true;
+        break;
+      }
+      if (attempt < maxRetries) {
+        console.warn(`[Scheduler] Lock de evaluación ocupado para Usuario #${userId} en check-in (intento ${attempt}/${maxRetries}). Reintentando en ${retryDelayMs / 1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      }
+    }
+
+    if (!acquired) {
+      console.warn(`[Scheduler] Se omitió el check-in para el Usuario #${userId}: evaluación/check-in en curso tras ${maxRetries} intentos.`);
       return;
     }
   }
@@ -104,44 +119,56 @@ export async function runMorningEvalTick(nowDate?: Date): Promise<void> {
 }
 
 let daemonIntervals: NodeJS.Timeout[] = [];
+let daemonTimeouts: NodeJS.Timeout[] = [];
 
 export function startDaemon(): void {
   console.log("[Daemon] WORKSHOP OS Multi-Tenant Precision Scheduler starting...");
-  console.log("  • Tier 1 (Horizon Evaluation & Calendar Mirror Sync): Dynamic trigger at operational start time");
-  console.log("  • Tier 2 (Work Start Telegram Notification): Triggered at the beginning of active work block");
-  console.log("  • Tier 3 (Night Check-in): Fixed trigger at configured check-in hour");
+  console.log("  • Tier 1 (Horizon Evaluation & Calendar Mirror Sync): Dynamic trigger at operational start time (every 15 min)");
+  console.log("  • Tier 2 (Work Start Telegram Notification): Triggered at the beginning of active work block (every 5 min)");
+  console.log("  • Tier 3 (Night Check-in): Fixed trigger at configured check-in hour (every 15 min, offset by 2 min from Tier 1)");
   console.log("  • Tier 4 (Urgent Weather Monitor): Active work window scan with 5-min 3-message alert bursts");
 
   stopDaemon();
 
   TelegramBotService.startPolling();
 
+  // Tier 1 immediately and every 15 min
   runMorningEvalTick().catch(err => console.error("[Daemon Tier 1 Error]:", err));
-  runWorkStartTick().catch(err => console.error("[Daemon Tier 2 Error]:", err));
-  runCheckinTick().catch(err => console.error("[Daemon Tier 3 Error]:", err));
-  runWeatherAlertTick().catch(err => console.error("[Daemon Tier 4 Error]:", err));
-
   const t1 = setInterval(() => {
     runMorningEvalTick().catch(err => console.error("[Daemon Tier 1 Error]:", err));
   }, 15 * 60 * 1000);
 
+  // Tier 2 immediately and every 5 min
+  runWorkStartTick().catch(err => console.error("[Daemon Tier 2 Error]:", err));
   const t2 = setInterval(() => {
     runWorkStartTick().catch(err => console.error("[Daemon Tier 2 Error]:", err));
   }, 5 * 60 * 1000);
 
-  const t3 = setInterval(() => {
-    runCheckinTick().catch(err => console.error("[Daemon Tier 3 Error]:", err));
-  }, 15 * 60 * 1000);
-
+  // Tier 4 immediately and every 5 min
+  runWeatherAlertTick().catch(err => console.error("[Daemon Tier 4 Error]:", err));
   const t4 = setInterval(() => {
     runWeatherAlertTick().catch(err => console.error("[Daemon Tier 4 Error]:", err));
   }, 5 * 60 * 1000);
 
-  daemonIntervals.push(t1, t2, t3, t4);
+  // Tier 3: Desfasar el arranque 2 minutos respecto a Tier 1 para evitar colisiones de lock
+  const t3Timeout = setTimeout(() => {
+    runCheckinTick().catch(err => console.error("[Daemon Tier 3 Error]:", err));
+    const t3 = setInterval(() => {
+      runCheckinTick().catch(err => console.error("[Daemon Tier 3 Error]:", err));
+    }, 15 * 60 * 1000);
+    daemonIntervals.push(t3);
+  }, 2 * 60 * 1000);
+
+  daemonTimeouts.push(t3Timeout);
+  daemonIntervals.push(t1, t2, t4);
 }
 
 export function stopDaemon(): void {
   TelegramBotService.stopPolling();
+  if (daemonTimeouts.length > 0) {
+    daemonTimeouts.forEach(clearTimeout);
+    daemonTimeouts = [];
+  }
   if (daemonIntervals.length > 0) {
     console.log("[Daemon] Stopping background scheduler daemon...");
     daemonIntervals.forEach(clearInterval);

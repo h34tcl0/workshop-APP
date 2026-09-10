@@ -334,4 +334,17 @@ export function runMigrations(db: Database.Database, defaultUserId: number): voi
       FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE SET NULL
     );
   `);
+
+  // Migration for day_overrides vacation range columns
+  try {
+    const dayOverrideCols = db.prepare("PRAGMA table_info(day_overrides)").all() as any[];
+    if (!dayOverrideCols.some(c => c.name === "range_origin")) {
+      db.exec("ALTER TABLE day_overrides ADD COLUMN range_origin TEXT;");
+    }
+    if (!dayOverrideCols.some(c => c.name === "previous_state_json")) {
+      db.exec("ALTER TABLE day_overrides ADD COLUMN previous_state_json TEXT;");
+    }
+  } catch (err) {
+    console.error("[DB MIGRATION] Error migrating day_overrides range columns:", err);
+  }
 }

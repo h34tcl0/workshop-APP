@@ -3,28 +3,54 @@
     
     <!-- BARRA DE NAVEGACIÓN ENTRE DÍAS DEL PANEL CENTRAL (Horizonte multi-día) -->
     <div class="bg-surface border border-hairline rounded-2xl p-2.5 sm:p-3 flex items-center justify-between gap-2 shadow-panel">
-        <button type="button" 
-                id="agenda-prev-day-btn" 
-                onclick="navigateAgendaDay(-1)" 
-                class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-surface2 hover:bg-hairline text-ink2 hover:text-ink text-xs font-semibold flex items-center gap-1 transition-all active:scale-95">
-            <svg class="w-4 h-4"><use href="#i-chev-down" class="rotate-90 origin-center"/></svg>
-            <span class="hidden sm:inline">Anterior</span>
-        </button>
+        <div class="flex items-center gap-1.5 sm:gap-2">
+            <button type="button" 
+                    id="agenda-prev-day-btn" 
+                    onclick="navigateAgendaDay(-1)" 
+                    class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-surface2 hover:bg-hairline text-ink2 hover:text-ink text-xs font-semibold flex items-center gap-1 transition-all active:scale-95">
+                <svg class="w-4 h-4"><use href="#i-chev-down" class="rotate-90 origin-center"/></svg>
+                <span class="hidden sm:inline">Anterior</span>
+            </button>
+            <button type="button" 
+                    id="agenda-next-day-btn" 
+                    onclick="navigateAgendaDay(1)" 
+                    class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-surface2 hover:bg-hairline text-ink2 hover:text-ink text-xs font-semibold flex items-center gap-1 transition-all active:scale-95">
+                <span class="hidden sm:inline">Siguiente</span>
+                <svg class="w-4 h-4"><use href="#i-chev-down" class="-rotate-90 origin-center"/></svg>
+            </button>
+        </div>
 
         <div class="flex items-center gap-2 text-center min-w-0">
-            <span class="text-xs font-semibold text-ink3 uppercase tracking-wide hidden sm:inline">Horizonte:</span>
+            <span class="text-xs font-semibold text-ink3 uppercase tracking-wide hidden md:inline">Horizonte:</span>
             <span id="agenda-current-day-label" class="font-serif-fraunces text-xs sm:text-sm md:text-base font-bold text-ink truncate">
                 <%= (forecast_evaluations && forecast_evaluations.length > 0) ? (forecast_evaluations[0].date_str || forecast_evaluations[0].eval_date) : '' %>
             </span>
         </div>
 
-        <button type="button" 
-                id="agenda-next-day-btn" 
-                onclick="navigateAgendaDay(1)" 
-                class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-surface2 hover:bg-hairline text-ink2 hover:text-ink text-xs font-semibold flex items-center gap-1 transition-all active:scale-95">
-            <span class="hidden sm:inline">Siguiente</span>
-            <svg class="w-4 h-4"><use href="#i-chev-down" class="-rotate-90 origin-center"/></svg>
-        </button>
+        <div class="flex items-center gap-2">
+            <% if (locals.overdue_checkins && locals.overdue_checkins.length > 0) { %>
+                <button type="button" 
+                        id="btn-overdue-checkins-alert" 
+                        onclick="openOverdueCheckinsModal()" 
+                        title="Hay <%= overdue_checkins.length %> jornada(s) anterior(es) pendiente(s) de cierre"
+                        class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95 animate-pulse">
+                    <svg class="w-3.5 h-3.5"><use href="#i-alert"/></svg>
+                    <span><%= overdue_checkins.length %> <%= overdue_checkins.length === 1 ? 'jornada pendiente' : 'jornadas pendientes' %></span>
+                </button>
+            <% } %>
+
+            <button type="button" 
+                    id="agenda-pause-range-btn" 
+                    onclick="openPauseRangeModal()" 
+                    title="Pausar la agenda por vacaciones o ausencias"
+                    class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-surface2 hover:bg-amber-500/15 text-ink2 hover:text-amber-400 border border-hairline hover:border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all active:scale-95">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="6" y="4" width="4" height="16"></rect>
+                    <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+                <span class="hidden sm:inline">Pausar Agenda</span>
+            </button>
+        </div>
     </div>
 
     <!-- GRILLA MULTI-DÍA (2 A 3 COLUMNAS EN PARALELO) -->
@@ -97,10 +123,13 @@
                 }
             }
 
+            const isToday = locals.today_iso ? (date_iso === locals.today_iso) : (dayIndex === 0);
+
             const dayContext = {
                 ...locals,
                 item,
                 dayIndex,
+                isToday,
                 eval,
                 is_viable,
                 seg,
@@ -149,4 +178,10 @@
         <% }); %>
 
     </div>
+
+    <!-- MODAL PAUSA DE AGENDA POR RANGO -->
+    <%- include('agenda/_pause_range_modal') %>
+
+    <!-- MODAL DE JORNADAS VENCIDAS PENDIENTES DE CIERRE -->
+    <%- include('agenda/_overdue_checkins_modal') %>
 </div>

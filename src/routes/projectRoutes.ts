@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { store } from '../db.js';
 import { AuthenticatedRequest } from '../auth.js';
 import { assertCanCreateProject, QuotaExceededError } from '../services/limitsService.js';
+import { triggerSilentReevaluation } from '../scheduler.js';
 
 const router = Router();
 
@@ -53,6 +54,7 @@ router.post('/projects/:id/toggle', (req: AuthenticatedRequest, res) => {
     }
     return res.status(404).send('Proyecto no encontrado');
   }
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after project toggle:', err));
   if (req.xhr || req.headers.accept?.includes('application/json')) {
     return res.json({ success: true, project: updated });
   }
@@ -117,6 +119,7 @@ router.post('/project-templates/:id/apply', (req: AuthenticatedRequest, res) => 
     const userId = req.user!.id;
     const id = parseInt(req.params.id, 10);
     const addedTasks = store.applyProjectTemplate(userId, id);
+    triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after apply project template:', err));
     if (req.headers.accept?.includes('application/json')) {
       return res.json({ status: 'success', message: `Plantilla aplicada (${addedTasks.length} tareas agregadas).` });
     }

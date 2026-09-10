@@ -226,12 +226,6 @@
                     setTimeout(() => floatingBanner.remove(), 300);
                 }
 
-                const todayEndShiftBtn = document.getElementById('btn-end-shift-today');
-                if (todayEndShiftBtn) {
-                    todayEndShiftBtn.classList.add('transition-all', 'duration-300', 'opacity-0');
-                    setTimeout(() => todayEndShiftBtn.remove(), 300);
-                }
-
                 if (typeof showToast === 'function') {
                     showToast('✅ Check-in guardado exitosamente.');
                 }
@@ -260,73 +254,221 @@
         executeEndShift,
         openEndShiftModal,
         closeEndShiftModal,
-        submitEndShiftCheckin
+        submitEndShiftCheckin,
+        openPauseRangeModal,
+        closePauseRangeModal,
+        submitPauseRangeForm,
+        submitClearRangeAction
     });
 
-    document.addEventListener('DOMContentLoaded', function () {
-        const evalForm = document.getElementById('eval-form');
-        const evalBtn = document.getElementById('eval-btn');
+    function openPauseRangeModal() {
+        const modal = document.getElementById('pause-range-modal');
+        if (!modal) return;
+        const startInput = document.getElementById('pause-start-date');
+        const endInput = document.getElementById('pause-end-date');
+        
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const todayStr = `${yyyy}-${mm}-${dd}`;
+        
+        const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+        const nwY = nextWeek.getFullYear();
+        const nwM = String(nextWeek.getMonth() + 1).padStart(2, '0');
+        const nwD = String(nextWeek.getDate()).padStart(2, '0');
+        const nextWeekStr = `${nwY}-${nwM}-${nwD}`;
+        
+        if (startInput && !startInput.value) startInput.value = todayStr;
+        if (endInput && !endInput.value) endInput.value = nextWeekStr;
+        
+        modal.classList.remove('hidden');
+    }
 
-        if (evalForm) {
-            evalForm.addEventListener('submit', function (e) {
-                e.preventDefault();
-                
-                if (evalBtn) {
-                    evalBtn.disabled = true;
-                    evalBtn.innerHTML = `
-                        <svg class="animate-spin h-3.5 w-3.5 text-canvas inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                    `;
-                }
+    function closePauseRangeModal() {
+        const modal = document.getElementById('pause-range-modal');
+        if (modal) modal.classList.add('hidden');
+    }
 
-                fetch('/evaluation/force_run', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({})
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (evalBtn) {
-                        evalBtn.disabled = false;
-                        evalBtn.innerText = 'Evaluar';
-                    }
+    async function submitPauseRangeForm(e) {
+        e.preventDefault();
+        const form = document.getElementById('pause-range-form');
+        const submitBtn = document.getElementById('pause-submit-btn');
+        if (!form) return;
+        
+        const start_date = form.start_date.value;
+        const end_date = form.end_date.value;
+        const note = form.note.value;
 
-                    const modal = document.getElementById('eval-feedback-modal');
-                    const statusEl = document.getElementById('eval-feedback-status');
-                    const reasonEl = document.getElementById('eval-feedback-reason');
-                    const tgText = document.getElementById('eval-feedback-tg-text');
-                    const calText = document.getElementById('eval-feedback-cal-text');
-
-                    if (modal && statusEl && reasonEl && tgText && calText) {
-                        const isViable = data.status === 'DAY_VIABLE';
-                        statusEl.innerText = isViable ? 'Día Viable' : 'Día Bloqueado';
-                        statusEl.className = isViable ? 'text-xs font-bold uppercase tracking-wide text-moss' : 'text-xs font-bold uppercase tracking-wide text-rust';
-                        reasonEl.innerText = data.reason || (isViable ? 'Ventana de trabajo habilitada.' : 'No se puede trabajar al aire libre.');
-
-                        tgText.innerText = data.telegramReason || (data.telegramSent ? '✅ Mensaje enviado a Telegram' : '⚠️ Telegram no configurado / omitido');
-                        calText.innerText = data.calendarReason || (data.calendarSynced ? '📅 Eventos agendados en Google Calendar' : 'ℹ️ Google Calendar no conectado');
-
-                        modal.classList.remove('hidden');
-                    } else {
-                        refreshWorkshopView();
-                    }
-                })
-                .catch(err => {
-                    console.error('Error in evaluation:', err);
-                    if (evalBtn) {
-                        evalBtn.disabled = false;
-                        evalBtn.innerText = 'Evaluar';
-                    }
-                    evalForm.submit();
-                });
-            });
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="animate-spin mr-1">⏳</span> Pausando...';
         }
 
+        try {
+            const res = await fetch('/day-overrides/range', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ start_date, end_date, note })
+            });
+            const data = await res.json();
+            if (data.success) {
+                closePauseRangeModal();
+                if (typeof showToast === 'function') {
+                    showToast('Agenda pausada correctamente.');
+                }
+                await refreshWorkshopView();
+            } else {
+                alert(data.error || 'No se pudo pausar el rango seleccionado.');
+            }
+        } catch (err) {
+            console.error('Error pausing range:', err);
+            form.submit();
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg><span>Pausar Agenda</span>';
+            }
+        }
+    }
+
+    async function submitClearRangeAction() {
+        const form = document.getElementById('pause-range-form');
+        if (!form) return;
+        const start_date = form.start_date.value;
+        const end_date = form.end_date.value;
+        if (!start_date || !end_date) {
+            alert('Por favor selecciona las fechas de inicio y término.');
+            return;
+        }
+
+        if (!confirm(`¿Desbloquear la agenda y reanudar actividades entre ${start_date} y ${end_date}?`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch('/day-overrides/clear-range', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify({ start_date, end_date })
+            });
+            const data = await res.json();
+            if (data.success) {
+                closePauseRangeModal();
+                if (typeof showToast === 'function') {
+                    showToast('Rango de vacaciones reanudado.');
+                }
+                await refreshWorkshopView();
+            } else {
+                alert(data.error || 'No se pudo desbloquear el rango.');
+            }
+        } catch (err) {
+            console.error('Error clearing range:', err);
+            alert('Error de conexión al reanudar rango.');
+        }
+    }
+
+    function openOverdueCheckinsModal(focusDateIso) {
+        const modal = document.getElementById('overdue-checkins-modal');
+        if (!modal) return;
+        modal.classList.remove('hidden');
+        if (focusDateIso) {
+            const targetEl = document.getElementById('overdue-card-' + focusDateIso);
+            if (targetEl) {
+                targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                targetEl.classList.add('ring-2', 'ring-amber-400');
+                setTimeout(() => targetEl.classList.remove('ring-2', 'ring-amber-400'), 2000);
+            }
+        }
+    }
+
+    function closeOverdueCheckinsModal() {
+        const modal = document.getElementById('overdue-checkins-modal');
+        if (modal) modal.classList.add('hidden');
+    }
+
+    async function resolveOverdueDay(dateIso, dailyLogId, markCompleted) {
+        let completedTaskIds = [];
+        if (markCompleted) {
+            const checkedBoxes = document.querySelectorAll(`input[name="task-completed-${dateIso}"]:checked`);
+            checkedBoxes.forEach(cb => completedTaskIds.push(Number(cb.value)));
+        }
+
+        try {
+            const res = await fetch('/api/checkin/resolve', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    dailyLogId: dailyLogId ? Number(dailyLogId) : undefined,
+                    dateIso: dateIso,
+                    completedTaskIds: completedTaskIds
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                if (typeof showToast === 'function') {
+                    showToast(`Jornada ${dateIso} resuelta correctamente.`);
+                }
+                closeOverdueCheckinsModal();
+                await refreshWorkshopView();
+            } else {
+                alert(data.error || 'No se pudo resolver la jornada.');
+            }
+        } catch (err) {
+            console.error('Error al resolver jornada vencida:', err);
+            alert('Error de conexión al resolver jornada.');
+        }
+    }
+
+    async function resolveAllOverdueDays() {
+        if (!confirm('¿Reprogramar todas las tareas de jornadas vencidas al backlog y cerrar los días pendientes?')) {
+            return;
+        }
+
+        const btn = document.getElementById('btn-resolve-all-overdue');
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = 'Reprogramando...';
+        }
+
+        try {
+            const res = await fetch('/api/checkin/resolve-all-overdue', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+            const data = await res.json();
+            if (data.success) {
+                if (typeof showToast === 'function') {
+                    showToast(data.message || 'Jornadas vencidas resueltas.');
+                }
+                closeOverdueCheckinsModal();
+                await refreshWorkshopView();
+            } else {
+                alert(data.error || 'No se pudieron resolver las jornadas.');
+            }
+        } catch (err) {
+            console.error('Error al resolver todas las jornadas vencidas:', err);
+            alert('Error de conexión.');
+        } finally {
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW registration error:', err));
         }

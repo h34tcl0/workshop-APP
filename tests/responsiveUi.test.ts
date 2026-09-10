@@ -86,16 +86,22 @@ describe("Responsive UI & Mobile Design Contract Tests", () => {
     expect(bannerContent).toContain("w-[92%]");
   });
 
-  it("Test 6: Valida que el botón de término de jornada en _card_header dependa estrictamente de show_end_shift_prompt y el cliente limpie el DOM", () => {
+  it("Test 6: Valida que el banner flotante de check-in sea el único punto de cierre y se elimine el botón redundante en tarjeta", () => {
     const cardHeaderPath = path.join(viewsDir, "components", "agenda", "_card_header.ejs");
     const cardHeaderContent = fs.readFileSync(cardHeaderPath, "utf-8");
-    expect(cardHeaderContent).toContain("locals.show_end_shift_prompt");
-    expect(cardHeaderContent).toContain("id=\"btn-end-shift-today\"");
+    // El botón redundante Cerrar Jornada fue removido de la tarjeta
+    expect(cardHeaderContent).not.toContain("id=\"btn-end-shift-today\"");
+    expect(cardHeaderContent).not.toContain("confirmEndShift()");
+
+    const bannerPath = path.join(viewsDir, "components", "agenda", "_checkin_floating_banner.ejs");
+    const bannerContent = fs.readFileSync(bannerPath, "utf-8");
+    expect(bannerContent).toContain("locals.show_end_shift_prompt");
+    expect(bannerContent).toContain("confirmEndShift()");
+    expect(bannerContent).toContain("Hacer Check-in");
 
     const clientScriptsPath = path.join(viewsDir, "partials", "_client_scripts.ejs");
     const clientScriptsContent = fs.readFileSync(clientScriptsPath, "utf-8");
     expect(clientScriptsContent).toContain("checkin-floating-banner");
-    expect(clientScriptsContent).toContain("btn-end-shift-today");
     expect(clientScriptsContent).toContain("setTimeout(() => floatingBanner.remove()");
   });
 

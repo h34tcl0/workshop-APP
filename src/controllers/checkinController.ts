@@ -1,6 +1,6 @@
 import { store } from '../db.js';
 import { AuthenticatedRequest } from '../auth.js';
-import { getLocalDateIso } from '../dateUtils.js';
+import { getLocalDateIso, getLocalHoursAndMinutes } from '../dateUtils.js';
 import { TaskStatus, Task } from '../types.js';
 import { TaskService } from '../services/taskService.js';
 import { DayService } from '../services/dayService.js';
@@ -100,9 +100,26 @@ export async function handleEndShift(req: AuthenticatedRequest, res: any) {
     const userTz = appSettings?.timezone || process.env.TIMEZONE || "America/Santiago";
     const now = new Date();
     const todayIso = getLocalDateIso(now, userTz);
+    const localHm = getLocalHoursAndMinutes(now, userTz);
+    const currentDecHour = localHm.totalHours;
 
-    let dailyLog = store.getDailyLogByDate(userId, todayIso);
-    if (!dailyLog) {
+    let targetIso = (req.body?.target_date_iso || req.body?.dateIso || req.query?.date_iso || "").toString().trim();
+    if (!targetIso) {
+      const operationalStart = (appSettings?.operational_start_hour != null) ? appSettings.operational_start_hour : 8;
+      if (currentDecHour < operationalStart) {
+        const overdueLogs = store.getOverdueUnresolvedLogs(userId, todayIso);
+        if (overdueLogs.length > 0) {
+          targetIso = overdueLogs[overdueLogs.length - 1].eval_date;
+        } else {
+          targetIso = todayIso;
+        }
+      } else {
+        targetIso = todayIso;
+      }
+    }
+
+    let dailyLog = store.getDailyLogByDate(userId, targetIso);
+    if (!dailyLog && targetIso === todayIso) {
       await runMorningEvaluation(userId, todayIso, undefined, { skipLock: true });
       dailyLog = store.getDailyLogByDate(userId, todayIso);
     }
@@ -116,7 +133,7 @@ export async function handleEndShift(req: AuthenticatedRequest, res: any) {
       .map(tid => store.getTask(userId, tid))
       .filter((t): t is Task => t != null && t.user_id === userId);
 
-    if (scheduledTasks.length === 0) {
+    if (scheduledTasks.length === 0 && targetIso === todayIso) {
       const activeProject = store.getActiveProject(userId);
       scheduledTasks = store.getPendingTasks(userId, activeProject?.id);
 
@@ -128,12 +145,13 @@ export async function handleEndShift(req: AuthenticatedRequest, res: any) {
     }
 
     if (dailyLog && dailyLog.checkin_resolved) {
+      const dayLabel = (targetIso === todayIso) ? 'de hoy' : targetIso;
       return res.json({
         success: true,
         alreadyResolved: true,
-        message: "El check-in de la jornada de hoy ya fue completado previamente.",
+        message: `El check-in de la jornada ${dayLabel} ya fue completado previamente.`,
         dailyLogId: dailyLog.id,
-        dateIso: todayIso,
+        dateIso: targetIso,
         tasks: scheduledTasks.map(t => ({
           id: t.id,
           title: t.title,
@@ -167,7 +185,7 @@ export async function handleEndShift(req: AuthenticatedRequest, res: any) {
         } else if (uncompletedTasks.length === 0) {
           telegramError = (dailyLog && dailyLog.status === 'DAY_BLOCKED')
             ? "El día estuvo marcado como NO VIABLE (DAY_BLOCKED). No hay tareas pendientes."
-            : "No hay tareas pendientes sin completar para la jornada de hoy.";
+            : "No hay tareas pendientes sin completar para la jornada.";
         }
       } catch (err: any) {
         telegramError = err?.message || "Error al comunicarse con la API de Telegram";
@@ -183,7 +201,7 @@ export async function handleEndShift(req: AuthenticatedRequest, res: any) {
       telegramSent,
       telegramError: telegramSent ? undefined : telegramError,
       dailyLogId: dailyLog ? dailyLog.id : null,
-      dateIso: todayIso,
+      dateIso: targetIso,
       tasks: scheduledTasks.map(t => ({
         id: t.id,
         title: t.title,
@@ -203,11 +221,14 @@ export async function handleEndShift(req: AuthenticatedRequest, res: any) {
 
 export async function handleResolveCheckin(req: AuthenticatedRequest, res: any) {
   const userId = req.user!.id;
-  const { dailyLogId, completedTaskIds } = req.body;
+  const { dailyLogId, dateIso, completedTaskIds } = req.body;
 
   try {
     const completedSet = new Set<number>(Array.isArray(completedTaskIds) ? completedTaskIds.map(Number) : []);
     let dailyLog = dailyLogId ? store.getDailyLogById(userId, Number(dailyLogId)) : null;
+    if (!dailyLog && dateIso) {
+      dailyLog = store.getDailyLogByDate(userId, String(dateIso).trim());
+    }
 
     let taskIds: number[] = [];
     if (dailyLog && dailyLog.scheduled_task_ids) {
@@ -263,5 +284,35 @@ export async function handleResolveCheckin(req: AuthenticatedRequest, res: any) 
   } catch (err: any) {
     console.error('Error al resolver checkin:', err);
     return res.status(500).json({ success: false, error: err?.message || 'Error al guardar check-in' });
+  }
+}
+
+export async function handleResolveAllOverdue(req: AuthenticatedRequest, res: any) {
+  const userId = req.user!.id;
+  try {
+    const appSettings = store.getAppSettings(userId);
+    const userTz = appSettings?.timezone || process.env.TIMEZONE || "America/Santiago";
+    const now = new Date();
+    const todayIso = getLocalDateIso(now, userTz);
+
+    const overdueLogs = store.getOverdueUnresolvedLogs(userId, todayIso);
+    for (const log of overdueLogs) {
+      DayService.concludeDay(userId, log.eval_date, "Jornada vencida resuelta (reprogramación al backlog)", {
+        triggerReeval: false,
+        checkinSent: true
+      });
+    }
+
+    // DISPARAR triggerSilentReevaluation al terminar
+    await triggerSilentReevaluation(userId, todayIso);
+
+    return res.json({
+      success: true,
+      resolvedCount: overdueLogs.length,
+      message: `${overdueLogs.length} jornada(s) vencida(s) resueltas y tareas reprogramadas al backlog.`
+    });
+  } catch (err: any) {
+    console.error('Error al resolver jornadas vencidas:', err);
+    return res.status(500).json({ success: false, error: err?.message || 'Error al resolver jornadas vencidas' });
   }
 }

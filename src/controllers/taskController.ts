@@ -210,12 +210,16 @@ export function handleDeleteTask(req: AuthenticatedRequest, res: any) {
 }
 
 export function handleMoveUp(req: AuthenticatedRequest, res: any) {
-  store.moveTaskUp(req.user!.id, parseInt(req.params.id, 10));
+  const userId = req.user!.id;
+  store.moveTaskUp(userId, parseInt(req.params.id, 10));
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after moveTaskUp:', err));
   res.redirect(303, '/');
 }
 
 export function handleMoveDown(req: AuthenticatedRequest, res: any) {
-  store.moveTaskDown(req.user!.id, parseInt(req.params.id, 10));
+  const userId = req.user!.id;
+  store.moveTaskDown(userId, parseInt(req.params.id, 10));
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after moveTaskDown:', err));
   res.redirect(303, '/');
 }
 
@@ -235,6 +239,7 @@ export function handleReorderTasks(req: AuthenticatedRequest, res: any) {
   }
 
   store.reorderTasks(userId, parseResult.data.task_ids);
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after reorderTasks:', err));
   res.json({ status: 'ok' });
 }
 
@@ -270,6 +275,8 @@ export function handleImportTasks(req: AuthenticatedRequest, res: any) {
       order: store.getTasks(userId).length + 1
     });
   });
+
+  triggerSilentReevaluation(userId).catch(err => console.error('[Scheduler] Error reevaluating after importTasks:', err));
 
   res.json({
     status: 'success',

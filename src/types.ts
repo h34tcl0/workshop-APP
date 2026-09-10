@@ -146,6 +146,8 @@ export interface DayOverride {
   custom_end_hour?: number | null;
   removed_task_ids?: string | null; // JSON string of number[]
   note?: string | null;
+  range_origin?: string | null;
+  previous_state_json?: string | null;
   updated_at?: string;
 }
 
